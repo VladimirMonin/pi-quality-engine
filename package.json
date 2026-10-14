@@ -1,0 +1,54 @@
+{
+  "name": "pi-quality-engine",
+  "version": "0.0.1",
+  "description": "Standalone evidence-based quality assessment for Pi (initial inactive foundation).",
+  "type": "module",
+  "private": true,
+  "engines": {
+    "node": ">=22.19.0"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./contracts": {
+      "types": "./dist/contracts.d.ts",
+      "import": "./dist/contracts.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "THIRD_PARTY_NOTICES.md"
+  ],
+  "keywords": [
+    "pi-package"
+  ],
+  "pi": {
+    "extensions": [
+      "./dist/index.js"
+    ]
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "tsc -p tsconfig.test.json && node --test .test-build/test/*.test.js",
+    "check": "npm run build && npm test"
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*"
+  },
+  "devDependencies": {
+    "@earendil-works/pi-coding-agent": "1.1.0",
+    "@types/node": "26.6.5",
+    "typescript": "7.0.2"
+  },
+  "overrides": {
+    "@earendil-works/chord": "1.1.0",
+    "@earendil-works/pi-agent-core": "1.1.0",
+    "@earendil-works/pi-ai": "1.1.0",
+    "@earendil-works/pi-codemode": "1.1.0",
+    "@earendil-works/pi-mcp": "1.1.0",
+    "@earendil-works/pi-tui": "1.1.0"
+  }
+}
