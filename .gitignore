@@ -1,0 +1,23 @@
+# Local dependencies and build output
+node_modules/
+dist/
+.test-build/
+*.tsbuildinfo
+
+# Reference checkouts: never part of the source or package
+donors/
+
+# Local diagnostics, acceptance output and disposable fixtures
+logs/
+verification/
+.runtime/
+
+# Credentials and machine-local configuration
+.env
+.env.*
+!.env.example
+.pi/
+
+# Editor and operating-system state
+.DS_Store
+Thumbs.db
