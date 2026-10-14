@@ -89,6 +89,7 @@ Read every matching instruction for cross-cutting work, not just the first plaus
 | [BUILD.toolchain](Инструкции/BUILD.toolchain.instructions.md) | Dependencies, local environment, compiler, build or packaging. |
 | [TEST.testing](Инструкции/TEST.testing.instructions.md) | Behavioral tests, host probes, experiments, evidence or acceptance. |
 | [CORE.logging](Инструкции/CORE.logging.instructions.md) | Diagnostics, persistence, errors, privacy, usage or recovery. |
+| [WORKFLOW.orchestration](Инструкции/WORKFLOW.orchestration.instructions.md) | Assigning medium Pi slices, acceptance ownership, same-session repairs, oracle escalation or orchestration state. |
 
 If ownership is unclear, start with the document catalog and implementation map.
 Maintain this complete routing table whenever an instruction is added or removed.
