@@ -31,8 +31,15 @@ cannot override it, even by narrowing (C1 §2.2 / O1 §24.8). Sink failure does 
 rerun work or recursively log forever. The current `src/journal.ts` path writes
 projected O1 records beneath the permitted user agent directory and exposes bounded
 queue/loss/health state. Verify physical bytes through final close, separately from
-memory history. Do not claim durability, rotation, retention or recovery from this
-append-oriented subset; functional checkpoint persistence remains unavailable.
+memory history. The accepted native S1 journal includes bounded record delivery,
+size and monotonic elapsed rotation, gzip and eligible closure-based retention.
+Known loss remains partial even after a successful final sync; partial native
+writes are completed exactly or reported as loss, never acknowledged as a full
+record. Preserve damaged/foreign/live/unrelated evidence and uncertain age.
+`src/checkpoint.ts` separately owns bounded Stop/authorization/control metadata;
+logging choices cannot reset it. Directory pressure is a cleanup target, not a
+quota that permits deleting active/checkpoint data. Native Windows file sync and
+best-effort directory sync do not establish universal or power-loss durability.
 
 One logical journal belongs to each observed session including owned reviewers.
 Logical retirement is not remote termination; queued is not included; written is

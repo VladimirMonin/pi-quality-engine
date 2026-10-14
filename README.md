@@ -1,9 +1,9 @@
 # Pi Quality Engine
 
 Standalone evidence-based quality assessment for Pi, developed as one small
-modular extension. This repository is at checkpoint **K02 (package `0.0.2`)**:
-an observation-only deterministic loop with count and time triggers, a real
-session journal, and an acknowledged C1 contribution registry.
+modular extension. This repository is at checkpoint **K03 (package `0.1.0`), S1 complete**:
+a local observation-only deterministic preview with bounded lifecycle,
+protected control state, metadata journals and acknowledged C1 contributions.
 
 ## What this version actually does
 
@@ -15,19 +15,24 @@ session journal, and an acknowledged C1 contribution registry.
   input, operator stop, top-level tool completions and cycles. Completions are
   counted once per operation identity; nested, duplicate and non-primary
   activity never advances the primary counter.
-- Owns exactly one monotonic clock and one timer. `core.every-tools` and
-  `core.periodic` propose intents through the same bounded `check.run`
-  admission path with coalescing, cooldown, capacity limits and trigger-spin
-  containment.
+- Owns one monotonic scheduler/timer and one bounded `check.run` admission
+  path. Count, periodic, inactivity/no-progress, known-wait, history-evidence
+  and actionable completion causes preserve coalescing, cooldown, fairness
+  and physically unsettled capacity across replacement. Public evidence-change
+  selection supports `core.history`; other named scopes are honestly unavailable.
 - Assembles bounded context evidence (`core.task`, `core.history`,
   `core.waits`) with provenance, coverage and manifest metadata, runs the
   deterministic `core.repeated-tools` evaluator and the `core.record-only`
   policy, and settles every run with O1 metadata.
-- Writes an append-oriented session journal under
-  `<agent dir>/quality/logs/<session>.ndjson` when the engine is enabled, and
-  keeps a bounded in-memory history. A full or failed journal degrades visibly
-  (`quality.sink.health`, journal status) without stopping checks or hiding
-  loss.
+- Writes projected O1 journals beneath `<agent dir>/quality/logs/`, using an
+  active session-key JSONL file and ordinal closed segments. Bounded queues,
+  history, size/elapsed rotation, gzip and eligible retention expose loss and
+  degradation through physical close. Directory pressure is a cleanup target,
+  never permission to delete active, checkpoint or unrelated files.
+- Persists bounded owner/Stop/authorization metadata beneath
+  `<agent dir>/quality/state/`, separately from diagnostics. Pause/resume/reload
+  cannot clear Stop; control failure suspends dependent unsafe admission.
+  Logical retirement does not free a physically unsettled operation.
 - Exposes an acknowledged C1 registry on `quality.registry.available.v1` /
   `quality.registry.query.v1`; independently loaded extensions can register
   triggers, context providers, prompts, evaluators and policies, wait for
@@ -35,11 +40,16 @@ session journal, and an acknowledged C1 contribution registry.
 
 ## What is deliberately unavailable
 
-Model requests, paid evaluation, primary feedback or actions, functional
-checkpoint persistence and recovery, journal rotation/compression/retention,
-source and model-profile configuration, additional triggers such as inactivity
-or no-progress, export, and session configuration patches. `/quality status`
-reports them as `unavailable`; no success-shaped placeholder exists.
+Model requests, paid evaluation/accounting, primary feedback or actions,
+original source/Git collection, model-profile configuration, capture/export and
+session configuration patches remain unavailable. No success-shaped placeholder
+exists. Native Windows fixture acceptance does not certify all platforms,
+TUI/RPC modes, ACLs or power-loss durability; directory sync is best-effort.
+
+The local unsigned annotated `v0.1.0` identifies the exact tested implementation;
+this README is later authorized documentation maintenance, not a repack or moved
+release tag. See [K03/S1 acceptance](docs/08-development-checkpoints-and-release-checklists.md#k03).
+No push, publication, live-provider usefulness or paid trial is implied.
 
 ## Configuration
 
@@ -62,8 +72,8 @@ schema paths and error codes, never the offending key or value.
 ## Development commands
 
 ```sh
-npm ci
-npm run check          # build, unit tests, real Pi host tests, package test
+npm ci --ignore-scripts
+npm run check          # build, unit, evidence routing, real Pi host, package test
 npm run build          # tsc
 npm test                # deterministic contract/runtime/loop tests
 npm run test:pi         # real Pi loader with isolated agent directories

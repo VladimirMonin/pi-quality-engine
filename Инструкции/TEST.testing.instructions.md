@@ -43,6 +43,14 @@ Reuse unchanged accepted fixtures and SDK facts in iterative repairs; run the na
 corrected cases and concrete regression risks, then required checkpoint gates.
 Preserve harness-only failures separately from product failures. Environment/path
 incidents do not authorize reading or cleaning preexisting unrelated data.
+Give each producer/helper a fresh explicit absolute native output; automatic
+routing regressions run only in new owned mirrors with genuine earlier-stage
+byte controls. Author-produced reviewer-named output remains author evidence.
+Never rerun historical producers/sealers over sealed bundles or extend a seal.
+Use actual protected-state and physical final-close witnesses, independently of
+history suffixes. Preserve known loss, unsettled ownership and source-selection
+negative controls; metadata/version expectation synchronization is not authority
+to weaken a behavioral assertion.
 
 Accepted checkpoints/tags require all named cases for one exact commit/artifact,
 not a sum of earlier green runs. Exercise genuine timer/evaluator/provider/effect

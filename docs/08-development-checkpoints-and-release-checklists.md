@@ -385,7 +385,17 @@ The table describes tests to execute, not results already obtained. Each row mus
 
 ## 7. 0.1.0 — Bounded lifecycle and diagnostics — S1 complete 🏁
 
-**Checkpoint K03 · D1 S1 exit · Candidate tag `v0.1.0` · Initial state: not-run**
+**Checkpoint K03 · D1 S1 exit · Local tag `v0.1.0` · State: ACCEPTED (2026-10-14)**
+
+Accepted implementation: **`035aaa3fe767c62cd16b962cf06012e2bb37f480`**; unsigned annotated local tag object **`de3711bec7232101f6cf44929fd17ab412447fc0`**. Exact-commit tar SHA-256 **`d9c2c27cfa0bb0c8ca2cac6662b88b69bbdb15c09561c6d6095a6568fd127bb7`**. [Full S1 summary](../verification/K03/reviewer/20261014202738294-p53924-b2973cbe/S1-stage-summary.md), [sealed implementation gate](../verification/K03/reviewer/20261014202738294-p53924-b2973cbe/implementation-gate.json), [exact-commit results](../verification/K03/reviewer/20261014202738294-p53924-b2973cbe/committed-verification/verification.json), [all payload binding](../verification/K03/reviewer/20261014202738294-p53924-b2973cbe/committed-verification/package-byte-binding.json) and [tag readback](../verification/K03/reviewer/20261014202738294-p53924-b2973cbe/tag-readback.json) are retained local evidence, not publication.
+
+Both working and exact-commit literal full checks pass **70 unit /25 actual Pi-host definitions /one installed consumer /routing exit0**, zero failures/cancellations/skips/TODO. The final release-only delta is exactly seven version literals in five files; earlier independent **113/113** behavior/correction cases are explicitly reused through that invariant, not claimed newly rerun. All 46 source files were extracted from actual Git bytes; 32 paths differ only by Git EOL normalization. All 34 compiled files and 38 payloads bind to the tested commit. Only shipped `package.json` CRLF→LF differs between working and committed tar.
+
+Actual primary control `0 → 0 → 1 → 1 → 2`, zero owned dispatch/effects and continued primary use; actual 150 ms timer/zero new completions/one run/closed journal, observed lateness 218 ms working and 224 ms committed, without a performance guarantee. Each phase retains 202 genuine older-stage originals plus202 exact sandbox controls unchanged around a real default-routing producer confined to a NEW owned mirror. Each privacy scan reads 4,326 O1 values, zero canaries/captureRefs. Earlier 8,570 sealed members, protected-state/storage witnesses and all rejection stages remain immutable dated facts.
+
+Accepted native S1 covers protected Stop/authorization ownership, physical reservation and late retirement, acknowledged contributions, observable initial eligibility and bounded O1 delivery/rotation/gzip/eligible retention. Public evidence-change supports only `core.history`; other scopes are honestly unavailable. It does not certify arbitrary sources, paid/model accounting, feedback/actions, capture/export, universal platform/TUI/RPC/ACL/power-loss or usefulness. README/instructions/S1 maintenance follows in a separate docs commit; the implementation tag never moves. K01/K02 tags remain unchanged; no push/publication occurred.
+
+**Next bounded checkpoint:** [K04](#k04), [D1 S2](04-implementation-testing-and-acceptance.md#section-7), [C1 context/resources](02-component-contracts-and-configuration.md#section-9), [O1 accounting](03-observability-and-data-policy.md#section-12) and [H1 P-04/P-05](06-implementation-handoff-and-integration-probes.md#section-9). Original evidence/direct assessment remains observe-only, scripted boundary first, shared admission/attempt/accounting path and no second controller; live/paid routes require separate authorization. No K04 implementation is included here.
 
 S1 is accepted when the deterministic loop remains understandable under ordinary concurrency, reload, missing resources, and failure. This is the first no-paid-call runtime preview suitable for deliberate local use. Storage probes happen now so an unsuitable destination is not discovered after most code depends on it.
 
@@ -397,21 +407,21 @@ S1 is accepted when the deterministic loop remains understandable under ordinary
 
 ### Construction and behavior checklist 🛠️
 
-- [ ] **K03-B.01** Complete acknowledged registry readiness, either load order, duplicate-ID rejection, and disposal. A fire-and-forget `emit()` is not readiness.
-- [ ] **K03-B.02** Implement the initial promised count, periodic, inactivity/no-progress, wait, evidence, and completion eligibility semantics as far as observable without paid assessment; unimplemented bindings remain unavailable.
-- [ ] **K03-B.03** Use monotonic elapsed time for runtime deadlines and UTC wall time for record presentation. Clock changes cannot produce a backdated burst of checks.
-- [ ] **K03-B.04** Bound active operations and pending intents. A timed-out but physically unsettled evaluator does not repeatedly create free capacity for replacement work.
-- [ ] **K03-B.05** Preserve ordinary fairness between configured checks and retain explicit capacity/cooldown/coalescing outcomes.
-- [ ] **K03-B.06** Carry generation, branch, episode, and authorization identity into asynchronous completions. A retired callback has no right to dispatch.
-- [ ] **K03-B.07** Preserve operator Stop across observer pause/resume and reload. An engine-generated prompt is not a new human authorization.
-- [ ] **K03-B.08** Implement failed-apply atomicity: invalid new configuration leaves the last accepted configuration active.
-- [ ] **K03-B.09** Persist the essential control/ownership foundation separately from diagnostic records. Disabling the journal cannot clear stop or effect state.
-- [ ] **K03-B.10** Prove the selected serialization/destination preserves the O1 envelope and actual downstream completion. Do not equate `logger.flush()` with destination finish.
-- [ ] **K03-B.11** Probe elapsed-time rotation through supported library APIs. Record the decision or reject the candidate destination without changing C1/O1 semantics.
-- [ ] **K03-B.12** Keep sink buffers and recent history bounded by both count and bytes; log-degradation reporting cannot recursively log forever.
-- [ ] **K03-B.13** Expose local runtime/capability/configuration status without provider traffic and without reading additional project content implicitly.
-- [ ] **K03-B.14** Run the early independent contribution across repeated reloads and removal; no permanent listeners or timers accumulate.
-- [ ] **K03-B.15** Record a modest representative runtime measurement as an S1 baseline without turning it into an unmeasured performance guarantee.
+- [x] **K03-B.01** Complete acknowledged registry readiness, either load order, duplicate-ID rejection, and disposal. A fire-and-forget `emit()` is not readiness.
+- [x] **K03-B.02** Implement the initial promised count, periodic, inactivity/no-progress, wait, evidence, and completion eligibility semantics as far as observable without paid assessment; unimplemented bindings remain unavailable.
+- [x] **K03-B.03** Use monotonic elapsed time for runtime deadlines and UTC wall time for record presentation. Clock changes cannot produce a backdated burst of checks.
+- [x] **K03-B.04** Bound active operations and pending intents. A timed-out but physically unsettled evaluator does not repeatedly create free capacity for replacement work.
+- [x] **K03-B.05** Preserve ordinary fairness between configured checks and retain explicit capacity/cooldown/coalescing outcomes.
+- [x] **K03-B.06** Carry generation, branch, episode, and authorization identity into asynchronous completions. A retired callback has no right to dispatch.
+- [x] **K03-B.07** Preserve operator Stop across observer pause/resume and reload. An engine-generated prompt is not a new human authorization.
+- [x] **K03-B.08** Implement failed-apply atomicity: invalid new configuration leaves the last accepted configuration active.
+- [x] **K03-B.09** Persist the essential control/ownership foundation separately from diagnostic records. Disabling the journal cannot clear stop or effect state.
+- [x] **K03-B.10** Prove the selected serialization/destination preserves the O1 envelope and actual downstream completion. Do not equate `logger.flush()` with destination finish.
+- [x] **K03-B.11** Probe elapsed-time rotation through supported library APIs. Record the decision or reject the candidate destination without changing C1/O1 semantics.
+- [x] **K03-B.12** Keep sink buffers and recent history bounded by both count and bytes; log-degradation reporting cannot recursively log forever.
+- [x] **K03-B.13** Expose local runtime/capability/configuration status without provider traffic and without reading additional project content implicitly.
+- [x] **K03-B.14** Run the early independent contribution across repeated reloads and removal; no permanent listeners or timers accumulate.
+- [x] **K03-B.15** Record a modest representative runtime measurement as an S1 baseline without turning it into an unmeasured performance guarantee.
 
 ### Pragmatic checkpoint tests 🧪
 
@@ -431,17 +441,17 @@ The table describes tests to execute, not results already obtained. Each row mus
 
 ### Evidence to retain 🔍
 
-- [ ] **K03-E.01** Retain the complete S1 stage report linking K01–K03 evidence to the final S1 candidate and listing inherited cases rerun.
-- [ ] **K03-E.02** Retain one real-host clock/wait/Stop trace and separate deterministic clock-race results.
-- [ ] **K03-E.03** Retain the registry load-order/reload inventory, configuration-apply proof, and generation rejection evidence.
-- [ ] **K03-E.04** Retain actual file-sink closure/pressure results and the exact elapsed-rotation library decision, including any still-unavailable advertised option.
-- [ ] **K03-E.05** Retain the no-provider-traffic proof and the small S1 performance baseline/environment.
+- [x] **K03-E.01** Retain the complete S1 stage report linking K01–K03 evidence to the final S1 candidate and listing inherited cases rerun.
+- [x] **K03-E.02** Retain one real-host clock/wait/Stop trace and separate deterministic clock-race results.
+- [x] **K03-E.03** Retain the registry load-order/reload inventory, configuration-apply proof, and generation rejection evidence.
+- [x] **K03-E.04** Retain actual file-sink closure/pressure results and the exact elapsed-rotation library decision, including any still-unavailable advertised option.
+- [x] **K03-E.05** Retain the no-provider-traffic proof and the small S1 performance baseline/environment.
 
 ### Exit and tag decision ✅
 
-- [ ] **K03-X.01** All mandatory S1 obligations pass; remaining S2/S3 capabilities are explicitly inactive, not simulated successes.
-- [ ] **K03-X.02** Functional state survives diagnostic changes, and the actual primary session remains usable after observer failure.
-- [ ] **K03-X.03** Approve the S1 stage summary and then create `v0.1.0` at the tested candidate.
+- [x] **K03-X.01** All mandatory S1 obligations pass; remaining S2/S3 capabilities are explicitly inactive, not simulated successes.
+- [x] **K03-X.02** Functional state survives diagnostic changes, and the actual primary session remains usable after observer failure.
+- [x] **K03-X.03** Approve the S1 stage summary and then create `v0.1.0` at the tested candidate.
 
 **The accepted tag may claim:** The S1 standalone observation runtime, bounded scheduling/lifecycle, independent contribution path, and verified initial metadata diagnostics.
 
