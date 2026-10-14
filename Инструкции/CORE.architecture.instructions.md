@@ -12,16 +12,27 @@ Roles are boundaries, not mandatory classes or folders. Create only exercised mo
 
 - `src/index.ts` is the Pi entry/composition root. Module import does not start work.
 - `src/contracts.ts` contains inert public declarations, not host instances or files.
-- The current owners are `src/configuration.ts` (cold resolution), `src/runtime.ts`
-  (session generation/status) and `src/diagnostics.ts` (bounded metadata history).
-  `/quality status` is read-only; checks, scheduling, models, feedback and persistence
-  remain unavailable until their own checkpoint behavior is implemented and proved.
+- `src/configuration.ts` owns cold resolution; `src/runtime.ts` owns observed
+  generations, shared check admission/runs, operator control and read-only status.
+  `src/registry.ts` owns acknowledged contributions; `src/observation.ts` and
+  `src/scheduling.ts` own attributable views and count/periodic eligibility.
+  `src/context.ts` owns canonical assembly, coverage and actual-byte budgets;
+  `src/diagnostics.ts` projects bounded history, and `src/journal.ts` owns the
+  bounded append-oriented session journal. `src/builtins/` uses the same path.
+- The implemented subset is the explicitly enabled observation-only deterministic
+  loop; `/quality stop` is an operator action. Model dispatch, feedback/actions,
+  durable control checkpoints, rotation/retention and later component bindings
+  remain unavailable. A working journal is not full lifecycle/recovery acceptance.
 - Configuration validates before activation; cold invalid configuration remains inactive.
 - The runtime owns each observed session generation, admission and effect authority.
 - Trigger/policy decisions do not perform direct host effects, network calls or hidden timers.
 - Concrete Pi/filesystem/model adapters implement real external boundaries. Inspect the
   pinned host types instead of guessing APIs or importing donor private internals.
 - Built-ins use the same admitted path as contributions; do not hardcode privileged shortcuts.
+  Bind check-owned criteria and all selected assessment resources before measurement;
+  dispatch that exact normalized object without post-admission enlargement. Literal
+  builtin URI/revision metadata requires the owning shipped-artifact validation,
+  not prefix trust. See C1 §§9–11 and O1 §§4–6.
 - No global current runtime, second scheduler, DI framework or compatibility fallback without
   an actual supported requirement. Old callbacks cannot acquire new-generation authority.
 - Revoke admission first on retirement; dispose owned resources idempotently. Logical

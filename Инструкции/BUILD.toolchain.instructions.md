@@ -30,10 +30,14 @@ Keep public contracts imports separate from the extension entry and inert.
 
 Active gates are `npm run build`, `npm test`, `npm run test:pi`,
 `npm run test:package` and aggregate `npm run check`; see [README](../README.md).
-Package/evidence helpers currently write to `verification/K01`; keep accepted
-bundles separate, preserve prior results and retain the exact tested tarball.
+Package/evidence helpers accept `QE_EVIDENCE_DIR`; pass a fresh absolute native
+path before execution. Their current fallback is `verification/K02-repair3`, not
+permission to overwrite a preserved bundle. Keep prior results immutable and retain
+the exact tested tarball. Avoid composing Windows paths from POSIX `$PWD`.
 `node scripts/collect-evidence.mjs` collects identities, not proof of passing gates;
-independently bind acceptance to actual Git state and artifact bytes.
+independently bind all packed payloads/resources to actual commit/build bytes.
+When Git EOL normalization changes bytes, build/test/pack exact committed source
+in disposable state; working-tree text equivalence is not exact-artifact evidence.
 Document only commands that exist. Future test:live/bench tasks stay unavailable
 until implemented, never empty successful scripts. Build/check/install/status may
 not dispatch a public-provider request. Real Pi and pack/install tests use disposable

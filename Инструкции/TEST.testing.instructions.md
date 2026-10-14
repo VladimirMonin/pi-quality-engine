@@ -39,7 +39,14 @@ Use isolated Pi settings and projects, an environment allowlist and fixture-spec
 output directories. Do not inherit personal skills, providers, extensions or user data.
 Bound waits and cleanup; no unowned background processes. Report discovered/executed,
 passed/failed/skipped/TODO tests and limitations, not just a green process exit.
+Reuse unchanged accepted fixtures and SDK facts in iterative repairs; run the named
+corrected cases and concrete regression risks, then required checkpoint gates.
+Preserve harness-only failures separately from product failures. Environment/path
+incidents do not authorize reading or cleaning preexisting unrelated data.
 
 Accepted checkpoints/tags require all named cases for one exact commit/artifact,
-not a sum of earlier green runs. Store generated evidence under ignored verification/;
+not a sum of earlier green runs. Exercise genuine timer/evaluator/provider/effect
+boundaries and fitting/overflow resource controls; manifest identity and size must
+match actual inputs. A syntax-shaped ID is not reference ownership. Store generated
+evidence under ignored verification/;
 small sanitized factual summaries may be deliberate documentation deliverables.

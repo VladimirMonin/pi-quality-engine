@@ -13,7 +13,7 @@ source_baseline_date: "2026-10-12"
 prepared_date: "2026-10-13"
 planned_project_version_range: "0.0.1 through 1.0.0"
 language: "en"
-status: "K01 accepted at the recorded local v0.0.1 tag for its limited scope; K02–K13 and all stage exits remain not-run"
+status: "K01 and K02 accepted at their recorded local tags for limited scopes; K03–K13 and all stage exits remain not-run"
 ---
 
 ## Pi Quality Engine — Development Checkpoints and Release Checklists 🧭
@@ -27,7 +27,7 @@ This workbook turns the four delivery stages already defined in [Document 04](04
 > [!important] What a checked box means
 > A checked box means there is evidence for **this candidate commit and the stated scope**: an executed case, a concrete assertion, and a retained artifact or an explicit documented non-artifact reason. The box does not mean that an implementing model is confident, that a source file exists, or that a helper returned `success`.
 >
-> Boxes started unchecked. Checked common/reviewer/tag items below apply only to the accepted K01 candidate recorded in §5; they are not inherited approval for later versions. Unchecked later-checkpoint items remain unproved.
+> Boxes started unchecked. Checked items below apply only to the recorded accepted K01 (§5) and K02 (§6) candidates and their limited scopes; they are not inherited approval for later versions. Unchecked K03–K13 and stage-exit items remain unproved.
 
 ### Authority and use 📑
 
@@ -150,7 +150,9 @@ Tests adapt to harmless implementation refactoring, not to broken required behav
 
 ## 3. Common gate for every accepted version ✅
 
-The checked items here are evidenced only for K01 at `7efe1ff097319b741423c92cd327abb4c9633b6e`. COMMON-E.04 is not applicable to its memory-only diagnostic subset: no intentionally broken persistent/contributed destination is shipped. Reevaluate this gate for every later candidate.
+Historical K01 common-gate acceptance at `7efe1ff097319b741423c92cd327abb4c9633b6e` remains limited to its memory-only subset; COMMON-E.04 was not applicable there because no intentionally broken persistent/contributed destination was shipped.
+
+**K02 follow-up, 2026-10-14:** the common boxes below are also evidenced for `9c7e3c2a7980895122a9ade72fb8436ad696d091` and its observation-only subset. COMMON-E.04 now passes with the real broken-journal degradation case and independent memory/host facts, not a fabricated disk receipt. See the [immutable implementation gate](../verification/K02-reacceptance3/implementation-gate.json) and [exact-commit results](../verification/K02-reacceptance3/committed-results.json). Reevaluate every later candidate; neither record accepts full S1 exit.
 
 ### Candidate and scope checklist 📌
 
@@ -168,7 +170,7 @@ The checked items here are evidenced only for K01 at `7efe1ff097319b741423c92cd3
 - [x] **COMMON-E.01** Run checks against the actual candidate implementation. Record command, exit status, timestamps, test inventory, and relevant configuration/profile revisions.
 - [x] **COMMON-E.02** Pair each consequential outcome with an independent assertion at the host, provider, filesystem, or functional ledger boundary.
 - [x] **COMMON-E.03** Parse retained O1 records using the public envelope and link relevant run, attempt, action, generation, and manifest identities. Do not require a global total order across concurrent work.
-- [ ] **COMMON-E.04** Where a destination is intentionally broken, use the permitted in-memory diagnostic observer and independently measured filesystem/host behavior; do not fabricate a missing on-disk receipt.
+- [x] **COMMON-E.04** Where a destination is intentionally broken, use the permitted in-memory diagnostic observer and independently measured filesystem/host behavior; do not fabricate a missing on-disk receipt.
 - [x] **COMMON-E.05** Run the relevant earlier regression cases. List reused evidence narrowly and justify unchanged inputs; do not carry a whole green release report across a changed candidate.
 - [x] **COMMON-E.06** Keep unknown usage, interrupted effects, incomplete context, and lost diagnostic ranges visible. No substitute zero, success, or clean-review verdict is inserted.
 - [x] **COMMON-E.07** Leave a bounded evidence bundle with a manifest, case results, selected sanitized logs, and the independent observations needed for disputed claims.
@@ -315,7 +317,15 @@ Upstream packaging and lifecycle details are source guidance; the installed-arti
 
 ## 6. 0.0.2 — One observable deterministic loop with count and time triggers 🏁
 
-**Checkpoint K02 · D1 S1 · Candidate tag `v0.0.2` · Initial state: not-run**
+**Checkpoint K02 · D1 S1 entry · Local tag `v0.0.2` · State: ACCEPTED (2026-10-14)**
+
+Accepted implementation: **`9c7e3c2a7980895122a9ade72fb8436ad696d091`**. Unsigned annotated local tag object: **`bb69b6f5d5846aa2c63d6bfc7971e31cdb3f7ebb`**. Exact-commit retained package SHA-256: **`95b2e9549097c7ae62166124ee8165fd54be269f015ad8cd0c20c65b260f0a02`**. [Gate](../verification/K02-reacceptance3/implementation-gate.json), [results](../verification/K02-reacceptance3/committed-results.json), [package binding](../verification/K02-reacceptance3/committed-package-byte-binding.json) and [tag readback](../verification/K02-reacceptance3/tag-readback.json) are local ignored evidence, not publication.
+
+Build/check passed: **48 unit, 25 Pi-host, one clean installed consumer**; independent public assertions **31/31**, affected K01 **7/7**; every child exit 0, no failures/cancellations/skips/TODO. All K02-T01–T07 have actual mapped witnesses; real timer has zero new tool completions, coalescing is held at an actual evaluator, primary provider control is `0 → 0 → 1 → 1 → 2`, owned dispatch/effect counters are zero, and history/journal privacy is checked through final flush. All 36 tar payloads bind to exact committed source/build/resource bytes. Git EOL normalization changed only `package.json` in the precommit versus committed tar; the committed archive was independently rebuilt/tested/installed.
+
+All earlier rejection rounds and their counterexamples remain preserved dated records, not rewritten passes. This acceptance covers the corrected R1/R5 paths and established mechanical K02 scope only. Durable control checkpoint, full lifecycle/storage hardening, rotation/retention, paid model routes, feedback, other SDKs/platforms, interactive TUI and RPC certification remain unaccepted. `v0.0.1` is unchanged; no push/publication occurred.
+
+**Next agreed checkpoint:** [K03](#k03), with [D1 S1 exit](04-implementation-testing-and-acceptance.md#section-6), [M1 runtime ownership](05-implementation-map-and-dependency-rules.md#section-6) and [H1 P-08](06-implementation-handoff-and-integration-probes.md#section-13). No K03/K04 implementation is included here.
 
 This checkpoint is the first useful execution, not a skeleton. A primary event and an elapsed-time condition reach the same runtime, real context, deterministic evaluator, record-only policy, and journal. No paid route or feedback action is needed.
 
@@ -327,18 +337,18 @@ This checkpoint is the first useful execution, not a skeleton. A primary event a
 
 ### Construction and behavior checklist 🛠️
 
-- [ ] **K02-B.01** Attach an attributable primary observation source through the actual Pi adapter. Distinguish operator, primary, engine, reviewer, and external origins.
-- [ ] **K02-B.02** Count uniquely identified eligible top-level tool completions. Duplicate completion reports and excluded nested/reviewer activity must not increment the same cadence.
-- [ ] **K02-B.03** Run the existing C1 deterministic profile using `core.repeated-tools` and `core.record-only`, with a small real evidence window.
-- [ ] **K02-B.04** Implement a configured count trigger and at least one genuine time-based trigger using the runtime-owned scheduler.
-- [ ] **K02-B.05** Keep activity age, progress age, active-operation evidence, and the work-expected decision distinct. A due timer proposes diagnosis, not automatic continuation.
-- [ ] **K02-B.06** Use the same `check.run` admission path for the count and temporal causes. Do not write a separate timer-only evaluator.
-- [ ] **K02-B.07** Coalesce overlapping reasons for one pending check while retaining their identities and reason codes.
-- [ ] **K02-B.08** Register one independent fixture trigger plus context or sink through C1 rather than importing private engine source.
-- [ ] **K02-B.09** Create a Standard metadata record for each meaningful boundary. Do not require Trace-only `quality.observation.accepted` records to exist in a Standard journal.
-- [ ] **K02-B.10** Create bounded recent history and an append-oriented session journal. Keep source bodies, command values, and evaluator prose out of the default records.
-- [ ] **K02-B.11** Run an actual real-clock timer smoke case in addition to deterministic clock tests. No extra primary completion may be used to wake the timer path.
-- [ ] **K02-B.12** Leave model dispatch and primary feedback unavailable at this checkpoint; status must explain that limitation.
+- [x] **K02-B.01** Attach an attributable primary observation source through the actual Pi adapter. Distinguish operator, primary, engine, reviewer, and external origins.
+- [x] **K02-B.02** Count uniquely identified eligible top-level tool completions. Duplicate completion reports and excluded nested/reviewer activity must not increment the same cadence.
+- [x] **K02-B.03** Run the existing C1 deterministic profile using `core.repeated-tools` and `core.record-only`, with a small real evidence window.
+- [x] **K02-B.04** Implement a configured count trigger and at least one genuine time-based trigger using the runtime-owned scheduler.
+- [x] **K02-B.05** Keep activity age, progress age, active-operation evidence, and the work-expected decision distinct. A due timer proposes diagnosis, not automatic continuation.
+- [x] **K02-B.06** Use the same `check.run` admission path for the count and temporal causes. Do not write a separate timer-only evaluator.
+- [x] **K02-B.07** Coalesce overlapping reasons for one pending check while retaining their identities and reason codes.
+- [x] **K02-B.08** Register one independent fixture trigger plus context or sink through C1 rather than importing private engine source.
+- [x] **K02-B.09** Create a Standard metadata record for each meaningful boundary. Do not require Trace-only `quality.observation.accepted` records to exist in a Standard journal.
+- [x] **K02-B.10** Create bounded recent history and an append-oriented session journal. Keep source bodies, command values, and evaluator prose out of the default records.
+- [x] **K02-B.11** Run an actual real-clock timer smoke case in addition to deterministic clock tests. No extra primary completion may be used to wake the timer path.
+- [x] **K02-B.12** Leave model dispatch and primary feedback unavailable at this checkpoint; status must explain that limitation.
 
 ### Pragmatic checkpoint tests 🧪
 
@@ -356,16 +366,16 @@ The table describes tests to execute, not results already obtained. Each row mus
 
 ### Evidence to retain 🔍
 
-- [ ] **K02-E.01** Retain one count-trigger and one actual timer-trigger O1 trace, linked to independent invocation counts.
-- [ ] **K02-E.02** Retain a negative control for duplicate completions, known waiting, and operator Stop.
-- [ ] **K02-E.03** Retain the independent contribution package/version and actual registration/disposal results.
-- [ ] **K02-E.04** Retain the Standard sentinel scan and observed bounded-history measurements.
+- [x] **K02-E.01** Retain one count-trigger and one actual timer-trigger O1 trace, linked to independent invocation counts.
+- [x] **K02-E.02** Retain a negative control for duplicate completions, known waiting, and operator Stop.
+- [x] **K02-E.03** Retain the independent contribution package/version and actual registration/disposal results.
+- [x] **K02-E.04** Retain the Standard sentinel scan and observed bounded-history measurements.
 
 ### Exit and tag decision ✅
 
-- [ ] **K02-X.01** Demonstrate both causes through one production path on bare Pi with zero owned model calls.
-- [ ] **K02-X.02** No test-only scheduler, fake Pi session, or donor observer supplies a missing part of the demonstration.
-- [ ] **K02-X.03** Only after those facts are recorded may `v0.0.2` identify this checkpoint.
+- [x] **K02-X.01** Demonstrate both causes through one production path on bare Pi with zero owned model calls.
+- [x] **K02-X.02** No test-only scheduler, fake Pi session, or donor observer supplies a missing part of the demonstration.
+- [x] **K02-X.03** Only after those facts are recorded may `v0.0.2` identify this checkpoint.
 
 **The accepted tag may claim:** A real observation-only deterministic check triggered by both activity count and time.
 
