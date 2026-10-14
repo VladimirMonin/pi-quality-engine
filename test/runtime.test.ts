@@ -70,7 +70,7 @@ test("session start creates one inactive observation generation with lifecycle r
       assert.equal(status.diagnostics.recentEvents[0]?.fields.data["engineVersion"], ENGINE_VERSION);
       assert.equal(status.journal, null, "a cold disabled engine opens no journal file");
     } finally {
-      session.retire("quit");
+      await session.retire("quit");
     }
   });
 });
@@ -78,8 +78,8 @@ test("session start creates one inactive observation generation with lifecycle r
 test("retirement is idempotent and reports shutdown without unsettled work", async () => {
   await withFixture(async paths => {
     const session = await EngineSession.start({ ...sessionInput(paths), hostIdleAtStart: true });
-    session.retire("quit");
-    session.retire("quit");
+    await session.retire("quit");
+    await session.retire("quit");
     const status = session.status(true);
     assert.equal(status.runtime.state, "retired");
     assert.equal(status.runtime.executionState, "shutdown");
@@ -115,7 +115,7 @@ test("a cold invalid configuration is rejected before activation and stays ineff
       assert.deepEqual(status.configuration.sources, { user: "rejected", project: "absent" });
       assert.equal(JSON.stringify(status).includes(SENTINEL), false);
     } finally {
-      session.retire("quit");
+      await session.retire("quit");
     }
   });
 });
@@ -126,11 +126,19 @@ test("each session generation owns its own identity and diagnostic sequence", as
     const second = await EngineSession.start({ ...sessionInput(paths), hostIdleAtStart: true });
     try {
       assert.notEqual(first.generation, second.generation);
-      assert.deepEqual(second.status(true).diagnostics.recentEvents.map(record => record.sequence), [1, 2]);
+      // One protected owner per logical session: the later generation is
+      // inspect-only and cannot act, while its own diagnostics still sequence.
+      assert.equal(second.status(true).runtime.control.state, "conflict");
+      assert.deepEqual(second.status(true).diagnostics.recentEvents.map(record => record.sequence), [1, 2, 3]);
+      assert.deepEqual(second.status(true).diagnostics.recentEvents.map(record => record.event), [
+        "quality.control.checkpoint",
+        "quality.runtime.started",
+        "quality.config.applied",
+      ]);
       assert.equal(first.status(true).runtime.generation, first.generation);
     } finally {
-      first.retire("replaced");
-      second.retire("quit");
+      await first.retire("replaced");
+      await second.retire("quit");
     }
   });
 });
@@ -163,7 +171,7 @@ test("a busy primary is never reported as idle", async () => {
       assert.equal(session.status(true).runtime.executionState, "idle");
       assert.equal(session.status(true).diagnostics.recentEvents[0]?.fields.data["executionState"], "unknown");
     } finally {
-      session.retire("quit");
+      await session.retire("quit");
     }
   });
 });
@@ -183,7 +191,7 @@ test("zero recent-history limits retain no records while accounting drops", asyn
       assert.deepEqual(status.diagnostics.recentEvents, []);
       assert.ok(status.diagnostics.droppedRecords >= 1);
     } finally {
-      session.retire("quit");
+      await session.retire("quit");
     }
   });
 });

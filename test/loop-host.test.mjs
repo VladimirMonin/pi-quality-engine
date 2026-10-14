@@ -189,8 +189,14 @@ test("K02-T02 a genuine runtime timer admits a check with no new primary complet
     assert.ok(lateness >= 150, `the configured interval elapsed (${lateness}ms)`);
     assert.ok(lateness < 2_500, `timer lateness stayed bounded (${lateness}ms)`);
     assert.ok(settled.diagnostics.recentEvents.some(record => record.event === "quality.check.settled"));
-    const journal = await readJournalText(host.agentDir);
-    assert.ok(journal.includes('"quality.check.settled"'), "the journal records the settlement");
+    // The file sink is asynchronous; wait for the projected record to reach
+    // disk instead of assuming the in-memory status and the file are
+    // synchronized at the same instant.
+    const journal = await waitFor(async () => {
+      const text = await readJournalText(host.agentDir);
+      return text.includes("quality.check.settled") && text.includes("quality.trigger.due") ? text : null;
+    }, 1_500, "the journal settlement record");
+    assert.ok(journal.includes("quality.check.settled"), "the journal records the settlement");
     assert.ok(journal.includes("quality.trigger.due"));
     await host.runner.emit({ type: "session_shutdown", reason: "quit" });
     const retired = await readStatus(host);

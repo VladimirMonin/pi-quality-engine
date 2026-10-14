@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
+import { allocateEvidenceDir } from "./evidence-run.mjs";
 
 // Pack the candidate, install it with its declared host peer into a clean
 // consumer root outside this repository, and load the installed artifact
@@ -33,7 +34,8 @@ const npm = resolveNpm();
 const workDir = mkdtempSync(join(tmpdir(), "qe-package-"));
 const packDir = join(workDir, "pack");
 const consumer = join(workDir, "consumer");
-const evidenceDir = process.env.QE_EVIDENCE_DIR ?? join(packageRoot, "verification", "K02-repair3");
+const evidenceDir = allocateEvidenceDir();
+console.log(`QE_EVIDENCE_DIR=${evidenceDir}`);
 const HOST_PEER = "@earendil-works/pi-coding-agent@1.1.0";
 
 function sha256File(path) {
@@ -104,7 +106,7 @@ try {
   const packResult = runNpm(["pack", "--json", "--pack-destination", packDir], { cwd: packageRoot });
   const packInfo = JSON.parse(packResult.stdout)[0];
   assert.equal(packInfo.name, "pi-quality-engine");
-  assert.equal(packInfo.version, "0.0.2");
+  assert.equal(packInfo.version, "0.1.0");
   const paths = packInfo.files.map(file => file.path);
   for (const required of ["package.json", "README.md", "THIRD_PARTY_NOTICES.md", "dist/index.js", "dist/contracts.js", "resources/prompts/repetition-v1.md"]) {
     assert.ok(paths.includes(required), `packed artifact is missing ${required}`);
@@ -146,7 +148,7 @@ try {
   assert.ok(markerLine, `consumer report missing from stdout:\n${consumerResult.stdout}\n${consumerResult.stderr}`);
   const report = JSON.parse(markerLine.slice("QE_CONSUMER_REPORT=".length));
   assert.equal(report.ok, true);
-  assert.equal(report.packageVersion, "0.0.2");
+  assert.equal(report.packageVersion, "0.1.0");
   assert.equal(report.hostVersion, "1.1.0");
   assert.equal(report.peerRange, "*");
   assert.deepEqual(report.loadErrors, []);
@@ -157,9 +159,12 @@ try {
   ]);
   assert.equal(report.toolCount, 0);
   assert.deepEqual(report.statuses, { inactive: "inactive", active: "active", retired: "retired" });
-  assert.deepEqual(report.eventNames, ["quality.runtime.started", "quality.config.applied", "quality.runtime.retired"]);
+  assert.deepEqual(report.eventNames, [
+    "quality.runtime.started", "quality.config.applied", "quality.runtime.retired",
+  ]);
   assert.deepEqual(report.effectCounts, { sendMessage: 0, sendUserMessage: 0, appendEntry: 0, abort: 0 });
-  assert.deepEqual(report.fixtureFilesCreated, []);
+  assert.ok(report.fixtureFilesCreated.every(entry => /^agent[\\/]quality([\\/]state.*)?$/u.test(entry)),
+    `the installed engine only adds its control checkpoint (${report.fixtureFilesCreated.join(",")})`);
   assert.equal(report.resourcesResolved, true);
   assert.ok(report.installedLoopRuns >= 1);
   assert.ok(report.promptResourceRefs.includes("builtin:repetition-v1.md"));

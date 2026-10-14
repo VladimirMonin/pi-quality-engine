@@ -132,8 +132,12 @@ assert.deepEqual(retired.diagnostics.recentEvents.map(record => record.event), [
   "quality.config.applied",
   "quality.runtime.retired",
 ]);
-assert.deepEqual(await listOrEmpty(fixtureRoot), fixtureBefore, "the installed engine must not create fixture files");
-assert.deepEqual(await listOrEmpty(agentDir), [], "the installed engine must not create an agent-side directory");
+const afterInertStart = (await listOrEmpty(fixtureRoot)).filter(entry => !fixtureBefore.includes(entry));
+assert.ok(
+  afterInertStart.every(entry => /^agent[\\/]quality([\\/]state.*)?$/u.test(entry)),
+  `the installed inert engine only creates its control checkpoint (${afterInertStart.join(",")})`,
+);
+assert.deepEqual(await listOrEmpty(join(agentDir, "quality", "logs")), [], "a disabled journal creates no destination");
 assert.deepEqual(await listOrEmpty(projectDir), []);
 assert.deepEqual(effects, { sendMessage: 0, sendUserMessage: 0, appendEntry: 0, abort: 0 }, "the installed engine attempts no primary effect");
 
@@ -188,9 +192,17 @@ for (;;) {
 assert.ok(installedLoopRuns >= 1, "the installed package admitted a check by time");
 assert.ok(promptResourceRefs.includes("builtin:repetition-v1.md"), "the installed prompt resource resolved");
 const journalDirectory = join(agentDir, "quality", "logs");
-const journalFiles = await listOrEmpty(journalDirectory);
-assert.equal(journalFiles.length, 1, "the installed engine wrote one session journal");
-const journalText = await readFile(join(journalDirectory, journalFiles[0]), "utf8");
+// The installed file sink is asynchronous: poll bounded for the projected
+// settlement record rather than assuming the in-memory status and file bytes
+// are synchronized at the same instant.
+const journalDeadline = Date.now() + 1_500;
+let journalText = "";
+for (;;) {
+  const active = (await listOrEmpty(journalDirectory)).filter(name => name.endsWith(".jsonl"));
+  journalText = active.length === 0 ? "" : await readFile(join(journalDirectory, active[0]), "utf8");
+  if (journalText.includes("quality.check.settled") || Date.now() > journalDeadline) break;
+  await new Promise(resolvePromise => setTimeout(resolvePromise, 25));
+}
 assert.ok(journalText.includes("quality.check.settled"), "the installed journal contains the settlement");
 await runner.emit({ type: "session_shutdown", reason: "quit" });
 
@@ -217,6 +229,6 @@ process.stdout.write(`QE_CONSUMER_REPORT=${JSON.stringify({
   resourcesResolved,
   installedLoopRuns,
   promptResourceRefs,
-  journalFiles,
-  fixtureFilesCreated: [],
+  journalFiles: (await listOrEmpty(journalDirectory)).filter(name => name.endsWith(".jsonl")),
+  fixtureFilesCreated: afterInertStart,
 })}\n`);

@@ -6,7 +6,7 @@
 // At this checkpoint no model request, primary feedback or action is ever
 // dispatched.
 
-import { createHash } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import { readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { admitContextItem, assembleContext, type AssembledContext } from "./context.js";
@@ -14,14 +14,23 @@ import { DEFAULT_MAX_RECORD_BYTES, DiagnosticHistory } from "./diagnostics.js";
 import { loadEffectiveConfiguration } from "./configuration.js";
 import type { ConfigurationRejection } from "./configuration.js";
 import { SessionJournal } from "./journal.js";
-import type { JournalStatus } from "./journal.js";
+import type { JournalEvent, JournalStatus } from "./journal.js";
+import { ControlCheckpoint } from "./checkpoint.js";
 import { ObservationStore } from "./observation.js";
 import type { ObservationSnapshot, ObservationSource } from "./observation.js";
 import { ComponentRegistry } from "./registry.js";
 import type { PackageInventoryEntry, ResolvedComponent } from "./registry.js";
 import { Scheduler, systemClock } from "./scheduling.js";
-import type { EngineClock, SchedulerDue, TriggerBinding } from "./scheduling.js";
-import { everyToolsTrigger, periodicTrigger } from "./builtins/triggers.js";
+import type { EngineClock, SchedulerDue, SchedulerHost, TriggerBinding } from "./scheduling.js";
+import {
+  beforeCompletionTrigger,
+  evidenceChangeTrigger,
+  everyToolsTrigger,
+  inactivityTrigger,
+  noProgressTrigger,
+  periodicTrigger,
+  waitDeadlineTrigger,
+} from "./builtins/triggers.js";
 import { historyProvider, taskProvider, waitsProvider } from "./builtins/contexts.js";
 import { createPromptFilesProvider } from "./builtins/prompts.js";
 import { repeatedToolsEvaluator } from "./builtins/evaluators.js";
@@ -38,6 +47,7 @@ import type {
   ComponentNoteData,
   ConfigurationOrigin,
   ConfigurationSourceStatus,
+  DetailProfile,
   ContextItem,
   ContextSnapshot,
   DiagnosticRecordV1,
@@ -60,7 +70,7 @@ import type {
 } from "./contracts.js";
 
 export const ENGINE_NAME = "pi-quality-engine";
-export const ENGINE_VERSION = "0.0.2";
+export const ENGINE_VERSION = "0.1.0";
 export const ENGINE_BUILD_REF = `${ENGINE_NAME}@${ENGINE_VERSION}`;
 export const DATA_POLICY_REVISION = "o1-1";
 
@@ -70,6 +80,13 @@ const RECENT_EVENTS_IN_STATUS = 16;
 
 const RETIRE_CAUSES = new Set(["quit", "reload", "new", "resume", "fork", "replaced"]);
 
+// Generation identities must be unambiguous across real process lifetimes that
+// share an observed session (O1 section 4.2 keys order by
+// `(session, generation, sequence)`). A PID is not a lifetime identity because
+// the OS can reuse it, so each module lifetime issues a bounded random decimal
+// seed and appends its process-local generation counter. The `gen-<digits>`
+// canonical shape is preserved without relying on distinct PIDs.
+const generationSeed = randomBytes(8).readBigUInt64BE(0).toString(10);
 let generationCounter = 0;
 
 export interface EngineSessionInput {
@@ -88,11 +105,18 @@ export interface EngineSessionInput {
   publishRegistryEndpoint?: (endpoint: ComponentRegistry["endpoint"]) => void;
   /** Same-session control state; the composition root preserves it across reload. */
   controlState?: SessionControlState;
+  /**
+   * Same-session physical operation accounting shared across runtime
+   * generations. A timed-out but physically unsettled evaluator keeps its
+   * reservation after replacement instead of granting free capacity.
+   */
+  physicalState?: SessionPhysicalState;
 }
 
 /** Minimal scoped control state that survives same-session replacement. */
 export interface SessionControlState {
   operatorStopped: boolean;
+  observerPaused?: boolean;
 }
 export type PrimaryHostEvent =
   | { type: "operator-input"; text: string; source: string; occurredAt: string }
@@ -109,7 +133,8 @@ export type PrimaryHostEvent =
     durationMs: number | null;
     occurredAt: string;
   }
-  | { type: "cycle-completed"; cycleId: string; operationIds: string[]; occurredAt: string };
+  | { type: "cycle-completed"; cycleId: string; operationIds: string[]; occurredAt: string }
+  | { type: "completion-boundary"; boundaryId: string; actionable: boolean; occurredAt: string };
 
 export type CapabilityState = "available" | "unavailable";
 
@@ -155,6 +180,8 @@ export interface EngineStatus {
     restored: boolean;
     checkpointRevision: string;
     operatorStopped: boolean;
+    observerPaused: boolean;
+    control: { state: "unavailable" | "healthy" | "restored" | "degraded" | "conflict"; revision: number; errorCode: string | null };
     accountingCoverage: "complete";
   };
   configuration: {
@@ -195,7 +222,7 @@ export interface EngineStatus {
   registry: { packages: PackageInventoryEntry[] };
   journal: JournalStatus | null;
   diagnostics: {
-    detail: "standard";
+    detail: DetailProfile;
     capture: "none";
     historyRecords: number;
     historyBytes: number;
@@ -210,7 +237,7 @@ const CAPABILITY_STATES: EngineCapabilities = {
   sessionLifecycleDiagnostics: "available",
   recentHistory: "available",
   journalFiles: "available",
-  functionalStatePersistence: "unavailable",
+  functionalStatePersistence: "available",
   componentRegistry: "available",
   triggersAndScheduling: "available",
   contextEvidence: "available",
@@ -245,6 +272,13 @@ interface StatusParts {
   executionState: ExecutionState;
   workState: WorkState;
   operatorStopped: boolean;
+  observerPaused: boolean;
+  restored: boolean;
+  checkpointRevision: string;
+  detailProfile: DetailProfile;
+  controlState: "unavailable" | "healthy" | "restored" | "degraded" | "conflict";
+  controlRevision: number;
+  controlErrorCode: string | null;
   hostVersion: string;
   hostMode: string;
   resolved: ResolvedConfiguration;
@@ -269,9 +303,15 @@ function buildStatus(parts: StatusParts): EngineStatus {
       hostMode: parts.hostMode,
       executionState: parts.executionState,
       workState: parts.workState,
-      restored: false,
-      checkpointRevision: CHECKPOINT_REVISION,
+      restored: parts.restored,
+      checkpointRevision: parts.checkpointRevision,
       operatorStopped: parts.operatorStopped,
+      observerPaused: parts.observerPaused,
+      control: {
+        state: parts.controlState,
+        revision: parts.controlRevision,
+        errorCode: parts.controlErrorCode,
+      },
       accountingCoverage: "complete",
     },
     configuration: {
@@ -300,7 +340,7 @@ function buildStatus(parts: StatusParts): EngineStatus {
     registry: { packages: parts.registry },
     journal: parts.journal,
     diagnostics: {
-      detail: "standard",
+      detail: parts.detailProfile,
       capture: "none",
       historyRecords: parts.history?.recordCount ?? 0,
       historyBytes: parts.history?.byteLength ?? 0,
@@ -335,6 +375,8 @@ interface ActiveRun {
   startedAt: string;
   startedMonoMs: number;
   configRevision: string;
+  configuredTimeoutMs: number;
+  timedOut: boolean;
 }
 
 interface SettledAssessment {
@@ -415,6 +457,45 @@ interface CheckRuntimeState {
   lastAdmittedMonoMs: number | null;
 }
 
+/**
+ * Session-scoped physical operation accounting. Logical retirement does not
+ * prove remote termination, so reservations are released only when the
+ * physical evaluator promise actually settles. A release wakes the current
+ * generation's pending checks so capacity is not silently stranded.
+ */
+export class SessionPhysicalState {
+  readonly #owned = new Map<object, number>();
+  #current: { owner: object; notify: () => void } | null = null;
+
+  reserve(owner: object): void {
+    this.#owned.set(owner, (this.#owned.get(owner) ?? 0) + 1);
+  }
+
+  release(owner: object): void {
+    const count = this.#owned.get(owner) ?? 0;
+    if (count > 1) this.#owned.set(owner, count - 1);
+    else this.#owned.delete(owner);
+    this.#current?.notify();
+  }
+
+  /** Physical operations owned by other generations of the same session. */
+  othersInFlight(owner: object): number {
+    let total = 0;
+    for (const [key, value] of this.#owned) {
+      if (key !== owner) total += value;
+    }
+    return total;
+  }
+
+  setCurrent(owner: object, notify: () => void): void {
+    this.#current = { owner, notify };
+  }
+
+  clearCurrent(owner: object): void {
+    if (this.#current?.owner === owner) this.#current = null;
+  }
+}
+
 export class EngineSession {
   static async start(input: EngineSessionInput & { hostIdleAtStart: boolean }): Promise<EngineSession> {
     const loaded = await loadEffectiveConfiguration({
@@ -428,7 +509,7 @@ export class EngineSession {
   }
 
   readonly #input: EngineSessionInput;
-  readonly #configuration: ResolvedConfiguration;
+  #configuration: ResolvedConfiguration;
   readonly #rejection: ConfigurationRejection | null;
   readonly #history: DiagnosticHistory;
   readonly #store: ObservationStore;
@@ -436,9 +517,19 @@ export class EngineSession {
   readonly #scheduler: Scheduler;
   readonly #registry: ComponentRegistry;
   #journal: SessionJournal | null = null;
-  #journalFailureReported = false;
-  readonly #generation = `gen-${++generationCounter}`;
+  #journalFailure: { reasonCode: string } | null = null;
+  #control: ControlCheckpoint | null = null;
+  #controlRestored = false;
+  #controlDegraded = false;
+  #controlErrorCode: string | null = null;
+  #controlRevision = 0;
+  #controlOwned = true;
+  #paused = false;
+  readonly #physicalState: SessionPhysicalState;
+  readonly #runTimers = new Map<string, () => void>();
+  readonly #generation = `gen-${generationSeed}${++generationCounter}`;
   readonly #startedAt: string;
+  readonly #hostIdleAtStart: boolean;
   #retiredAt: string | null = null;
   #state: "active" | "retired" = "active";
   #scope: Scope;
@@ -464,9 +555,12 @@ export class EngineSession {
     rejection: ConfigurationRejection | null,
   ) {
     this.#input = { ...input };
+    this.#hostIdleAtStart = hostIdleAtStart;
     this.#configuration = configuration;
     this.#rejection = rejection;
     this.#clock = input.clock ?? systemClock();
+    this.#physicalState = input.physicalState ?? new SessionPhysicalState();
+    this.#physicalState.setCurrent(this, () => this.notifyPhysicalCapacityReleased());
     this.#startedAt = nowIso(this.#clock);
     this.#acceptedIdentities.add(configuration.revision);
     this.#scope = {
@@ -484,14 +578,18 @@ export class EngineSession {
       configRevision: configuration.revision,
       dataPolicyRevision: DATA_POLICY_REVISION,
       ownerId: RUNTIME_OWNER_ID,
+      currentScope: () => this.#store.view().scope,
     }, {
       maxEvents: configuration.value.observability.recentHistory.maxEvents,
       maxBytes: configuration.value.observability.recentHistory.maxBytes,
       maxRecordBytes: DEFAULT_MAX_RECORD_BYTES,
+      detail: configuration.value.observability.detail,
     });
     this.#scheduler = new Scheduler(this.#clock, {
       onTriggerDue: due => this.#handleTriggerDue(due),
-      onAdmissionDue: checkId => this.#attemptAdmission(checkId),
+      onAdmissionDue: checkId => void this.#attemptAdmission(checkId),
+      onClockResynchronized: data => this.#emitClockResynchronized(data),
+      onDeadline: data => this.#emitTriggerDeadline(data),
       onTriggerDisabled: (checkId, _bindingId, componentId, reasonCode) => {
         this.#noteSuppressed(reasonCode);
         this.#emit({
@@ -521,65 +619,6 @@ export class EngineSession {
       acceptsReference: reference => this.#acceptsReference(reference),
     });
 
-    if (rejection !== null) {
-      this.#emit({
-        event: "quality.config.rejected",
-        level: "warn",
-        reasonCodes: [],
-        data: {
-          candidateRevision: rejection.candidateRevision,
-          fieldPaths: [rejection.error.field ?? "$"],
-          errorCodes: [rejection.error.code],
-          runtimeUnchanged: true,
-        },
-      });
-    }
-    if (configuration.value.enabled && configuration.value.observability.journal.enabled) {
-      try {
-        this.#journal = SessionJournal.open({
-          directory: join(input.agentDir, "quality", "logs"),
-          observedSessionId: input.observedSessionId,
-          writerGeneration: this.#generation,
-          maxFileBytes: configuration.value.observability.journal.maxFileBytes,
-          recordPolicyRevision: configuration.revision,
-        });
-      } catch {
-        this.#journal = null;
-      }
-    }
-    if (this.#journal !== null) {
-      this.#emit({
-        event: "quality.journal.opened",
-        level: "info",
-        reasonCodes: [],
-        data: {
-          logicalJournalId: this.#journal.logicalJournalId,
-          segmentOrdinal: 0,
-          writerGeneration: this.#generation,
-          previousSegmentOrdinal: null,
-          openReason: "session-start",
-          previousTailState: this.#journal.previousTailState,
-          recordPolicyRevision: this.#configuration.revision,
-        },
-      });
-    }
-    this.#emit({
-      event: "quality.runtime.started",
-      level: "info",
-      reasonCodes: [],
-      data: {
-        engineVersion: ENGINE_VERSION,
-        engineBuildRef: ENGINE_BUILD_REF,
-        hostVersion: input.hostVersion,
-        hostMode: input.hostMode,
-        restored: false,
-        checkpointRevision: CHECKPOINT_REVISION,
-        executionState: observedExecutionState(hostIdleAtStart),
-        workState: input.controlState?.operatorStopped === true ? "waiting-operator" : "unknown",
-        operatorStopped: input.controlState?.operatorStopped === true,
-        accountingCoverage: "complete",
-      },
-    });
   }
 
   get generation(): string {
@@ -598,7 +637,248 @@ export class EngineSession {
   // Activation
   // -------------------------------------------------------------------------
 
+  async #openCheckpoint(): Promise<void> {
+    const opened = await ControlCheckpoint.open({
+      agentDir: this.#input.agentDir,
+      observedSessionId: this.#input.observedSessionId,
+      ownerGeneration: this.#generation,
+      configurationRevision: this.#configuration.revision,
+      clock: this.#clock,
+    });
+    this.#control = opened.checkpoint;
+    this.#controlOwned = opened.owned;
+    this.#controlRestored = opened.restored;
+    this.#controlDegraded = opened.degraded;
+    this.#controlErrorCode = opened.errorCode;
+    this.#paused = opened.observerPaused || this.#input.controlState?.observerPaused === true;
+    if (opened.operatorStopped || this.#input.controlState?.operatorStopped === true) this.#store.markOperatorStopped();
+    if (this.#paused) this.#store.markObserverPaused(true);
+    // Restore the actual accepted authority revision so current diagnostic
+    // scope and the protected checkpoint agree instead of recreating auth-0.
+    if (opened.authorizationRevision !== null) this.#store.restoreAuthorizationRevision(opened.authorizationRevision);
+    this.#control.setLocalState({
+      operatorStopped: this.#store.operatorStopped,
+      observerPaused: this.#paused,
+      authorizationRevision: this.#store.view().scope.authorizationRevision,
+    });
+    this.#controlRevision = opened.checkpoint.revision;
+    if (opened.degraded) {
+      this.#emit({
+        event: "quality.control.checkpoint",
+        level: "warn",
+        reasonCodes: [opened.errorCode ?? "core.control-degraded"],
+        data: {
+          revision: this.#controlRevision,
+          outcome: "failed",
+          serializedBytes: 0,
+          durationMs: 0,
+          protectedStateRef: opened.checkpoint.protectedStateRef,
+        },
+      });
+    }
+  }
+
+  async #openJournal(): Promise<void> {
+    if (!this.#configuration.value.enabled || !this.#configuration.value.observability.journal.enabled) return;
+    const journalSettings = this.#configuration.value.observability.journal;
+    const opened = await SessionJournal.open({
+      directory: this.#resolveJournalDirectory(journalSettings.directory),
+      observedSessionId: this.#input.observedSessionId,
+      writerGeneration: this.#generation,
+      recordPolicyRevision: this.#configuration.revision,
+      maxFileBytes: journalSettings.maxFileBytes,
+      rotationIntervalMs: journalSettings.rotationIntervalMs,
+      compressArchives: journalSettings.compressArchives,
+      retention: this.#configuration.value.observability.retention,
+      maxPendingRecords: 256,
+      maxPendingBytes: 1_048_576,
+      closeTimeoutMs: this.#configuration.value.runtime.componentStopTimeoutMs,
+      clock: this.#clock,
+      emit: (kind, data) => this.#handleJournalEvent(kind, data),
+      attach: journal => {
+        // Assign the destination before first-opening/startup evidence is
+        // projected so those required records reach the physical stream.
+        this.#journal = journal;
+        this.#journalFailure = null;
+      },
+    });
+    if (!opened.ok) {
+      this.#journal = null;
+      this.#journalFailure = { reasonCode: opened.error.code };
+      return;
+    }
+    this.#journal = opened.value;
+    this.#journalFailure = null;
+  }
+
+  #resolveJournalDirectory(directory: string): string {
+    if (directory.startsWith("agent:")) {
+      return join(this.#input.agentDir, directory.slice("agent:".length));
+    }
+    return directory;
+  }
+
+  #handleJournalEvent<K extends keyof JournalEvent>(kind: K, data: JournalEvent[K]): void {
+    if (kind === "opened") {
+      this.#emit({
+        event: "quality.journal.opened",
+        level: "info",
+        reasonCodes: [],
+        data: data as unknown as JsonObject,
+      }, false, true);
+      return;
+    }
+    const writable = this.#journal !== null
+      && (this.#journal.state === "healthy" || this.#journal.state === "degraded");
+    if (kind === "preclose") {
+      const pre = data as JournalEvent["preclose"];
+      // A pre-close marker reports only the bytes/records known before the
+      // marker; the actual close outcome is retained in history separately.
+      this.#emit({
+        event: "quality.journal.closed",
+        level: "info",
+        reasonCodes: [],
+        data: {
+          logicalJournalId: this.#journal?.logicalJournalId ?? "journal",
+          segmentOrdinal: pre.segmentOrdinal,
+          closeReason: "session-close",
+          recordCount: pre.recordCount,
+          serializedBytes: pre.serializedBytes,
+          flushState: "written",
+          historyCoverage: pre.historyCoverage,
+        },
+      }, !writable, true);
+      return;
+    }
+    if (kind === "closed") {
+      const closed = data as JournalEvent["closed"];
+      this.#emit({
+        event: "quality.journal.closed",
+        level: closed.flushState === "written" ? "info" : "warn",
+        reasonCodes: [],
+        data: closed as unknown as JsonObject,
+      }, !writable, true);
+      return;
+    }
+    if (kind === "rotation") {
+      const rotation = data as JournalEvent["rotation"];
+      this.#emit({
+        event: "quality.journal.rotation",
+        level: rotation.outcome === "completed" ? "info" : "warn",
+        reasonCodes: [],
+        data: data as unknown as JsonObject,
+      }, !writable, true);
+      return;
+    }
+    if (kind === "retention") {
+      this.#emit({
+        event: "quality.retention.sweep",
+        level: "info",
+        reasonCodes: [],
+        data: data as unknown as JsonObject,
+      }, !writable, true);
+      return;
+    }
+    if (kind === "health") {
+      const health = data as JournalEvent["health"];
+      // A transition into degradation is a material failure and is written
+      // once; recursion is bounded by the journal's own state-change guard.
+      this.#emit({
+        event: "quality.sink.health",
+        level: health.state === "healthy" ? "info" : "warn",
+        reasonCodes: [health.reasonCode],
+        data: health as unknown as JsonObject,
+      }, !writable || (health.previousState !== "healthy" && health.state !== "healthy"), true);
+      if (health.lostRecords > 0) {
+        this.#emit({
+          event: "quality.diagnostic.gap",
+          level: "warn",
+          reasonCodes: [health.reasonCode],
+          data: {
+            sinkId: health.sinkId,
+            firstLostSequence: null,
+            lastLostSequence: null,
+            lostCount: health.lostRecords,
+            byEventFamily: {},
+            cause: health.reasonCode,
+            exact: false,
+          },
+        }, !writable, true);
+      }
+      return;
+    }
+    const gap = data as JournalEvent["gap"];
+    this.#emit({
+      event: "quality.diagnostic.gap",
+      level: "warn",
+      reasonCodes: [gap.cause],
+      data: gap as unknown as JsonObject,
+    }, !writable, true);
+  }
+
+  #historyOnly(input: Parameters<DiagnosticHistory["append"]>[0]): void {
+    if (this.#state !== "active") return;
+    this.#history.append(input);
+  }
+
+  #emitStartupRecords(): void {
+    if (this.#rejection !== null) {
+      this.#emit({
+        event: "quality.config.rejected",
+        level: "warn",
+        reasonCodes: [],
+        data: {
+          candidateRevision: this.#rejection.candidateRevision,
+          fieldPaths: [this.#rejection.error.field ?? "$"],
+          errorCodes: [this.#rejection.error.code],
+          runtimeUnchanged: true,
+        },
+      });
+    }
+    if (this.#journalFailure !== null) {
+      this.#historyOnly({
+        event: "quality.sink.health",
+        level: "warn",
+        reasonCodes: [this.#journalFailure.reasonCode],
+        data: {
+          sinkId: "journal",
+          previousState: "healthy",
+          state: "failed",
+          queuedRecords: 0,
+          queuedBytes: 0,
+          lostRecords: 0,
+          reasonCode: this.#journalFailure.reasonCode,
+        },
+      });
+    }
+    this.#emit({
+      event: "quality.runtime.started",
+      level: "info",
+      reasonCodes: [],
+      data: {
+        engineVersion: ENGINE_VERSION,
+        engineBuildRef: ENGINE_BUILD_REF,
+        hostVersion: this.#input.hostVersion,
+        hostMode: this.#input.hostMode,
+        restored: this.#controlRestored,
+        checkpointRevision: this.#checkpointRevision(),
+        executionState: observedExecutionState(this.#hostIdleAtStart),
+        workState: this.#store.view().work,
+        operatorStopped: this.#store.operatorStopped,
+        accountingCoverage: "complete",
+      },
+    });
+  }
+
+  #checkpointRevision(): string {
+    if (this.#control === null) return CHECKPOINT_REVISION;
+    return `control-${this.#controlRevision}`;
+  }
+
   async #activate(): Promise<void> {
+    await this.#openCheckpoint();
+    await this.#openJournal();
+    this.#emitStartupRecords();
     if (!this.#configuration.value.enabled) {
       this.#emit({
         event: "quality.config.applied",
@@ -624,6 +904,11 @@ export class EngineSession {
       components: [
         everyToolsTrigger,
         periodicTrigger,
+        inactivityTrigger,
+        noProgressTrigger,
+        waitDeadlineTrigger,
+        evidenceChangeTrigger,
+        beforeCompletionTrigger,
         taskProvider,
         historyProvider,
         waitsProvider,
@@ -658,7 +943,7 @@ export class EngineSession {
     return [...this.#checkStates.values()].filter(state => state.state === "active").length;
   }
 
-  #activateChecks(): void {
+  #activateChecks(force = false): void {
     for (const [checkId, check] of Object.entries(this.#configuration.value.checks)) {
       const existing = this.#checkStates.get(checkId);
       if (!check.enabled) {
@@ -679,7 +964,7 @@ export class EngineSession {
         });
         continue;
       }
-      if (existing?.state === "active") continue;
+      if (existing?.state === "active" && !force) continue;
       this.#acceptIdentity(checkId);
       this.#checkStates.set(checkId, {
         checkId, state: "active", missing: [], runs: existing?.runs ?? 0,
@@ -723,6 +1008,26 @@ export class EngineSession {
       if (!this.#registry.resolve(trigger.use, trigger.options).ok) missing.push(`trigger:${checkId}:${trigger.id}`);
     }
     return missing;
+  }
+
+  #emitClockResynchronized(data: Parameters<NonNullable<SchedulerHost["onClockResynchronized"]>>[0]): void {
+    if (this.#state !== "active") return;
+    this.#emit({
+      event: "quality.clock.resynchronized",
+      level: "info",
+      reasonCodes: [],
+      data: { ...data },
+    });
+  }
+
+  #emitTriggerDeadline(data: Parameters<NonNullable<SchedulerHost["onDeadline"]>>[0]): void {
+    if (this.#state !== "active") return;
+    this.#emit({
+      event: "quality.trigger.deadline",
+      level: "info",
+      reasonCodes: [data.reasonCode],
+      data: { ...data },
+    });
   }
 
   #emitComponentNote(note: ComponentNoteData): void {
@@ -891,6 +1196,18 @@ export class EngineSession {
         facts: { cycleId: event.cycleId, toolOperationIds: event.operationIds },
         evidenceIds: [],
       });
+    } else if (event.type === "completion-boundary") {
+      // The host publishes the completion boundary; the engine does not infer
+      // "done" from silence or from its own assessment. The C1 facts carry
+      // explicit actionability and no raw host reason string.
+      this.#publish(this.#primarySource(), {
+        externalId: `boundary:${event.boundaryId}`,
+        kind: "core.completion-boundary",
+        occurredAt: event.occurredAt,
+        visibility: "complete",
+        facts: { boundaryId: event.boundaryId, actionable: event.actionable },
+        evidenceIds: [],
+      });
     }
     const work = this.#store.view().work;
     if (work !== previousWork) {
@@ -906,6 +1223,157 @@ export class EngineSession {
     this.#store.markOperatorStopped();
     if (this.#input.controlState !== undefined) this.#input.controlState.operatorStopped = true;
     this.#emitRuntimeState(previousWork);
+    // Stop takes effect immediately in memory; the protected checkpoint is the
+    // durable copy that survives reload and journal changes.
+    void this.#commitControl();
+  }
+
+  /** Observer pause is engine authority; it never clears stop. */
+  requestOperatorPause(): void {
+    if (this.#state !== "active" || this.#paused) return;
+    const previousWork = this.#store.view().work;
+    this.#paused = true;
+    this.#store.markObserverPaused(true);
+    if (this.#input.controlState !== undefined) this.#input.controlState.observerPaused = true;
+    this.#emitRuntimeState(previousWork);
+    void this.#commitControl();
+  }
+
+  requestOperatorResume(): void {
+    if (this.#state !== "active" || !this.#paused) return;
+    const previousWork = this.#store.view().work;
+    this.#paused = false;
+    this.#store.markObserverPaused(false);
+    if (this.#input.controlState !== undefined) this.#input.controlState.observerPaused = false;
+    this.#emitRuntimeState(previousWork);
+    void this.#commitControl();
+  }
+
+  /**
+   * Failed-apply atomicity: an invalid candidate leaves the accepted
+   * configuration active; a valid candidate is applied as one step.
+   */
+  async reloadConfiguration(): Promise<{ ok: boolean; errorCode: string | null }> {
+    if (this.#state !== "active") return { ok: false, errorCode: "core.retired-generation" };
+    const loaded = await loadEffectiveConfiguration({
+      agentDir: this.#input.agentDir,
+      projectConfigDir: this.#input.projectConfigDir,
+      projectTrusted: this.#input.projectTrusted,
+    });
+    if (loaded.rejection !== null) {
+      this.#emit({
+        event: "quality.config.rejected",
+        level: "warn",
+        reasonCodes: [],
+        data: {
+          candidateRevision: loaded.rejection.candidateRevision,
+          fieldPaths: [loaded.rejection.error.field ?? "$"],
+          errorCodes: [loaded.rejection.error.code],
+          runtimeUnchanged: true,
+        },
+      });
+      return { ok: false, errorCode: loaded.rejection.error.code };
+    }
+    const previous = this.#configuration;
+    const changedFieldPaths = this.#changedFieldPaths(previous, loaded.resolved);
+    const destinationChanged = previous.value.observability.journal.directory !== loaded.resolved.value.observability.journal.directory
+      || previous.value.observability.journal.enabled !== loaded.resolved.value.observability.journal.enabled
+      || previous.value.enabled !== loaded.resolved.value.enabled;
+    this.#configuration = loaded.resolved;
+    this.#control?.setLocalState({
+      operatorStopped: this.#store.operatorStopped,
+      observerPaused: this.#paused,
+      configurationRevision: loaded.resolved.revision,
+    });
+    await this.#commitControl();
+    if (destinationChanged) await this.#reloadJournal();
+    this.#rebindChecks();
+    this.#emit({
+      event: "quality.config.applied",
+      level: "info",
+      reasonCodes: [],
+      data: {
+        configRevision: loaded.resolved.revision,
+        previousRevision: previous.revision,
+        dataPolicyRevision: DATA_POLICY_REVISION,
+        changedFieldPaths,
+        captureWidened: false,
+        destinationChanged,
+        activeCheckCount: this.#activeCheckCount(),
+      },
+    });
+    return { ok: true, errorCode: null };
+  }
+
+  #changedFieldPaths(previous: ResolvedConfiguration, next: ResolvedConfiguration): string[] {
+    const paths: string[] = [];
+    const sections = ["enabled", "mode", "runtime", "permissions", "prompts", "contexts", "evaluators", "policies", "checks"] as const;
+    for (const section of sections) {
+      if (JSON.stringify(previous.value[section]) !== JSON.stringify(next.value[section])) paths.push(`$.${section}`);
+    }
+    for (const key of ["detail", "capture", "recentHistory", "journal", "retention"] as const) {
+      if (JSON.stringify(previous.value.observability[key]) !== JSON.stringify(next.value.observability[key])) {
+        paths.push(`$.observability.${key}`);
+      }
+    }
+    return paths;
+  }
+
+  async #reloadJournal(): Promise<void> {
+    if (this.#journal !== null) {
+      const closed = await this.#journal.close("configuration-reload");
+      this.#historyOnly({
+        event: "quality.journal.closed",
+        level: closed.flushState === "written" ? "info" : "warn",
+        reasonCodes: [],
+        data: {
+          logicalJournalId: this.#journal.logicalJournalId,
+          segmentOrdinal: this.#journal.status.activeSegment,
+          closeReason: "configuration-reload",
+          recordCount: closed.segmentRecordCount,
+          serializedBytes: closed.segmentBytes,
+          flushState: closed.flushState,
+          historyCoverage: closed.historyCoverage,
+        },
+      });
+      this.#journal = null;
+    }
+    this.#journalFailure = null;
+    await this.#openJournal();
+  }
+
+  #rebindChecks(): void {
+    this.#scheduler.clear();
+    this.#pendingIntents.clear();
+    this.#activateChecks(true);
+  }
+
+  async #commitControl(): Promise<boolean> {
+    if (this.#control === null) return true;
+    if (!this.#controlOwned) return true;
+    this.#control.setLocalState({
+      operatorStopped: this.#store.operatorStopped,
+      observerPaused: this.#store.view().observerPaused,
+      authorizationRevision: this.#store.view().scope.authorizationRevision,
+      configurationRevision: this.#configuration.revision,
+    });
+    const outcome = await this.#control.commit();
+    this.#controlRevision = outcome.revision;
+    this.#controlDegraded = !outcome.ok;
+    this.#controlErrorCode = outcome.errorCode;
+    this.#emit({
+      event: "quality.control.checkpoint",
+      level: outcome.ok ? "info" : "warn",
+      reasonCodes: outcome.ok ? [] : [outcome.errorCode ?? "core.control-checkpoint-commit-failed"],
+      data: {
+        revision: outcome.revision,
+        outcome: outcome.ok ? "committed" : "failed",
+        serializedBytes: outcome.serializedBytes,
+        durationMs: Math.round(outcome.durationMs * 1000) / 1000,
+        protectedStateRef: this.#control.protectedStateRef,
+      },
+    });
+    return outcome.ok;
   }
 
   #publish(source: ObservationSource, draft: Parameters<ObservationStore["publish"]>[1], parentOperationId: string | null = null): void {
@@ -1036,7 +1504,7 @@ export class EngineSession {
     return intent;
   }
 
-  #attemptAdmission(checkId: string): void {
+  async #attemptAdmission(checkId: string): Promise<void> {
     if (this.#state !== "active") return;
     const check = this.#configuration.value.checks[checkId];
     const pending = this.#pendingIntents.get(checkId);
@@ -1052,11 +1520,37 @@ export class EngineSession {
       this.#admit(checkId, "skipped", [state?.state === "disabled" ? "core.check-disabled" : "core.waiting-for-component"], pending);
       return;
     }
+    if (!this.#controlOwned) {
+      // A second live owner for the same logical session stays inspect-only
+      // even when the optional diagnostic journal is disabled. This is the
+      // most precise reason, so it is reported before stop/pause gates.
+      this.#noteSuppressed("core.control-owner-conflict");
+      this.#admit(checkId, "denied", ["core.control-owner-conflict"], pending);
+      this.#pendingIntents.delete(checkId);
+      return;
+    }
     if (this.#store.operatorStopped) {
       this.#noteSuppressed("core.operator-stopped");
       this.#admit(checkId, "denied", ["core.operator-stopped"], pending);
       this.#pendingIntents.delete(checkId);
       return;
+    }
+    if (this.#paused || this.#store.view().observerPaused) {
+      this.#noteSuppressed("core.observer-paused");
+      this.#admit(checkId, "denied", ["core.observer-paused"], pending);
+      this.#pendingIntents.delete(checkId);
+      return;
+    }
+    if (this.#controlDegraded) {
+      // A failed control checkpoint suspends dependent autonomous admission;
+      // diagnostics, status and the primary session stay independent.
+      const recovered = await this.#commitControl();
+      if (!recovered) {
+        this.#noteSuppressed("core.control-degraded");
+        this.#admit(checkId, "denied", [this.#controlErrorCode ?? "core.control-degraded"], pending);
+        this.#pendingIntents.delete(checkId);
+        return;
+      }
     }
     if (!check.workStates.includes(this.#store.view().work)) {
       // Count and time reasons still respect the check's work-state eligibility.
@@ -1066,6 +1560,7 @@ export class EngineSession {
       return;
     }
     if (this.#activeRuns.has(checkId)) {
+      this.#noteSuppressed("core.run-active");
       this.#admit(checkId, "coalesced", ["core.run-active"], pending, this.#activeRuns.get(checkId)?.runId ?? null);
       return;
     }
@@ -1085,7 +1580,7 @@ export class EngineSession {
       return;
     }
     const maxConcurrent = this.#configuration.value.runtime.maxConcurrentEvaluations;
-    if (this.#activeRuns.size >= maxConcurrent) {
+    if (this.#activeRuns.size + this.#physicalState.othersInFlight(this) >= maxConcurrent) {
       this.#noteSuppressed("core.capacity");
       this.#admit(checkId, "queued", ["core.capacity"], pending);
       return;
@@ -1144,7 +1639,12 @@ export class EngineSession {
       startedAt: nowIso(this.#clock),
       startedMonoMs: this.#clock.nowMonoMs(),
       configRevision: this.#configuration.revision,
+      configuredTimeoutMs: check.timeoutMs ?? this.#configuration.value.runtime.defaultRunTimeoutMs,
+      timedOut: false,
     };
+    this.#physicalState.reserve(this);
+    const timeoutCancel = this.#clock.setTimer(run.configuredTimeoutMs, () => this.#timeoutRun(run.runId));
+    this.#runTimers.set(run.runId, timeoutCancel);
     this.#acceptIdentity(runId);
     this.#acceptIdentity(pending.intentId);
     this.#activeRuns.set(checkId, run);
@@ -1160,7 +1660,7 @@ export class EngineSession {
         intentRefs: [...run.intentRefs],
         evaluatorProfileId: check.evaluator,
         policyId: check.policy,
-        configuredTimeoutMs: check.timeoutMs ?? this.#configuration.value.runtime.defaultRunTimeoutMs,
+        configuredTimeoutMs: run.configuredTimeoutMs,
         queueWaitMs: Math.max(0, run.startedMonoMs - Date.parse(pending.firstDueAt)),
         mode: "observe",
       },
@@ -1171,7 +1671,10 @@ export class EngineSession {
 
   async #executeRun(run: ActiveRun, check: CheckDefinition): Promise<void> {
     const context = await this.#assemble(run, check);
-    if (this.#state !== "active") return;
+    if (this.#state !== "active") {
+      this.#physicalState.release(this);
+      return;
+    }
     if (!context.ok) {
       this.#settleRun(run, {
         result: invalidAssessmentResult(context.error.code),
@@ -1224,7 +1727,10 @@ export class EngineSession {
       correlation: { runId: run.runId },
     });
     const settled = await this.#evaluate(run, check, assembled);
-    if (this.#state !== "active") return;
+    if (this.#state !== "active") {
+      this.#physicalState.release(this);
+      return;
+    }
     this.#settleRun(run, settled);
   }
 
@@ -1610,9 +2116,57 @@ export class EngineSession {
     };
   }
 
+  /**
+   * A timed-out evaluator keeps its capacity reservation until it physically
+   * settles; the logical settlement is recorded exactly once, at timeout.
+   */
+  #timeoutRun(runId: string): void {
+    if (this.#state !== "active") return;
+    const run = [...this.#activeRuns.values()].find(candidate => candidate.runId === runId);
+    if (run === undefined || run.timedOut) return;
+    run.timedOut = true;
+    const cancel = this.#runTimers.get(runId);
+    if (cancel !== undefined) cancel();
+    this.#runTimers.delete(runId);
+    const state = this.#checkStates.get(run.checkId);
+    if (state !== undefined) {
+      state.runs += 1;
+      state.lastOutcome = "undetermined";
+    }
+    this.#emit({
+      event: "quality.check.settled",
+      level: "warn",
+      reasonCodes: ["core.run-timeout"],
+      data: {
+        operational: "cancelled",
+        conclusion: "undetermined",
+        coverage: "insufficient",
+        findingCount: 0,
+        actionCount: 0,
+        usageAttemptRefs: [],
+        accountingCoverage: "complete",
+        durationMs: run.configuredTimeoutMs,
+        terminalReason: "core.run-timeout",
+      },
+      correlation: { runId: run.runId },
+    });
+  }
+
   #settleRun(run: ActiveRun, settled: SettledAssessment): void {
+    const cancel = this.#runTimers.get(run.runId);
+    if (cancel !== undefined) cancel();
+    this.#runTimers.delete(run.runId);
+    if (run.timedOut) {
+      // Physical settlement after the logical timeout releases the reserved
+      // capacity exactly once; no second settlement record is emitted.
+      this.#activeRuns.delete(run.checkId);
+      this.#physicalState.release(this);
+      this.#wakePendingAdmissions();
+      return;
+    }
     const durationMs = Math.max(0, this.#clock.nowMonoMs() - run.startedMonoMs);
     this.#activeRuns.delete(run.checkId);
+    this.#physicalState.release(this);
     const state = this.#checkStates.get(run.checkId);
     if (state !== undefined) {
       state.runs += 1;
@@ -1635,7 +2189,20 @@ export class EngineSession {
       },
       correlation: { runId: run.runId },
     });
-    if (this.#pendingIntents.has(run.checkId)) this.#attemptAdmission(run.checkId);
+    this.#wakePendingAdmissions();
+  }
+
+  /** Gives already queued checks a finite autonomous opportunity after release. */
+  #wakePendingAdmissions(): void {
+    if (this.#state !== "active") return;
+    for (const checkId of [...this.#pendingIntents.keys()]) {
+      void this.#attemptAdmission(checkId);
+    }
+  }
+
+  /** Called by the shared session reservation state when physical work settles. */
+  notifyPhysicalCapacityReleased(): void {
+    this.#wakePendingAdmissions();
   }
 
   #evidenceAccess(): EvidenceAccess {
@@ -1660,27 +2227,14 @@ export class EngineSession {
   // Diagnostics
   // -------------------------------------------------------------------------
 
-  #emit(input: Parameters<DiagnosticHistory["append"]>[0], historyOnly = false): DiagnosticRecordV1 | undefined {
+  #emit(input: Parameters<DiagnosticHistory["append"]>[0], historyOnly = false, lifecycle = false): DiagnosticRecordV1 | undefined {
     const record = this.#history.append(input);
     if (record === undefined || this.#journal === null || historyOnly) return record;
-    const written = this.#journal.write(record);
-    if (!written.written && !this.#journalFailureReported) {
-      this.#journalFailureReported = true;
-      this.#history.append({
-        event: "quality.sink.health",
-        level: "warn",
-        reasonCodes: [written.reasonCode ?? "journal-write-failed"],
-        data: {
-          sinkId: this.#journal.logicalJournalId,
-          previousState: "healthy",
-          state: "failed",
-          queuedRecords: 0,
-          queuedBytes: 0,
-          lostRecords: this.#journal.status.lostRecords,
-          reasonCode: written.reasonCode ?? "journal-write-failed",
-        },
-      });
-    }
+    // The journal owns its bounded queue and reports health/loss through
+    // JournalEvent, so emission here never recurses or throws. Lifecycle
+    // records are bounded evidence and never a rotation cause themselves.
+    if (lifecycle) this.#journal.writeLifecycle(record);
+    else this.#journal.write(record);
     return record;
   }
 
@@ -1689,63 +2243,56 @@ export class EngineSession {
   // -------------------------------------------------------------------------
 
   /** Idempotent logical retirement: revokes admission first, then disposes. */
-  retire(cause: string): void {
+  async retire(cause: string): Promise<void> {
     if (this.#state === "retired") return;
     this.#state = "retired";
     this.#retiredAt = nowIso(this.#clock);
+    this.#physicalState.clearCurrent(this);
     this.#scheduler.dispose();
     this.#pendingIntents.clear();
     this.#registry.retire();
-    void this.#registry.disposeAll();
-    if (this.#journal !== null) {
-      // The retirement record still belongs to the logical segment; the actual
-      // close outcome is reported separately by journal.closed.
-      const predicted = this.#journal.state === "healthy" ? "written" : "failed";
-      this.#emit({
-        event: "quality.runtime.retired",
-        level: "info",
-        reasonCodes: [],
-        data: {
-          cause: normalizeRetireCause(cause),
-          unsettledOperations: 0,
-          unresolvedAttempts: 0,
-          pendingActions: 0,
-          checkpointRevision: CHECKPOINT_REVISION,
-          journalFlushState: predicted,
-        },
-      });
-      const closed = this.#journal.close();
-      // The closed segment cannot contain its own close record; it goes to the
-      // retained history (and any future sinks) only.
-      this.#history.append({
-        event: "quality.journal.closed",
-        level: closed.flushState === "written" ? "info" : "warn",
-        reasonCodes: [],
-        data: {
-          logicalJournalId: this.#journal.logicalJournalId,
-          segmentOrdinal: 0,
-          closeReason: normalizeRetireCause(cause),
-          recordCount: closed.recordCount,
-          serializedBytes: closed.serializedBytes,
-          flushState: closed.flushState,
-          historyCoverage: this.#journal.status.lostRecords === 0 ? "complete" : "partial",
-        },
-      });
-      return;
-    }
+    const registryDisposal = this.#registry.disposeAll();
+    for (const cancel of this.#runTimers.values()) cancel();
+    this.#runTimers.clear();
+    const unsettledOperations = this.#activeRuns.size;
+    const journalFlushState: "written" | "failed" | "disabled" = this.#journal === null
+      ? (this.#journalFailure === null ? "disabled" : "failed")
+      : (this.#journal.state === "healthy" ? "written" : "failed");
     this.#emit({
       event: "quality.runtime.retired",
       level: "info",
       reasonCodes: [],
       data: {
         cause: normalizeRetireCause(cause),
-        unsettledOperations: 0,
+        unsettledOperations,
         unresolvedAttempts: 0,
         pendingActions: 0,
-        checkpointRevision: CHECKPOINT_REVISION,
-        journalFlushState: "disabled",
+        checkpointRevision: this.#checkpointRevision(),
+        journalFlushState,
       },
     });
+    if (this.#journal !== null) {
+      const journal = this.#journal;
+      const closed = await journal.close(normalizeRetireCause(cause));
+      this.#history.append({
+        event: "quality.journal.closed",
+        level: closed.flushState === "written" ? "info" : "warn",
+        reasonCodes: [],
+        data: {
+          logicalJournalId: journal.logicalJournalId,
+          segmentOrdinal: journal.status.activeSegment,
+          closeReason: normalizeRetireCause(cause),
+          recordCount: closed.segmentRecordCount,
+          serializedBytes: closed.segmentBytes,
+          flushState: closed.flushState,
+          historyCoverage: closed.historyCoverage,
+        },
+      });
+      // The closed journal stays inspectable; it accepts no further records.
+    }
+    await this.#commitControl();
+    if (this.#control !== null) await this.#control.close();
+    await registryDisposal;
   }
 
   status(hostIdle: boolean): EngineStatus {
@@ -1758,6 +2305,17 @@ export class EngineSession {
       executionState: this.#state === "retired" ? "shutdown" : observedExecutionState(hostIdle),
       workState: view.work,
       operatorStopped: view.operatorStopped,
+      observerPaused: view.observerPaused,
+      restored: this.#controlRestored,
+      checkpointRevision: this.#checkpointRevision(),
+      detailProfile: this.#configuration.value.observability.detail,
+      controlState: this.#control === null
+        ? "unavailable"
+        : !this.#controlOwned
+          ? "conflict"
+          : this.#controlDegraded ? "degraded" : this.#controlRestored ? "restored" : "healthy",
+      controlRevision: this.#controlRevision,
+      controlErrorCode: this.#controlErrorCode,
       hostVersion: this.#input.hostVersion,
       hostMode: this.#input.hostMode,
       resolved: this.#configuration,
@@ -1795,8 +2353,27 @@ export class EngineSession {
         rejectedObservations: this.#rejectedObservations,
       },
       registry: this.#registry.inventory(),
-      journal: this.#journal?.status ?? null,
+      journal: this.#journal?.status ?? this.#failedJournalStatus(),
     });
+  }
+
+  #failedJournalStatus(): JournalStatus | null {
+    if (this.#journalFailure === null) return null;
+    return {
+      sinkId: "journal",
+      logicalJournalId: "journal",
+      state: "failed",
+      activeSegment: 0,
+      closedSegments: 0,
+      recordCount: 0,
+      serializedBytes: 0,
+      pendingRecords: 0,
+      pendingBytes: 0,
+      lostRecords: 0,
+      reasonCode: this.#journalFailure.reasonCode,
+      historyCoverage: "partial",
+      lastRotation: null,
+    };
   }
 
   handleRegistryQuery(query: RegistryQuery): void {
@@ -1822,6 +2399,13 @@ export async function inspectInactiveSession(input: EngineSessionInput, hostIdle
     executionState: observedExecutionState(hostIdle),
     workState: "unknown",
     operatorStopped: false,
+    observerPaused: false,
+    restored: false,
+    checkpointRevision: CHECKPOINT_REVISION,
+    detailProfile: "standard",
+    controlState: "unavailable",
+    controlRevision: 0,
+    controlErrorCode: null,
     hostVersion: input.hostVersion,
     hostMode: input.hostMode,
     resolved: loaded.resolved,

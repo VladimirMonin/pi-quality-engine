@@ -56,17 +56,40 @@ export interface SchedulerDue {
   checkId: string;
   bindingId: string;
   componentId: string;
-  basis: "count" | "time";
+  basis: "count" | "time" | "evidence" | "completion";
   reasons: TriggerReason[];
   measurements: TriggerMeasurements;
   firstDueAt: string;
+}
+
+export interface ClockResynchronized {
+  cause: string;
+  overdueBindings: number;
+  coalescedIntents: number;
+  elapsedHistoryKnown: boolean;
+}
+
+export interface TriggerDeadline {
+  checkId: string;
+  bindingId: string;
+  phase: "armed" | "rearmed" | "disarmed";
+  dueMonoMs: number | null;
+  delayMs: number | null;
+  reasonCode: string;
 }
 
 export interface SchedulerHost {
   onTriggerDue(due: SchedulerDue): void;
   onAdmissionDue(checkId: string): void;
   onTriggerDisabled(checkId: string, bindingId: string, componentId: string, reasonCode: string): void;
+  /** Debug-profile timing visibility; optional so small hosts stay valid. */
+  onClockResynchronized?(data: ClockResynchronized): void;
+  /** Trace-profile deadline arm/rearm/disarm visibility; optional. */
+  onDeadline?(data: TriggerDeadline): void;
 }
+
+/** A timer callback later than this is recovered timing, not a normal tick. */
+const RESYNC_THRESHOLD_MS = 1_000;
 
 const MAX_TRIGGER_STATE_KEYS = 64;
 
@@ -166,6 +189,13 @@ export class Scheduler {
     this.#rearm();
   }
 
+  /** Drops every binding and admission deadline without disposing the scheduler. */
+  clear(): void {
+    this.#bindings.clear();
+    this.#admissionDeadlines.clear();
+    this.#rearm();
+  }
+
   /** Clears the owned timer. Trigger bindings and pending intents live in the runtime. */
   dispose(): void {
     this.#disposed = true;
@@ -230,7 +260,13 @@ export class Scheduler {
           checkId: binding.checkId,
           bindingId: binding.bindingId,
           componentId: binding.componentId,
-          basis: binding.componentId === "core.every-tools" ? "count" : "time",
+          basis: binding.componentId === "core.every-tools"
+            ? "count"
+            : binding.componentId === "core.evidence-change"
+              ? "evidence"
+              : binding.componentId === "core.before-completion"
+                ? "completion"
+                : "time",
           reasons: [...next.intent.reasons],
           measurements,
           firstDueAt: utc,
@@ -251,35 +287,72 @@ export class Scheduler {
   #rearm(): void {
     if (this.#disposed) return;
     let target: number | null = null;
-    for (const bindings of this.#bindings.values()) {
+    let targetCheckId = "scheduler";
+    let targetBindingId = "scheduler";
+    for (const [checkId, bindings] of this.#bindings.entries()) {
       for (const binding of bindings) {
         if (binding.nextDueMonoMs === null) continue;
-        target = target === null ? binding.nextDueMonoMs : Math.min(target, binding.nextDueMonoMs);
+        if (target === null || binding.nextDueMonoMs < target) {
+          target = binding.nextDueMonoMs;
+          targetCheckId = checkId;
+          targetBindingId = binding.bindingId;
+        }
       }
     }
-    for (const deadline of this.#admissionDeadlines.values()) {
-      target = target === null ? deadline : Math.min(target, deadline);
+    for (const [checkId, deadline] of this.#admissionDeadlines.entries()) {
+      if (target === null || deadline < target) {
+        target = deadline;
+        targetCheckId = checkId;
+        targetBindingId = "admission";
+      }
     }
     if (target === null) {
       if (this.#timer !== null) {
         this.#timer();
         this.#timer = null;
         this.#timerTargetMonoMs = null;
+        this.#emitDeadline({
+          checkId: targetCheckId,
+          bindingId: targetBindingId,
+          phase: "disarmed",
+          dueMonoMs: null,
+          delayMs: null,
+          reasonCode: "core.deadline-disarmed",
+        });
       }
       return;
     }
     if (this.#timer !== null && this.#timerTargetMonoMs === target) return;
+    const previousTarget = this.#timerTargetMonoMs;
     if (this.#timer !== null) this.#timer();
     this.#timerTargetMonoMs = target;
     const delay = Math.max(0, target - this.#clock.nowMonoMs());
+    this.#emitDeadline({
+      checkId: targetCheckId,
+      bindingId: targetBindingId,
+      phase: previousTarget === null ? "armed" : "rearmed",
+      dueMonoMs: target,
+      delayMs: Math.round(delay),
+      reasonCode: previousTarget === null ? "core.deadline-armed" : "core.deadline-rearmed",
+    });
     this.#timer = this.#clock.setTimer(delay, () => {
+      const scheduledTarget = this.#timerTargetMonoMs;
       this.#timer = null;
       this.#timerTargetMonoMs = null;
-      this.#fire();
+      const latenessMs = scheduledTarget === null ? 0 : Math.max(0, this.#clock.nowMonoMs() - scheduledTarget);
+      this.#fire(latenessMs);
     });
   }
 
-  #fire(): void {
+  #emitDeadline(data: TriggerDeadline): void {
+    try {
+      this.#host.onDeadline?.(data);
+    } catch {
+      // Trace projection must never break scheduling.
+    }
+  }
+
+  #fire(latenessMs: number): void {
     if (this.#disposed) return;
     const nowMonoMs = this.#clock.nowMonoMs();
     const dueCheckIds = new Set<string>();
@@ -288,12 +361,26 @@ export class Scheduler {
         dueCheckIds.add(checkId);
       }
     }
-    for (const checkId of dueCheckIds) {
-      this.#updateBindings(checkId, "deadline", null, this.#viewSource());
-    }
     const admissionDue: string[] = [];
     for (const [checkId, deadline] of this.#admissionDeadlines.entries()) {
       if (deadline <= nowMonoMs) admissionDue.push(checkId);
+    }
+    if (latenessMs >= RESYNC_THRESHOLD_MS && dueCheckIds.size + admissionDue.length > 0) {
+      // Recovered timing (sleep/resume or a delayed callback) is reported once
+      // and coalesced per check instead of replaying every nominal interval.
+      try {
+        this.#host.onClockResynchronized?.({
+          cause: "late-wake",
+          overdueBindings: dueCheckIds.size + admissionDue.length,
+          coalescedIntents: dueCheckIds.size,
+          elapsedHistoryKnown: true,
+        });
+      } catch {
+        // Debug projection must never break scheduling.
+      }
+    }
+    for (const checkId of dueCheckIds) {
+      this.#updateBindings(checkId, "deadline", null, this.#viewSource());
     }
     for (const checkId of admissionDue) {
       this.#admissionDeadlines.delete(checkId);

@@ -3,6 +3,7 @@ import { readdirSync, readFileSync, writeFileSync, mkdirSync, existsSync } from 
 import { execFileSync } from "node:child_process";
 import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { allocateEvidenceDir } from "./evidence-run.mjs";
 
 // Collects complete candidate evidence: every deliverable source/test/script/
 // package file digest, the actual installed host SDK bytes, and the manifest
@@ -10,7 +11,8 @@ import { fileURLToPath } from "node:url";
 // digests describe exactly the tested working tree.
 
 const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const evidenceDir = process.env.QE_EVIDENCE_DIR ?? join(packageRoot, "verification", "K02-repair3");
+const evidenceDir = allocateEvidenceDir();
+console.log(`QE_EVIDENCE_DIR=${evidenceDir}`);
 mkdirSync(evidenceDir, { recursive: true });
 const SKIP_DIRECTORIES = new Set(["node_modules", "dist", ".test-build", "donors", "verification", ".serena", ".git", "logs"]);
 const CANDIDATE_ROOTS = ["src", "test", "scripts", "resources", "examples"];

@@ -117,8 +117,16 @@ export function compileOptionsSchema(schema: unknown): Result<Validator> {
     if (!SUPPORTED_SCHEMA_KEYWORDS.has(keyword)) return schemaFailure("core.options-schema-unsupported");
   }
   const type = record["type"];
-  if (type !== undefined && (typeof type !== "string" || !SUPPORTED_TYPES.has(type))) {
-    return schemaFailure("core.options-schema-unsupported");
+  let typeNames: string[] = [];
+  if (type !== undefined) {
+    if (typeof type === "string" && SUPPORTED_TYPES.has(type)) {
+      typeNames = [type];
+    } else if (Array.isArray(type) && type.length > 0
+      && type.every(entry => typeof entry === "string" && SUPPORTED_TYPES.has(entry))) {
+      typeNames = [...new Set(type as string[])];
+    } else {
+      return schemaFailure("core.options-schema-unsupported");
+    }
   }
   const enumValues = record["enum"];
   if (enumValues !== undefined && (!Array.isArray(enumValues) || enumValues.length === 0)) {
@@ -153,8 +161,24 @@ export function compileOptionsSchema(schema: unknown): Result<Validator> {
 
   const validator: Validator = value => {
     if (Array.isArray(enumValues) && !enumValues.some(entry => JSON.stringify(entry) === JSON.stringify(value))) return false;
-    if (type === "object" || (type === undefined && compiledProperties.size > 0 && typeof value === "object" && value !== null && !Array.isArray(value))) {
-      if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
+    if (typeNames.length === 0) {
+      if (compiledProperties.size > 0 && typeof value === "object" && value !== null && !Array.isArray(value)) {
+        const objectValue = value as Record<string, unknown>;
+        for (const name of required) {
+          if (!Object.hasOwn(objectValue, name)) return false;
+        }
+        for (const [name, subValidator] of compiledProperties) {
+          if (Object.hasOwn(objectValue, name) && !subValidator(objectValue[name])) return false;
+        }
+        if (!additionalProperties) {
+          for (const name of Object.keys(objectValue)) {
+            if (!compiledProperties.has(name)) return false;
+          }
+        }
+      }
+      return true;
+    }
+    if (typeNames.includes("object") && typeof value === "object" && value !== null && !Array.isArray(value)) {
       const objectValue = value as Record<string, unknown>;
       for (const name of required) {
         if (!Object.hasOwn(objectValue, name)) return false;
@@ -169,21 +193,21 @@ export function compileOptionsSchema(schema: unknown): Result<Validator> {
       }
       return true;
     }
-    if (type === "array") {
-      if (!Array.isArray(value)) return false;
+    if (typeNames.includes("array") && Array.isArray(value)) {
       return compiledItems === null || value.every(entry => compiledItems(entry));
     }
-    if (type === "string") {
-      if (typeof value !== "string") return false;
+    if (typeNames.includes("string") && typeof value === "string") {
       if (minLength !== null && value.length < minLength) return false;
       if (maxLength !== null && value.length > maxLength) return false;
       return true;
     }
-    if (type === "integer") return typeof value === "number" && Number.isInteger(value) && (minimum === null || value >= minimum) && (maximum === null || value <= maximum);
-    if (type === "number") return typeof value === "number" && Number.isFinite(value) && (minimum === null || value >= minimum) && (maximum === null || value <= maximum);
-    if (type === "boolean") return typeof value === "boolean";
-    if (type === "null") return value === null;
-    return true;
+    if (typeNames.includes("integer") && typeof value === "number" && Number.isInteger(value)
+      && (minimum === null || value >= minimum) && (maximum === null || value <= maximum)) return true;
+    if (typeNames.includes("number") && typeof value === "number" && Number.isFinite(value)
+      && (minimum === null || value >= minimum) && (maximum === null || value <= maximum)) return true;
+    if (typeNames.includes("boolean") && typeof value === "boolean") return true;
+    if (typeNames.includes("null") && value === null) return true;
+    return false;
   };
   return { ok: true, value: validator };
 }

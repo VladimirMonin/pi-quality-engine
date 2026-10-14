@@ -188,9 +188,7 @@ test("present configuration requires schema version 1 and typed implemented valu
 test("valid C1 values outside the implemented slice are reported unavailable, not accepted", () => {
   const unavailable: Array<[unknown, string]> = [
     [{ schemaVersion: 1, mode: "advise" }, "$.mode"],
-    [{ schemaVersion: 1, observability: { detail: "trace" } }, "$.observability.detail"],
     [{ schemaVersion: 1, observability: { capture: { prompts: "excerpt" } } }, "$.observability.capture.prompts"],
-    [{ schemaVersion: 1, observability: { journal: { rotationIntervalMs: 60_000 } } }, "$.observability.journal.rotationIntervalMs"],
     [{ schemaVersion: 1, observability: { presentation: "diagnostic" } }, "$.observability.presentation"],
     [{ schemaVersion: 1, permissions: { modelProfiles: ["local"] } }, "$.permissions.modelProfiles"],
     [{ schemaVersion: 1, permissions: { allowIdleContinuation: true } }, "$.permissions.allowIdleContinuation"],

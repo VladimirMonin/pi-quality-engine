@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { mkdtemp, mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
+import { gunzipSync } from "node:zlib";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import test from "node:test";
@@ -100,7 +101,7 @@ async function startLoop(check: object, observability: object = {}, contextsOver
 }
 
 async function closeLoop(fixture: LoopFixture): Promise<void> {
-  fixture.session.retire("quit");
+  await fixture.session.retire("quit");
   await rm(fixture.root, { recursive: true, force: true });
 }
 
@@ -437,8 +438,8 @@ test("K02-T07 Standard history and journal exclude task and tool sentinels", asy
     const status = fixture.session.status(true);
     const historyText = status.diagnostics.recentEvents.map(record => JSON.stringify(record)).join("\n");
     const journalPath = join(fixture.agentDir, "quality", "logs");
-    const journalFiles = await readdir(journalPath);
-    assert.equal(journalFiles.length, 1);
+    const journalFiles = (await readdir(journalPath)).filter(name => name.endsWith(".jsonl"));
+    assert.equal(journalFiles.length, 1, "the active O1 segment is the only data file before rotation");
     const journalText = await readFile(join(journalPath, journalFiles[0] as string), "utf8");
     for (const sentinel of [taskSentinel, errorSentinel]) {
       assert.equal(historyText.includes(sentinel), false, `history leaked ${sentinel}`);
@@ -595,25 +596,51 @@ test("K02-T05b the /quality stop command is an operator action that blocks later
   }
 });
 
-test("K02-B.10 a bounded journal degrades visibly while history keeps working", async () => {
+test("K02-B.10 a size-bounded journal rotates instead of failing while history keeps working", async () => {
   const fixture = await startLoop(countCheck(1), {
-    journal: { maxFileBytes: 4_096 },
+    journal: { maxFileBytes: 4_096, compressArchives: true },
   });
   try {
     workInput(fixture);
     for (const id of ["t1", "t2", "t3"]) {
       toolSequence(fixture, id);
-      await new Promise(resolve => setTimeout(resolve, 20));
+      await settle();
     }
+    await settle();
     const status = fixture.session.status(true);
-    assert.equal(status.checks.runs, 3, "checks still execute when the journal is full");
-    assert.equal(status.journal?.state, "failed");
-    assert.equal(status.journal?.reasonCode, "journal-size-limit");
-    assert.ok((status.journal?.lostRecords ?? 0) >= 1, "lost journal records stay visible");
+    assert.equal(status.checks.runs, 3, "checks still execute while the journal rotates");
+    assert.equal(status.journal?.state, "healthy");
+    assert.ok((status.journal?.closedSegments ?? 0) >= 1, "the size bound produced real closed segments");
+    assert.equal(status.journal?.lostRecords, 0, "rotation preserves records instead of dropping them");
     assert.ok(status.diagnostics.historyRecords > 0, "bounded history is independent of the sink");
-    assert.ok((status.journal?.lostRecords ?? 0) > 0, "the failed sink keeps explicit loss accounting");
+
+    // Inspect the real settled downstream boundary rather than racing the live
+    // pump: retire flushes and seals every segment first, so no active basename
+    // can vanish under the reader.
+    await fixture.session.retire("quit");
+    const settled = fixture.session.status(true);
+    assert.equal(settled.journal?.state, "closed");
+    assert.equal(settled.journal?.lostRecords, 0, "final close preserves every rotated record");
+    const journalPath = join(fixture.agentDir, "quality", "logs");
+    const files = await readdir(journalPath);
+    assert.equal(files.some(name => name.endsWith(".tmp")), false, "no temporary archive survives final close");
+    let records = 0;
+    for (const name of files) {
+      let text: string;
+      if (name.endsWith(".jsonl")) text = await readFile(join(journalPath, name), "utf8");
+      else if (name.endsWith(".jsonl.gz")) text = gunzipSync(await readFile(join(journalPath, name))).toString("utf8");
+      else continue;
+      for (const line of text.split(/\r?\n/u).filter(Boolean)) {
+        assert.doesNotThrow(() => JSON.parse(line), `every final record parses in ${name}`);
+        records += 1;
+      }
+    }
+    assert.ok(records >= 4, "final closed history contains the run records");
+    assert.ok(files.some(name => name.endsWith(".gz")), "at least one closed segment was compressed");
+    assert.equal(JSON.stringify(settled).includes("k02-"), false, "no sentinel body appears in status");
   } finally {
-    await closeLoop(fixture);
+    await fixture.session.retire("quit");
+    await rm(fixture.root, { recursive: true, force: true });
   }
 });
 

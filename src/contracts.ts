@@ -101,11 +101,13 @@ export interface RuntimeView {
   waits: readonly WaitRecord[];
   lastActivityMonoMs: number | null;
   lastProgressMonoMs: number | null;
+  lastCompletionMonoMs: number | null;
   progressEvidenceIds: readonly string[];
   counters: {
     completedPrimaryTools: number;
     completedPrimaryCycles: number;
     primaryEvidenceRevision: number;
+    completionBoundaries: number;
   };
 }
 
@@ -478,6 +480,12 @@ export interface JournalSettings {
   compressArchives: boolean;
 }
 
+export interface RetentionSettings {
+  maxArchivesPerSession: number;
+  maxAgeMs: number;
+  maxStorageBytes: number;
+}
+
 export interface RuntimeSettings {
   maxConcurrentEvaluations: number;
   maxPendingChecks: number;
@@ -548,11 +556,14 @@ export interface CheckDefinition {
   supersedes: readonly string[];
 }
 
+export type DetailProfile = "minimal" | "standard" | "debug" | "trace";
+
 export interface ObservabilityConfiguration {
-  detail: "standard";
+  detail: DetailProfile;
   capture: CapturePermissions;
   recentHistory: RecentHistoryLimits;
   journal: JournalSettings;
+  retention: RetentionSettings;
 }
 
 export interface EngineConfiguration {
@@ -903,8 +914,8 @@ export type JournalOpenedData = {
   segmentOrdinal: number;
   writerGeneration: string;
   previousSegmentOrdinal: number | null;
-  openReason: "session-start";
-  previousTailState: "absent" | "clean" | "unknown";
+  openReason: "session-start" | "rotation" | "tail-repair";
+  previousTailState: "absent" | "clean" | "damaged" | "unknown";
   recordPolicyRevision: string;
 };
 
@@ -918,6 +929,45 @@ export type JournalClosedData = {
   historyCoverage: "complete" | "partial";
 };
 
+export type JournalRotationData = {
+  fromSegment: number;
+  toSegment: number;
+  reason: "size" | "elapsed" | "close" | "tail-repair";
+  thresholdBytes: number | null;
+  observedBytes: number;
+  archiveCompression: "none" | "gzip" | "failed";
+  outcome: "completed" | "failed";
+};
+
+export type RetentionSweepData = {
+  scope: "closed-journal-history";
+  eligibleFiles: number;
+  removedFiles: number;
+  removedBytes: number;
+  remainingOwnedBytes: number;
+  targetBytes: number;
+  overTargetReason: "none" | "active-data" | "protected-history";
+  historyCoverage: "complete" | "partial";
+};
+
+export type ControlCheckpointData = {
+  revision: number;
+  outcome: "committed" | "failed";
+  serializedBytes: number;
+  durationMs: number;
+  protectedStateRef: string;
+};
+
+export type DiagnosticGapData = {
+  sinkId: string;
+  firstLostSequence: number | null;
+  lastLostSequence: number | null;
+  lostCount: number;
+  byEventFamily: { [key: string]: number };
+  cause: string;
+  exact: boolean;
+};
+
 export type SinkHealthData = {
   sinkId: string;
   previousState: "healthy" | "degraded" | "failed";
@@ -925,6 +975,22 @@ export type SinkHealthData = {
   queuedRecords: number;
   queuedBytes: number;
   lostRecords: number;
+  reasonCode: string;
+};
+
+export type ClockResynchronizedData = {
+  cause: string;
+  overdueBindings: number;
+  coalescedIntents: number;
+  elapsedHistoryKnown: boolean;
+};
+
+export type TriggerDeadlineData = {
+  checkId: string;
+  bindingId: string;
+  phase: "armed" | "rearmed" | "disarmed";
+  dueMonoMs: number | null;
+  delayMs: number | null;
   reasonCode: string;
 };
 
@@ -946,6 +1012,12 @@ export type DiagnosticEventName =
   | "quality.context.manifest-part"
   | "quality.assessment.result"
   | "quality.policy.decided"
+  | "quality.clock.resynchronized"
+  | "quality.trigger.deadline"
   | "quality.journal.opened"
   | "quality.journal.closed"
+  | "quality.journal.rotation"
+  | "quality.retention.sweep"
+  | "quality.control.checkpoint"
+  | "quality.diagnostic.gap"
   | "quality.sink.health";

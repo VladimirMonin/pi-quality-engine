@@ -161,7 +161,7 @@ test("the built package loads in real Pi and starts then retires an inert runtim
     const inactive = await readStatus(host);
     assert.equal(inactive.runtime.state, "inactive");
     assert.equal(inactive.runtime.generation, null);
-    assert.equal(inactive.engine.version, "0.0.2");
+    assert.equal(inactive.engine.version, "0.1.0");
     assert.equal(inactive.configuration.enabled, false);
     assert.equal(inactive.configuration.mode, "observe");
     assert.equal(inactive.configuration.rejection, null);
@@ -182,7 +182,7 @@ test("the built package loads in real Pi and starts then retires an inert runtim
     assert.equal(active.capabilities.journalFiles, "available");
     assert.equal(active.capabilities.triggersAndScheduling, "available");
     assert.equal(active.capabilities.componentRegistry, "available");
-    assert.equal(active.capabilities.functionalStatePersistence, "unavailable");
+    assert.equal(active.capabilities.functionalStatePersistence, "available");
     assert.deepEqual(active.diagnostics.recentEvents.map(record => record.event), [
       "quality.runtime.started",
       "quality.config.applied",
@@ -201,8 +201,20 @@ test("the built package loads in real Pi and starts then retires an inert runtim
     ]);
     assert.equal(retired.diagnostics.recentEvents[2]?.fields.data.cause, "quit");
 
-    assert.deepEqual(await listTree(root), filesBefore, "the inert engine must not create host or project files");
-    assert.deepEqual(await listOrEmpty(host.agentDir), [], "no owned journal or state directory is created yet");
+    // K03 owns exactly one durable control checkpoint under the Pi agent
+    // directory; a disabled journal still creates no diagnostic destination.
+    const createdAfterStart = (await listTree(root)).filter(entry => !filesBefore.includes(entry));
+    const ownedDirectory = (entry) => {
+      const normalized = entry.replace(/\\/gu, "/");
+      return normalized === "agent"
+        || normalized === "agent/quality"
+        || normalized.startsWith("agent/quality/state");
+    };
+    assert.ok(
+      createdAfterStart.every(ownedDirectory),
+      `the inert engine only creates its control checkpoint (${createdAfterStart.join(",")})`,
+    );
+    assert.deepEqual(await listOrEmpty(join(host.agentDir, "quality", "logs")), [], "a disabled journal creates no destination");
 
     const journalText = await recordJournal(retired.diagnostics.recentEvents);
     await recordEvidence("pi-integration.json", {
@@ -214,13 +226,14 @@ test("the built package loads in real Pi and starts then retires an inert runtim
       retiredRuntimeState: retired.runtime.state,
       eventNames: retired.diagnostics.recentEvents.map(record => record.event),
       capabilities: active.capabilities,
-      createdFiles: [],
+      createdFiles: createdAfterStart,
       notes: [
-        "The lifecycle records are the implemented diagnostic destination; the K02 session journal is exercised by the K02 host cases.",
+        "The lifecycle records are the implemented diagnostic destination; the session journal is exercised by the host cases.",
+        "Exactly one durable control checkpoint appears under the Pi agent directory; a disabled journal creates no destination.",
         "No quality.model.dispatched or action event exists in the retained history.",
       ],
     });
-    assert.equal(journalText.trim().split("\n").length, 3);
+    assert.equal(journalText.trim().split(/\r?\n/u).length, 3);
   } finally {
     await rm(root, { recursive: true, force: true });
   }
@@ -266,13 +279,21 @@ test("an invalid user configuration with a secret sentinel is rejected without l
       assert.equal(text.includes(SENTINEL), false, `sentinel leaked into ${surface}`);
     }
     const fixtureInventory = await listOrEmpty(join(agentDir, "quality"));
-    assert.deepEqual(fixtureInventory, ["config.json"], "the engine must not write next to the rejected file");
+    const ownedExtras = fixtureInventory.filter(entry => entry !== "config.json");
+    assert.ok(
+      ownedExtras.every(entry => entry.replaceAll("\\", "/").startsWith("state")),
+      `only the control checkpoint appears next to the rejected file (${ownedExtras.join(",")})`,
+    );
+    for (const entry of ownedExtras) {
+      const text = await readFile(join(agentDir, "quality", entry), "utf8").catch(() => "");
+      assert.equal(text.includes(SENTINEL), false, `sentinel leaked into ${entry}`);
+    }
 
     await recordEvidence("sentinel-scan.json", {
       sentinel: SENTINEL,
       contentScans: Object.keys(contentSurfaces).map(surface => ({ surface, afterRetirement: surface.startsWith("retired") || surface === "uiMessages" || surface === "lifecycleJournal", occurrences: 0 })),
       directoryInventories: [{
-        directory: "agent/quality",
+        directory: "agent/quality (config plus engine-owned control checkpoint only)",
         kind: "fixture directory inventory (not a content scan)",
         entries: fixtureInventory,
       }],

@@ -151,7 +151,6 @@ test("the real primary stays usable through engine retirement with zero owned di
       assert.deepEqual(retired.diagnostics.recentEvents.map(record => record.event), [
         "quality.runtime.started",
         "quality.config.applied",
-        "quality.runtime.state",
         "quality.runtime.retired",
       ]);
       const recordsAfterRetirement = retired.diagnostics.recentEvents.length;

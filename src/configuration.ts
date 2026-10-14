@@ -27,7 +27,9 @@ import type {
   PolicyProfile,
   PromptBinding,
   RecentHistoryLimits,
+  DetailProfile,
   ResolvedConfiguration,
+  RetentionSettings,
   Result,
   RuntimeSettings,
   TriggerBinding,
@@ -45,6 +47,11 @@ export const DEFAULT_JOURNAL_SETTINGS: JournalSettings = {
   maxFileBytes: 10_485_760,
   rotationIntervalMs: null,
   compressArchives: false,
+};
+export const DEFAULT_RETENTION_SETTINGS: RetentionSettings = {
+  maxArchivesPerSession: 4,
+  maxAgeMs: 1_209_600_000,
+  maxStorageBytes: 268_435_456,
 };
 export const DEFAULT_RUNTIME_SETTINGS: RuntimeSettings = {
   maxConcurrentEvaluations: 2,
@@ -124,7 +131,10 @@ const WORK_STATES = new Set<WorkState>([
 const PRIORITIES = new Set(["low", "normal", "high"]);
 const BUILTIN_PROMPT_RESOURCES = new Set(["builtin:repetition-v1.md"]);
 const BUILTIN_CONTEXT_PROVIDERS = new Set(["core.task", "core.history", "core.waits"]);
-const BUILTIN_TRIGGERS = new Set(["core.every-tools", "core.periodic"]);
+const BUILTIN_TRIGGERS = new Set([
+  "core.every-tools", "core.periodic", "core.inactivity", "core.no-progress",
+  "core.wait-deadline", "core.evidence-change", "core.before-completion",
+]);
 const BUILTIN_EVALUATORS = new Set(["core.repeated-tools"]);
 const BUILTIN_POLICIES = new Set(["core.record-only"]);
 
@@ -352,11 +362,13 @@ function validateJournalSettings(input: unknown): Result<Partial<JournalSettings
       }
       settings.maxFileBytes = supplied;
     } else if (key === "rotationIntervalMs") {
-      if (supplied !== null) return reject("config.capability-unavailable", "$.observability.journal.rotationIntervalMs");
-      settings.rotationIntervalMs = null;
+      if (supplied !== null && (typeof supplied !== "number" || !Number.isInteger(supplied) || supplied < 250 || supplied > 86_400_000)) {
+        return reject("config.invalid-value", "$.observability.journal.rotationIntervalMs");
+      }
+      settings.rotationIntervalMs = supplied as number | null;
     } else if (key === "compressArchives") {
-      if (supplied !== false) return reject("config.capability-unavailable", "$.observability.journal.compressArchives");
-      settings.compressArchives = false;
+      if (typeof supplied !== "boolean") return reject("config.invalid-value", "$.observability.journal.compressArchives");
+      settings.compressArchives = supplied;
     } else {
       return reject("config.unknown-key", "$.observability.journal");
     }
@@ -365,10 +377,27 @@ function validateJournalSettings(input: unknown): Result<Partial<JournalSettings
 }
 
 interface ObservabilitySubset {
-  detail: "standard";
+  detail: DetailProfile;
   capture: EngineConfiguration["observability"]["capture"];
   recentHistory: Partial<RecentHistoryLimits>;
   journal: Partial<JournalSettings>;
+  retention: Partial<RetentionSettings>;
+}
+
+function validateRetentionSettings(input: unknown): Result<Partial<RetentionSettings>> {
+  if (!isPlainObject(input)) return reject("config.invalid-value", "$.observability.retention");
+  const settings: Partial<RetentionSettings> = {};
+  for (const key of Object.keys(input)) {
+    if (key !== "maxArchivesPerSession" && key !== "maxAgeMs" && key !== "maxStorageBytes") {
+      return reject("config.unknown-key", "$.observability.retention");
+    }
+    const supplied = input[key];
+    if (typeof supplied !== "number" || !Number.isInteger(supplied) || supplied < 0) {
+      return reject("config.invalid-value", `$.observability.retention.${key}`);
+    }
+    settings[key] = supplied;
+  }
+  return { ok: true, value: settings };
 }
 
 function validateObservability(input: unknown): Result<ObservabilitySubset> {
@@ -380,6 +409,7 @@ function validateObservability(input: unknown): Result<ObservabilitySubset> {
     },
     recentHistory: {},
     journal: {},
+    retention: {},
   };
   if (input === undefined) return { ok: true, value: subset };
   if (!isPlainObject(input)) return reject("config.invalid-value", "$.observability");
@@ -389,7 +419,7 @@ function validateObservability(input: unknown): Result<ObservabilitySubset> {
       if (supplied !== "minimal" && supplied !== "standard" && supplied !== "debug" && supplied !== "trace") {
         return reject("config.invalid-value", "$.observability.detail");
       }
-      if (supplied !== "standard") return reject("config.capability-unavailable", "$.observability.detail");
+      subset.detail = supplied;
     } else if (key === "capture") {
       const capture = validateCapture(supplied);
       if (!capture.ok) return capture;
@@ -401,6 +431,10 @@ function validateObservability(input: unknown): Result<ObservabilitySubset> {
       const journal = validateJournalSettings(supplied);
       if (!journal.ok) return journal;
       subset.journal = journal.value;
+    } else if (key === "retention") {
+      const retention = validateRetentionSettings(supplied);
+      if (!retention.ok) return retention;
+      subset.retention = retention.value;
     } else if (Object.hasOwn(OBSERVABILITY_DEFAULTS, key)) {
       if (!jsonEquals(supplied, OBSERVABILITY_DEFAULTS[key])) {
         return reject("config.capability-unavailable", `$.observability.${key}`);
@@ -448,6 +482,7 @@ function validateTriggerBinding(input: unknown, field: string): Result<TriggerBi
   if (!use.ok) return use;
   const options = input["options"] ?? {};
   if (!isPlainObject(options)) return reject("config.invalid-value", `${field}.options`);
+  let normalized: JsonObject = options as JsonObject;
   if (BUILTIN_TRIGGERS.has(use.value)) {
     if (use.value === "core.every-tools") {
       for (const key of Object.keys(options)) {
@@ -460,9 +495,10 @@ function validateTriggerBinding(input: unknown, field: string): Result<TriggerBi
       if (options["includeNested"] !== undefined && options["includeNested"] !== false) {
         return reject("config.capability-unavailable", `${field}.options.includeNested`);
       }
-    } else {
+    } else if (use.value === "core.periodic") {
+      const allowed = new Set(["everyMs", "requireNewEvidence"]);
       for (const key of Object.keys(options)) {
-        if (key !== "everyMs" && key !== "requireNewEvidence") return reject("config.unknown-key", `${field}.options`);
+        if (!allowed.has(key)) return reject("config.unknown-key", `${field}.options`);
       }
       const everyMs = options["everyMs"];
       if (typeof everyMs !== "number" || !Number.isInteger(everyMs) || everyMs <= 0 || everyMs > 86_400_000) {
@@ -471,6 +507,91 @@ function validateTriggerBinding(input: unknown, field: string): Result<TriggerBi
       if (options["requireNewEvidence"] !== undefined && typeof options["requireNewEvidence"] !== "boolean") {
         return reject("config.invalid-value", `${field}.options.requireNewEvidence`);
       }
+    } else if (use.value === "core.inactivity" || use.value === "core.no-progress") {
+      const allowed = new Set(["afterMs", "repeatAfterMs", "minimumTools"]);
+      for (const key of Object.keys(options)) {
+        if (!allowed.has(key)) return reject("config.unknown-key", `${field}.options`);
+      }
+      const afterMs = options["afterMs"];
+      if (typeof afterMs !== "number" || !Number.isInteger(afterMs) || afterMs <= 0 || afterMs > 86_400_000) {
+        return reject("config.invalid-value", `${field}.options.afterMs`);
+      }
+      const repeat = options["repeatAfterMs"];
+      if (repeat !== undefined && repeat !== null
+        && (typeof repeat !== "number" || !Number.isInteger(repeat) || repeat <= 0 || repeat > 86_400_000)) {
+        return reject("config.invalid-value", `${field}.options.repeatAfterMs`);
+      }
+      if (options["minimumTools"] !== undefined && use.value !== "core.no-progress") {
+        return reject("config.unknown-key", `${field}.options`);
+      }
+      const minimumTools = options["minimumTools"];
+      if (minimumTools !== undefined
+        && (typeof minimumTools !== "number" || !Number.isInteger(minimumTools) || minimumTools < 0 || minimumTools > 10_000)) {
+        return reject("config.invalid-value", `${field}.options.minimumTools`);
+      }
+      normalized = {
+        afterMs,
+        repeatAfterMs: repeat === undefined ? null : repeat,
+        ...(use.value === "core.no-progress" ? { minimumTools: typeof minimumTools === "number" ? minimumTools : 0 } : {}),
+      };
+    } else if (use.value === "core.wait-deadline") {
+      const allowed = new Set(["recheckAfterMs", "repeatAfterMs"]);
+      for (const key of Object.keys(options)) {
+        if (!allowed.has(key)) return reject("config.unknown-key", `${field}.options`);
+      }
+      const recheck = options["recheckAfterMs"];
+      if (recheck !== undefined
+        && (typeof recheck !== "number" || !Number.isInteger(recheck) || recheck <= 0 || recheck > 86_400_000)) {
+        return reject("config.invalid-value", `${field}.options.recheckAfterMs`);
+      }
+      const repeat = options["repeatAfterMs"];
+      if (repeat !== undefined && repeat !== null
+        && (typeof repeat !== "number" || !Number.isInteger(repeat) || repeat <= 0 || repeat > 86_400_000)) {
+        return reject("config.invalid-value", `${field}.options.repeatAfterMs`);
+      }
+      // C1 gives recheckAfterMs a canonical 60,000 ms default and no required options.
+      normalized = {
+        recheckAfterMs: typeof recheck === "number" ? recheck : 60_000,
+        repeatAfterMs: repeat === undefined ? null : repeat,
+      };
+    } else if (use.value === "core.evidence-change") {
+      const allowed = new Set(["sourceIds", "debounceMs", "maxWaitMs"]);
+      for (const key of Object.keys(options)) {
+        if (!allowed.has(key)) return reject("config.unknown-key", `${field}.options`);
+      }
+      const sourceIds = options["sourceIds"];
+      if (!Array.isArray(sourceIds) || sourceIds.length === 0 || sourceIds.length > 16
+        || sourceIds.some(entry => typeof entry !== "string" || !/^[A-Za-z0-9._:-]{1,128}$/u.test(entry))) {
+        return reject("config.invalid-value", `${field}.options.sourceIds`);
+      }
+      if (sourceIds.some(entry => entry !== "core.history")) {
+        // S1 implements one aggregate primary-history evidence scope. Other
+        // named observation scopes are honestly unavailable before dispatch
+        // rather than accepted and silently ignored.
+        return reject("config.capability-unavailable", `${field}.options.sourceIds`);
+      }
+      const debounceMs = options["debounceMs"];
+      const maxWaitMs = options["maxWaitMs"];
+      if (debounceMs !== undefined
+        && (typeof debounceMs !== "number" || !Number.isInteger(debounceMs) || debounceMs < 0 || debounceMs > 86_400_000)) {
+        return reject("config.invalid-value", `${field}.options.debounceMs`);
+      }
+      if (maxWaitMs !== undefined
+        && (typeof maxWaitMs !== "number" || !Number.isInteger(maxWaitMs) || maxWaitMs < 0 || maxWaitMs > 86_400_000)) {
+        return reject("config.invalid-value", `${field}.options.maxWaitMs`);
+      }
+      const resolvedDebounce = typeof debounceMs === "number" ? debounceMs : 1_000;
+      const resolvedMaxWait = typeof maxWaitMs === "number" ? maxWaitMs : 10_000;
+      if (resolvedMaxWait < resolvedDebounce) return reject("config.invalid-value", `${field}.options.maxWaitMs`);
+      normalized = { sourceIds: [...sourceIds], debounceMs: resolvedDebounce, maxWaitMs: resolvedMaxWait };
+    } else {
+      for (const key of Object.keys(options)) {
+        if (key !== "requireChanges") return reject("config.unknown-key", `${field}.options`);
+      }
+      if (options["requireChanges"] !== undefined && typeof options["requireChanges"] !== "boolean") {
+        return reject("config.invalid-value", `${field}.options.requireChanges`);
+      }
+      normalized = { requireChanges: options["requireChanges"] === true };
     }
   }
   return { ok: true, value: { id: input["id"], use: use.value, options: options as JsonObject } };
@@ -869,6 +990,7 @@ export function defaultConfiguration(): EngineConfiguration {
       },
       recentHistory: { ...DEFAULT_RECENT_HISTORY },
       journal: { ...DEFAULT_JOURNAL_SETTINGS },
+      retention: { ...DEFAULT_RETENTION_SETTINGS },
     },
   };
 }
@@ -968,13 +1090,15 @@ function applyUserLayer(previous: EngineConfiguration, layer: ConfigurationLayer
   const supplied = layer.observability.recentHistory;
   const previousJournal = previous.observability.journal;
   const suppliedJournal = layer.observability.journal;
+  const previousRetention = previous.observability.retention;
+  const suppliedRetention = layer.observability.retention;
   return {
     ...previous,
     enabled: layer.enabled ?? previous.enabled,
     mode: "observe",
     runtime: { ...previous.runtime, ...layer.runtime },
     observability: {
-      detail: "standard",
+      detail: layer.observability.detail,
       capture: layer.observability.capture,
       recentHistory: {
         maxEvents: supplied.maxEvents ?? previousLimits.maxEvents,
@@ -984,8 +1108,15 @@ function applyUserLayer(previous: EngineConfiguration, layer: ConfigurationLayer
         enabled: suppliedJournal.enabled ?? previousJournal.enabled,
         directory: suppliedJournal.directory ?? previousJournal.directory,
         maxFileBytes: suppliedJournal.maxFileBytes ?? previousJournal.maxFileBytes,
-        rotationIntervalMs: suppliedJournal.rotationIntervalMs ?? previousJournal.rotationIntervalMs,
+        rotationIntervalMs: suppliedJournal.rotationIntervalMs === undefined
+          ? previousJournal.rotationIntervalMs
+          : suppliedJournal.rotationIntervalMs,
         compressArchives: suppliedJournal.compressArchives ?? previousJournal.compressArchives,
+      },
+      retention: {
+        maxArchivesPerSession: suppliedRetention.maxArchivesPerSession ?? previousRetention.maxArchivesPerSession,
+        maxAgeMs: suppliedRetention.maxAgeMs ?? previousRetention.maxAgeMs,
+        maxStorageBytes: suppliedRetention.maxStorageBytes ?? previousRetention.maxStorageBytes,
       },
     },
     prompts: { ...previous.prompts, ...layer.prompts },

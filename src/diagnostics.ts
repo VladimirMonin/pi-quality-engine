@@ -15,6 +15,7 @@ import type {
   DiagnosticProjection,
   DiagnosticRecordV1,
   DiagnosticScope,
+  DetailProfile,
   Json,
   JsonObject,
 } from "./contracts.js";
@@ -25,6 +26,8 @@ export interface DiagnosticHistoryLimits {
   maxEvents: number;
   maxBytes: number;
   maxRecordBytes: number;
+  /** Lowest ordinary detail selected; failures are elevated regardless. */
+  detail?: DetailProfile;
 }
 
 export interface DiagnosticHistoryContext {
@@ -33,6 +36,11 @@ export interface DiagnosticHistoryContext {
   configRevision: string;
   dataPolicyRevision: string;
   ownerId: string;
+  /**
+   * Live scope source. Diagnostic record scopes must reflect the current
+   * authority (restored or advanced), not the constructor snapshot.
+   */
+  currentScope?: () => DiagnosticScope;
 }
 
 export interface DiagnosticAppendInput {
@@ -64,7 +72,8 @@ type ValueSpec =
   | { t: "selection" }
   | { t: "manifestItems" }
   | { t: "assessmentFindings" }
-  | { t: "assessmentScores" };
+  | { t: "assessmentScores" }
+  | { t: "countMap" };
 
 type EventSchema = Record<string, ValueSpec>;
 
@@ -170,6 +179,33 @@ const EVENT_SCHEMAS: Record<DiagnosticEventName, EventSchema> = {
     logicalJournalId: { t: "string" }, segmentOrdinal: { t: "integer" }, closeReason: { t: "string" },
     recordCount: { t: "integer" }, serializedBytes: { t: "integer" }, flushState: { t: "string" },
     historyCoverage: { t: "string" },
+  },
+  "quality.clock.resynchronized": {
+    cause: { t: "string" }, overdueBindings: { t: "integer" }, coalescedIntents: { t: "integer" },
+    elapsedHistoryKnown: { t: "boolean" },
+  },
+  "quality.trigger.deadline": {
+    checkId: { t: "string" }, bindingId: { t: "string" }, phase: { t: "string" },
+    dueMonoMs: { t: "nullableInteger" }, delayMs: { t: "nullableInteger" }, reasonCode: { t: "string" },
+  },
+  "quality.journal.rotation": {
+    fromSegment: { t: "integer" }, toSegment: { t: "integer" }, reason: { t: "string" },
+    thresholdBytes: { t: "nullableInteger" }, observedBytes: { t: "integer" },
+    archiveCompression: { t: "string" }, outcome: { t: "string" },
+  },
+  "quality.retention.sweep": {
+    scope: { t: "string" }, eligibleFiles: { t: "integer" }, removedFiles: { t: "integer" },
+    removedBytes: { t: "integer" }, remainingOwnedBytes: { t: "integer" }, targetBytes: { t: "integer" },
+    overTargetReason: { t: "string" }, historyCoverage: { t: "string" },
+  },
+  "quality.control.checkpoint": {
+    revision: { t: "integer" }, outcome: { t: "string" }, serializedBytes: { t: "integer" },
+    durationMs: { t: "number" }, protectedStateRef: { t: "string" },
+  },
+  "quality.diagnostic.gap": {
+    sinkId: { t: "string" }, firstLostSequence: { t: "nullableInteger" },
+    lastLostSequence: { t: "nullableInteger" }, lostCount: { t: "integer" },
+    byEventFamily: { t: "countMap" }, cause: { t: "string" }, exact: { t: "boolean" },
   },
   "quality.sink.health": {
     sinkId: { t: "string" }, previousState: { t: "string" }, state: { t: "string" },
@@ -356,6 +392,15 @@ function closeScalar(spec: ValueSpec, value: unknown): { ok: true; value: Json }
       }
       return { ok: true, value: closed };
     }
+    case "countMap": {
+      if (!isJsonObject(value) || Object.keys(value).length > 32) return { ok: false };
+      const closed: JsonObject = {};
+      for (const [key, entry] of Object.entries(value)) {
+        if (typeof entry === "number" && Number.isInteger(entry) && entry >= 0) closed[key] = entry;
+        else return { ok: false };
+      }
+      return { ok: true, value: closed };
+    }
     case "assessmentScores": {
       if (!Array.isArray(value) || value.length > 32) return { ok: false };
       const closed: Json[] = [];
@@ -427,6 +472,40 @@ function serializedBytes(record: DiagnosticRecordV1): number {
   return Buffer.byteLength(JSON.stringify(record), "utf8") + 1;
 }
 
+const PROFILE_RANK: Record<DetailProfile, number> = { minimal: 0, standard: 1, debug: 2, trace: 3 };
+
+/** O1 section 7 catalogue profiles, lowest ordinary selection per event. */
+const EVENT_PROFILE: Record<string, DetailProfile> = {
+  "quality.runtime.started": "minimal",
+  "quality.runtime.retired": "minimal",
+  "quality.config.applied": "minimal",
+  "quality.config.rejected": "minimal",
+  "quality.check.started": "minimal",
+  "quality.check.settled": "minimal",
+  "quality.policy.decided": "minimal",
+  "quality.action.admission": "minimal",
+  "quality.action.dispatched": "minimal",
+  "quality.action.receipt": "minimal",
+  "quality.budget.denied": "minimal",
+  "quality.usage.summary": "minimal",
+  "quality.observation.gap": "minimal",
+  "quality.journal.opened": "minimal",
+  "quality.journal.closed": "minimal",
+  "quality.sink.health": "minimal",
+  "quality.diagnostic.gap": "minimal",
+  "quality.diagnostic.omitted": "minimal",
+  "quality.runtime.state": "debug",
+  "quality.context.freshness": "debug",
+  "quality.model.preflight": "debug",
+  "quality.model.usage-updated": "debug",
+  "quality.model.retry-planned": "debug",
+  "quality.budget.changed": "debug",
+  "quality.control.checkpoint": "debug",
+  "quality.clock.resynchronized": "debug",
+  "quality.trigger.deadline": "trace",
+  "quality.observation.accepted": "trace",
+};
+
 export class DiagnosticHistory {
   readonly #context: DiagnosticHistoryContext;
   readonly #limits: DiagnosticHistoryLimits;
@@ -443,8 +522,9 @@ export class DiagnosticHistory {
       configRevision: context.configRevision,
       dataPolicyRevision: context.dataPolicyRevision,
       ownerId: context.ownerId,
+      ...(context.currentScope === undefined ? {} : { currentScope: context.currentScope }),
     };
-    this.#limits = { ...limits };
+    this.#limits = { ...limits, detail: limits.detail ?? "standard" };
   }
 
   /**
@@ -453,6 +533,15 @@ export class DiagnosticHistory {
    * record. The retained history is bounded by count and serialized bytes.
    */
   append(input: DiagnosticAppendInput): DiagnosticRecordV1 | undefined {
+    // Detail selection happens before sequencing: an omitted profile event is
+    // an intentional selection, not a lost-record range. Material failures
+    // (warn/error) and an authority-affecting operator Stop are elevated into
+    // the compact minimal record set.
+    const selectedRank = PROFILE_RANK[this.#limits.detail ?? "standard"] ?? 1;
+    const eventRank = PROFILE_RANK[EVENT_PROFILE[input.event] ?? "standard"] ?? 1;
+    const elevated = input.level === "warn" || input.level === "error"
+      || (input.event === "quality.runtime.state" && input.data["operatorStopped"] === true);
+    if (eventRank > selectedRank && !elevated) return undefined;
     const closed = closeDiagnosticPayload(input.event, input.data);
     if (!closed.ok) {
       this.#droppedRecords += 1;
@@ -520,7 +609,7 @@ export class DiagnosticHistory {
       observedSessionId: this.#context.observedSessionId,
       fields: {
         time: { recordedAt, monoMs, occurredAt: null },
-        scope: { ...this.#context.scope },
+        scope: { ...(this.#context.currentScope?.() ?? this.#context.scope) },
         origin: { kind: "engine", ownerId: input.ownerId ?? this.#context.ownerId, parentOperationId: null },
         correlation,
         level: input.level,

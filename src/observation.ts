@@ -92,6 +92,9 @@ export class ObservationStore {
   #authorizationRevision = 0;
   #taskText: string | null = null;
   #operatorStopped = false;
+  #observerPaused = false;
+  #completionBoundaries = 0;
+  #lastCompletionMonoMs: number | null = null;
   #lastActivityMonoMs: number | null = null;
   #lastActivityAt: string | null = null;
   #lastProgressMonoMs: number | null = null;
@@ -110,6 +113,28 @@ export class ObservationStore {
 
   get operatorStopped(): boolean {
     return this.#operatorStopped;
+  }
+
+  get observerPaused(): boolean {
+    return this.#observerPaused;
+  }
+
+  /** Observer pause belongs to the engine's own authority, not to observations. */
+  markObserverPaused(paused: boolean): void {
+    this.#observerPaused = paused;
+  }
+
+  /**
+   * Restores the committed accepted authorization revision so current-scope
+   * diagnostics and protected control agree on the actual known authority
+   * after restart, instead of recreating a cold `auth-0`.
+   */
+  restoreAuthorizationRevision(revision: string): void {
+    const match = /^auth-(\d+)$/u.exec(revision);
+    if (match !== null) {
+      const parsed = Number(match[1]);
+      if (Number.isSafeInteger(parsed) && parsed >= 0) this.#authorizationRevision = parsed;
+    }
   }
 
   get lastActivityAt(): string | null {
@@ -186,17 +211,19 @@ export class ObservationStore {
       execution: this.#executionState(),
       work: this.#workState(),
       operatorStopped: this.#operatorStopped,
-      observerPaused: false,
+      observerPaused: this.#observerPaused,
       outstandingWork: this.#episodeId === null ? "none" : "supported",
       activePrimaryOperations,
       waits: [...this.#waits.values()].slice(0, MAX_ACTIVE_OPERATIONS).map(wait => ({ ...wait })),
       lastActivityMonoMs: this.#lastActivityMonoMs,
       lastProgressMonoMs: this.#lastProgressMonoMs,
       progressEvidenceIds: [...this.#progressEvidenceIds],
+      lastCompletionMonoMs: this.#lastCompletionMonoMs,
       counters: {
         completedPrimaryTools: this.#completedPrimaryTools,
         completedPrimaryCycles: this.#completedPrimaryCycles,
         primaryEvidenceRevision: this.#primaryEvidenceRevision,
+        completionBoundaries: this.#completionBoundaries,
       },
     };
   }
@@ -282,6 +309,18 @@ export class ObservationStore {
     }
     if (draft.kind === "core.cycle-completed" && !isValidIdentifier(facts["cycleId"], 128)) {
       return fail("core.invalid-observation", "$.facts.cycleId");
+    }
+    if (draft.kind === "core.completion-boundary") {
+      if (!isValidIdentifier(facts["boundaryId"], 128)) return fail("core.invalid-observation", "$.facts.boundaryId");
+      // C1 §7.2 closes the completion facts to boundaryId plus explicit
+      // actionability; a raw host reason string is not part of the core shape.
+      if (typeof facts["actionable"] !== "boolean") return fail("core.invalid-observation", "$.facts.actionable");
+    }
+    if (draft.kind === "core.source-changed") {
+      if (!isValidIdentifier(facts["sourceId"], 128)) return fail("core.invalid-observation", "$.facts.sourceId");
+      if (typeof facts["previousRevision"] !== "string" || typeof facts["revision"] !== "string") {
+        return fail("core.invalid-observation", "$.facts.revision");
+      }
     }
     if (draft.kind === "core.operator-input" && typeof facts["inputKind"] !== "string") {
       return fail("core.invalid-observation", "$.facts.inputKind");
@@ -373,6 +412,20 @@ export class ObservationStore {
         this.#completedPrimaryCycles += 1;
         break;
       }
+      case "core.completion-boundary": {
+        if (!primary) break;
+        // Only an actionable boundary counts as a completion-candidate hook.
+        if (facts["actionable"] !== true) break;
+        this.#completionBoundaries += 1;
+        this.#lastCompletionMonoMs = observation.receivedMonoMs;
+        break;
+      }
+      case "core.source-changed": {
+        // A registered source revision change is new evidence; the aggregate
+        // revision advances so evidence-change bindings can coalesce it.
+        this.#primaryEvidenceRevision += 1;
+        break;
+      }
       case "core.wait-changed": {
         const waitId = String(facts["waitId"]);
         this.#waits.set(waitId, {
@@ -380,7 +433,8 @@ export class ObservationStore {
           ownerId: String(facts["ownerId"]),
           operationId: typeof facts["operationId"] === "string" ? facts["operationId"] : null,
           state: facts["state"] as WaitRecord["state"],
-          reviewDueMonoMs: null,
+          // Observed-since marker; the scheduler still owns any real deadline.
+          reviewDueMonoMs: observation.receivedMonoMs,
           lastObservationId: observation.id,
         });
         break;
@@ -403,7 +457,7 @@ export class ObservationStore {
       ownerId: `primary:${ownerName}`,
       operationId: waitId.replace(/^wait:/, ""),
       state,
-      reviewDueMonoMs: null,
+      reviewDueMonoMs: observation.receivedMonoMs,
       lastObservationId: observation.id,
     });
   }
