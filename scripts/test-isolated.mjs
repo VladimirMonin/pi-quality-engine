@@ -15,10 +15,11 @@ env.USERPROFILE = root;
 env.APPDATA = join(root, "appdata");
 env.LOCALAPPDATA = join(root, "localappdata");
 env.PI_CODING_AGENT_DIR = join(root, "agent");
+env.QE_EVIDENCE_DIR = process.env.QE_EVIDENCE_DIR ?? join(process.cwd(), "verification", "K01");
 if (process.argv[2]) env.QE_PACKAGE_ROOT = process.argv[2];
 try {
-  const result = spawnSync(process.execPath, ["--test", "test/pi.test.mjs"], {
-    env, stdio: "inherit", timeout: 30000,
+  const result = spawnSync(process.execPath, ["--test", "test/pi.test.mjs", "test/primary.test.mjs"], {
+    env, stdio: "inherit", timeout: 120000,
   });
   if (result.error) throw result.error;
   process.exitCode = result.status ?? 1;

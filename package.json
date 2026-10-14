@@ -33,7 +33,9 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "test": "tsc -p tsconfig.test.json && node --test .test-build/test/*.test.js",
-    "check": "npm run build && npm test"
+    "test:pi": "node scripts/test-isolated.mjs",
+    "test:package": "npm run build && node scripts/test-package.mjs",
+    "check": "npm run build && npm test && npm run test:pi && npm run test:package"
   },
   "peerDependencies": {
     "@earendil-works/pi-coding-agent": "*"
@@ -50,5 +52,8 @@
     "@earendil-works/pi-codemode": "1.1.0",
     "@earendil-works/pi-mcp": "1.1.0",
     "@earendil-works/pi-tui": "1.1.0"
+  },
+  "dependencies": {
+    "yaml": "2.9.0"
   }
 }

@@ -21,3 +21,6 @@ verification/
 # Editor and operating-system state
 .DS_Store
 Thumbs.db
+
+# Local coding-tool state (Serena project cache and memories), never shipped
+.serena/
