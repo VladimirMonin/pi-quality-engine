@@ -1,7 +1,7 @@
 {
   "name": "pi-quality-engine",
-  "version": "0.0.1",
-  "description": "Standalone evidence-based quality assessment for Pi (initial inactive foundation).",
+  "version": "0.0.2",
+  "description": "Standalone evidence-based quality assessment for Pi (observation-only deterministic loop).",
   "type": "module",
   "private": true,
   "engines": {
@@ -19,6 +19,7 @@
   },
   "files": [
     "dist",
+    "resources",
     "README.md",
     "THIRD_PARTY_NOTICES.md"
   ],

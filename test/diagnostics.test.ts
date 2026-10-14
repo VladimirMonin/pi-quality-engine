@@ -25,7 +25,18 @@ function appendStarted(history: DiagnosticHistory): void {
     event: "quality.runtime.started",
     level: "info",
     reasonCodes: [],
-    data: { engineVersion: "0.0.1", hostMode: "rpc" },
+    data: {
+      engineVersion: "0.0.2",
+      engineBuildRef: "pi-quality-engine@0.0.2",
+      hostVersion: "1.1.0",
+      hostMode: "rpc",
+      restored: false,
+      checkpointRevision: "none",
+      executionState: "idle",
+      workState: "unknown",
+      operatorStopped: false,
+      accountingCoverage: "complete",
+    },
   });
 }
 
@@ -47,6 +58,8 @@ test("a projected record carries the O1 envelope and engine-issued identity", ()
   assert.equal(record.fields.detail, "standard");
   assert.equal(record.fields.configRevision, "cfg-fixture");
   assert.equal(record.fields.dataPolicyRevision, "o1-1");
+  assert.equal(record.fields.data["engineVersion"], "0.0.2");
+  assert.deepEqual(record.fields.projection.omittedFields, []);
   assert.deepEqual(record.fields.reasonCodes, []);
   assert.ok(Number.isInteger(record.fields.time.monoMs));
   assert.ok(record.fields.time.monoMs >= 0);
@@ -95,4 +108,34 @@ test("retained records are frozen and readers cannot reach shared state", () => 
   const detached = history.records() as unknown as unknown[];
   detached.length = 0;
   assert.equal(history.recordCount, 1);
+});
+
+
+test("payloads are closed: missing or unknown fields never produce a record", () => {
+  const history = new DiagnosticHistory(CONTEXT, limits());
+  const missing = history.append({
+    event: "quality.runtime.started",
+    level: "info",
+    reasonCodes: [],
+    data: { engineVersion: "0.0.2" },
+  });
+  assert.equal(missing, undefined);
+  assert.equal(history.recordCount, 0);
+  assert.equal(history.droppedRecords, 1);
+
+  const unknownField = history.append({
+    event: "quality.runtime.started",
+    level: "info",
+    reasonCodes: [],
+    data: {
+      engineVersion: "0.0.2", engineBuildRef: "pi-quality-engine@0.0.2", hostVersion: "1.1.0",
+      hostMode: "rpc", restored: false, checkpointRevision: "none", executionState: "idle",
+      workState: "unknown", operatorStopped: false, accountingCoverage: "complete",
+      rawTaskText: "sentinel-should-not-be-serialized",
+    },
+  });
+  assert.ok(unknownField);
+  assert.deepEqual(unknownField.fields.projection.omittedFields, ["data.rawTaskText"]);
+  assert.equal(unknownField.fields.projection.metadataTruncated, true);
+  assert.equal(JSON.stringify(unknownField).includes("sentinel-should-not-be-serialized"), false);
 });

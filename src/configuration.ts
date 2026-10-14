@@ -1,26 +1,37 @@
 // C1 configuration discovery, restricted-format parsing and validation.
 //
-// The implemented slice resolves only the parts this package can really honor:
-// cold activation flags, the operator permission ceiling and metadata-only
-// observability. Valid C1 values outside that subset are rejected as
-// unavailable instead of silently ignored. No raw configuration text or key
-// name is copied into an error, a status snapshot or a diagnostic record.
+// The implemented slice resolves cold activation flags, the operator permission
+// ceiling, metadata-only observability, the bounded runtime limits and the S1
+// deterministic check profile (prompts, contexts, evaluators, policies, checks).
+// Valid C1 values outside that subset are rejected as unavailable instead of
+// silently ignored. No raw configuration text or key name is copied into an
+// error, a status snapshot or a diagnostic record.
 
 import { createHash, randomUUID } from "node:crypto";
 import { readFile, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { isAlias, isMap, isNode, isScalar, isSeq, parseDocument } from "yaml";
 import type {
+  CheckDefinition,
   ConfigurationFormat,
   ConfigurationOrigin,
   ConfigurationSourceStatus,
+  ContextPlan,
+  ContextProviderBinding,
   ContractError,
-  FoundationConfiguration,
+  EngineConfiguration,
+  EvaluatorProfile,
   Json,
   JsonObject,
+  JournalSettings,
+  PolicyProfile,
+  PromptBinding,
   RecentHistoryLimits,
   ResolvedConfiguration,
   Result,
+  RuntimeSettings,
+  TriggerBinding,
+  WorkState,
 } from "./contracts.js";
 
 export const CONFIGURATION_FILE_MAX_BYTES = 1_048_576;
@@ -28,12 +39,38 @@ export const MAX_STRUCTURAL_DEPTH = 32;
 export const MAX_MAP_ENTRIES = 256;
 
 export const DEFAULT_RECENT_HISTORY: RecentHistoryLimits = { maxEvents: 512, maxBytes: 2_097_152 };
+export const DEFAULT_JOURNAL_SETTINGS: JournalSettings = {
+  enabled: true,
+  directory: "agent:quality/logs",
+  maxFileBytes: 10_485_760,
+  rotationIntervalMs: null,
+  compressArchives: false,
+};
+export const DEFAULT_RUNTIME_SETTINGS: RuntimeSettings = {
+  maxConcurrentEvaluations: 2,
+  maxPendingChecks: 32,
+  maxEvidenceBytes: 16_777_216,
+  defaultRunTimeoutMs: 180_000,
+  maxRunTimeoutMs: 600_000,
+  componentInitTimeoutMs: 10_000,
+  componentStopTimeoutMs: 2_000,
+};
 
-const IMPLEMENTED_ROOT_KEYS = new Set(["schemaVersion", "enabled", "mode", "permissions", "observability"]);
-const UNIMPLEMENTED_ROOT_KEYS = [
-  "runtime", "observationSources", "sources", "prompts", "modelProfiles",
-  "contexts", "evaluators", "policies", "checks",
-] as const;
+const IMPLEMENTED_ROOT_KEYS = new Set([
+  "schemaVersion", "enabled", "mode", "runtime", "permissions", "prompts",
+  "contexts", "evaluators", "policies", "checks", "observability",
+]);
+const UNIMPLEMENTED_ROOT_KEYS = ["sources", "modelProfiles", "observationSources"] as const;
+
+const RUNTIME_LIMITS: Record<string, { min: number; max: number }> = {
+  maxConcurrentEvaluations: { min: 1, max: 16 },
+  maxPendingChecks: { min: 1, max: 512 },
+  maxEvidenceBytes: { min: 65_536, max: 1_073_741_824 },
+  defaultRunTimeoutMs: { min: 1_000, max: 600_000 },
+  maxRunTimeoutMs: { min: 1_000, max: 600_000 },
+  componentInitTimeoutMs: { min: 100, max: 60_000 },
+  componentStopTimeoutMs: { min: 100, max: 60_000 },
+};
 
 const PERMISSION_DEFAULTS: Record<string, unknown> = {
   modelProfiles: [],
@@ -53,18 +90,6 @@ const OBSERVABILITY_DEFAULTS: Record<string, unknown> = {
   maxRecordBytes: 65_536,
   maxCapturedBodyBytes: 8_192,
   maxSnapshotBytesPerRun: 1_048_576,
-  journal: {
-    enabled: true,
-    directory: "agent:quality/logs",
-    maxFileBytes: 10_485_760,
-    rotationIntervalMs: null,
-    compressArchives: false,
-  },
-  retention: {
-    maxArchivesPerSession: 4,
-    maxAgeMs: 1_209_600_000,
-    maxStorageBytes: 268_435_456,
-  },
   presentation: "summary",
   sinks: [],
 };
@@ -92,6 +117,20 @@ function tagAllowed(tag: unknown): boolean {
 
 const TEXT_CAPTURE_VALUES = new Set(["none", "excerpt", "full"]);
 const IMAGE_CAPTURE_VALUES = new Set(["none", "full"]);
+const WORK_STATES = new Set<WorkState>([
+  "work-expected", "waiting-dependency", "waiting-operator",
+  "completion-candidate", "complete", "unknown",
+]);
+const PRIORITIES = new Set(["low", "normal", "high"]);
+const BUILTIN_PROMPT_RESOURCES = new Set(["builtin:repetition-v1.md"]);
+const BUILTIN_CONTEXT_PROVIDERS = new Set(["core.task", "core.history", "core.waits"]);
+const BUILTIN_TRIGGERS = new Set(["core.every-tools", "core.periodic"]);
+const BUILTIN_EVALUATORS = new Set(["core.repeated-tools"]);
+const BUILTIN_POLICIES = new Set(["core.record-only"]);
+
+const CONFIG_ID_PATTERN = /^[a-z][a-z0-9-]{0,63}$/;
+const COMPONENT_ID_PATTERN = /^[a-z][a-z0-9-]*(\.[a-z][a-z0-9-]*)+$/;
+const CRITERION_ID_PATTERN = /^[a-z][a-z0-9.-]{0,127}$/;
 
 const YAML_PARSE_OPTIONS = {
   schema: "core",
@@ -114,6 +153,14 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
 
 function jsonEquals(left: unknown, right: unknown): boolean {
   return JSON.stringify(left) === JSON.stringify(right);
+}
+
+function isConfigId(value: unknown): value is string {
+  return typeof value === "string" && CONFIG_ID_PATTERN.test(value);
+}
+
+function isComponentId(value: unknown): value is string {
+  return typeof value === "string" && value.length <= 192 && COMPONENT_ID_PATTERN.test(value);
 }
 
 function yamlErrorCode(code: string | undefined): string {
@@ -234,6 +281,10 @@ export function parseConfigurationText(text: string): Result<JsonObject> {
   return { ok: true, value: json.value };
 }
 
+// ---------------------------------------------------------------------------
+// Per-family validation
+// ---------------------------------------------------------------------------
+
 function validatePermissions(input: unknown): Result<true> {
   if (input === undefined) return { ok: true, value: true };
   if (!isPlainObject(input)) return reject("config.invalid-value", "$.permissions");
@@ -282,10 +333,42 @@ function validateRecentHistory(input: unknown): Result<Partial<RecentHistoryLimi
   return { ok: true, value: limits };
 }
 
+function validateJournalSettings(input: unknown): Result<Partial<JournalSettings>> {
+  if (!isPlainObject(input)) return reject("config.invalid-value", "$.observability.journal");
+  const settings: Partial<JournalSettings> = {};
+  for (const key of Object.keys(input)) {
+    const supplied = input[key];
+    if (key === "enabled") {
+      if (typeof supplied !== "boolean") return reject("config.invalid-value", "$.observability.journal.enabled");
+      settings.enabled = supplied;
+    } else if (key === "directory") {
+      if (supplied !== DEFAULT_JOURNAL_SETTINGS.directory) {
+        return reject("config.capability-unavailable", "$.observability.journal.directory");
+      }
+      settings.directory = DEFAULT_JOURNAL_SETTINGS.directory;
+    } else if (key === "maxFileBytes") {
+      if (typeof supplied !== "number" || !Number.isInteger(supplied) || supplied < 4_096 || supplied > 1_073_741_824) {
+        return reject("config.invalid-value", "$.observability.journal.maxFileBytes");
+      }
+      settings.maxFileBytes = supplied;
+    } else if (key === "rotationIntervalMs") {
+      if (supplied !== null) return reject("config.capability-unavailable", "$.observability.journal.rotationIntervalMs");
+      settings.rotationIntervalMs = null;
+    } else if (key === "compressArchives") {
+      if (supplied !== false) return reject("config.capability-unavailable", "$.observability.journal.compressArchives");
+      settings.compressArchives = false;
+    } else {
+      return reject("config.unknown-key", "$.observability.journal");
+    }
+  }
+  return { ok: true, value: settings };
+}
+
 interface ObservabilitySubset {
   detail: "standard";
-  capture: FoundationConfiguration["observability"]["capture"];
+  capture: EngineConfiguration["observability"]["capture"];
   recentHistory: Partial<RecentHistoryLimits>;
+  journal: Partial<JournalSettings>;
 }
 
 function validateObservability(input: unknown): Result<ObservabilitySubset> {
@@ -296,6 +379,7 @@ function validateObservability(input: unknown): Result<ObservabilitySubset> {
       toolResults: "none", modelResponses: "none", images: "none", reasoning: "none",
     },
     recentHistory: {},
+    journal: {},
   };
   if (input === undefined) return { ok: true, value: subset };
   if (!isPlainObject(input)) return reject("config.invalid-value", "$.observability");
@@ -313,6 +397,10 @@ function validateObservability(input: unknown): Result<ObservabilitySubset> {
       const limits = validateRecentHistory(supplied);
       if (!limits.ok) return limits;
       subset.recentHistory = limits.value;
+    } else if (key === "journal") {
+      const journal = validateJournalSettings(supplied);
+      if (!journal.ok) return journal;
+      subset.journal = journal.value;
     } else if (Object.hasOwn(OBSERVABILITY_DEFAULTS, key)) {
       if (!jsonEquals(supplied, OBSERVABILITY_DEFAULTS[key])) {
         return reject("config.capability-unavailable", `$.observability.${key}`);
@@ -324,19 +412,376 @@ function validateObservability(input: unknown): Result<ObservabilitySubset> {
   return { ok: true, value: subset };
 }
 
-/**
- * Validates one already-parsed configuration document against the implemented
- * C1 subset. A valid document supplies cold inactive observation defaults plus
- * the limits it explicitly states; unset limits follow the earlier layer.
- */
-export interface ConfigurationLayer {
-  schemaVersion: 1;
-  enabled: false;
-  mode: "observe";
-  permissions: FoundationConfiguration["permissions"];
-  observability: ObservabilitySubset;
+function validateRuntimeSettings(input: unknown): Result<Partial<RuntimeSettings>> {
+  if (input === undefined) return { ok: true, value: {} };
+  if (!isPlainObject(input)) return reject("config.invalid-value", "$.runtime");
+  const settings: Partial<RuntimeSettings> = {};
+  for (const key of Object.keys(input)) {
+    const limits = RUNTIME_LIMITS[key];
+    if (limits === undefined) return reject("config.capability-unavailable", `$.runtime.${key}`);
+    const supplied = input[key];
+    if (typeof supplied !== "number" || !Number.isInteger(supplied) || supplied < limits.min || supplied > limits.max) {
+      return reject("config.invalid-value", `$.runtime.${key}`);
+    }
+    settings[key as keyof RuntimeSettings] = supplied;
+  }
+  if (settings.defaultRunTimeoutMs !== undefined && settings.maxRunTimeoutMs !== undefined
+    && settings.defaultRunTimeoutMs > settings.maxRunTimeoutMs) {
+    return reject("config.invalid-value", "$.runtime.defaultRunTimeoutMs");
+  }
+  return { ok: true, value: settings };
 }
 
+function validateComponentRef(use: unknown, field: string): Result<string> {
+  if (!isComponentId(use)) return reject("config.invalid-value", field);
+  return { ok: true, value: use };
+}
+
+function validateTriggerBinding(input: unknown, field: string): Result<TriggerBinding> {
+  if (!isPlainObject(input)) return reject("config.invalid-value", field);
+  const allowed = new Set(["id", "use", "options"]);
+  for (const key of Object.keys(input)) {
+    if (!allowed.has(key)) return reject("config.unknown-key", field);
+  }
+  if (!isConfigId(input["id"])) return reject("config.invalid-value", `${field}.id`);
+  const use = validateComponentRef(input["use"], `${field}.use`);
+  if (!use.ok) return use;
+  const options = input["options"] ?? {};
+  if (!isPlainObject(options)) return reject("config.invalid-value", `${field}.options`);
+  if (BUILTIN_TRIGGERS.has(use.value)) {
+    if (use.value === "core.every-tools") {
+      for (const key of Object.keys(options)) {
+        if (key !== "count" && key !== "includeNested") return reject("config.unknown-key", `${field}.options`);
+      }
+      const count = options["count"];
+      if (typeof count !== "number" || !Number.isInteger(count) || count <= 0 || count > 1_000) {
+        return reject("config.invalid-value", `${field}.options.count`);
+      }
+      if (options["includeNested"] !== undefined && options["includeNested"] !== false) {
+        return reject("config.capability-unavailable", `${field}.options.includeNested`);
+      }
+    } else {
+      for (const key of Object.keys(options)) {
+        if (key !== "everyMs" && key !== "requireNewEvidence") return reject("config.unknown-key", `${field}.options`);
+      }
+      const everyMs = options["everyMs"];
+      if (typeof everyMs !== "number" || !Number.isInteger(everyMs) || everyMs <= 0 || everyMs > 86_400_000) {
+        return reject("config.invalid-value", `${field}.options.everyMs`);
+      }
+      if (options["requireNewEvidence"] !== undefined && typeof options["requireNewEvidence"] !== "boolean") {
+        return reject("config.invalid-value", `${field}.options.requireNewEvidence`);
+      }
+    }
+  }
+  return { ok: true, value: { id: input["id"], use: use.value, options: options as JsonObject } };
+}
+
+function validateContextPlan(id: string, input: unknown): Result<ContextPlan> {
+  const field = `$.contexts.${id}`;
+  if (!isPlainObject(input)) return reject("config.invalid-value", field);
+  const allowed = new Set(["providers", "maxBytes", "maxEstimatedTokens", "reserveOutputTokens", "requiredCoverage", "overflow"]);
+  for (const key of Object.keys(input)) {
+    if (!allowed.has(key)) return reject("config.unknown-key", field);
+  }
+  const providersInput = input["providers"];
+  if (!Array.isArray(providersInput) || providersInput.length === 0 || providersInput.length > 32) {
+    return reject("config.invalid-value", `${field}.providers`);
+  }
+  const providers: ContextProviderBinding[] = [];
+  const seen = new Set<string>();
+  for (const [index, providerInput] of providersInput.entries()) {
+    const providerField = `${field}.providers[${index}]`;
+    if (!isPlainObject(providerInput)) return reject("config.invalid-value", providerField);
+    for (const key of Object.keys(providerInput)) {
+      if (key !== "id" && key !== "use" && key !== "options") return reject("config.unknown-key", providerField);
+    }
+    if (!isConfigId(providerInput["id"])) return reject("config.invalid-value", `${providerField}.id`);
+    if (seen.has(providerInput["id"])) return reject("config.duplicate-id", `${providerField}.id`);
+    seen.add(providerInput["id"]);
+    const use = validateComponentRef(providerInput["use"], `${providerField}.use`);
+    if (!use.ok) return use;
+    const options = providerInput["options"] ?? {};
+    if (!isPlainObject(options)) return reject("config.invalid-value", `${providerField}.options`);
+    if (use.value === "core.history") {
+      for (const key of Object.keys(options)) {
+        if (key !== "limit" && key !== "includeToolBodies") return reject("config.unknown-key", `${providerField}.options`);
+      }
+      const limit = options["limit"] ?? 12;
+      if (typeof limit !== "number" || !Number.isInteger(limit) || limit <= 0 || limit > 64) {
+        return reject("config.invalid-value", `${providerField}.options.limit`);
+      }
+      if (options["includeToolBodies"] !== undefined && options["includeToolBodies"] !== false) {
+        return reject("config.capability-unavailable", `${providerField}.options.includeToolBodies`);
+      }
+    } else if (BUILTIN_CONTEXT_PROVIDERS.has(use.value) && Object.keys(options).length > 0) {
+      return reject("config.unknown-key", `${providerField}.options`);
+    }
+    providers.push({ id: providerInput["id"], use: use.value, options: options as JsonObject });
+  }
+  const maxBytes = input["maxBytes"] ?? 262_144;
+  if (typeof maxBytes !== "number" || !Number.isInteger(maxBytes) || maxBytes <= 0 || maxBytes > 16_777_216) {
+    return reject("config.invalid-value", `${field}.maxBytes`);
+  }
+  const maxEstimatedTokens = input["maxEstimatedTokens"] ?? 16_000;
+  if (typeof maxEstimatedTokens !== "number" || !Number.isInteger(maxEstimatedTokens) || maxEstimatedTokens <= 0) {
+    return reject("config.invalid-value", `${field}.maxEstimatedTokens`);
+  }
+  const reserveOutputTokens = input["reserveOutputTokens"] ?? 2_048;
+  if (typeof reserveOutputTokens !== "number" || !Number.isInteger(reserveOutputTokens) || reserveOutputTokens < 0) {
+    return reject("config.invalid-value", `${field}.reserveOutputTokens`);
+  }
+  const requiredCoverage = input["requiredCoverage"] ?? "complete";
+  if (requiredCoverage !== "complete" && requiredCoverage !== "partial") {
+    return reject("config.invalid-value", `${field}.requiredCoverage`);
+  }
+  const overflow = input["overflow"] ?? "omit-optional";
+  if (overflow !== "omit-optional" && overflow !== "error") {
+    return reject("config.invalid-value", `${field}.overflow`);
+  }
+  return {
+    ok: true,
+    value: {
+      providers,
+      maxBytes,
+      maxEstimatedTokens,
+      reserveOutputTokens,
+      requiredCoverage,
+      overflow,
+    },
+  };
+}
+
+function validateEvaluatorProfile(id: string, input: unknown): Result<EvaluatorProfile> {
+  const field = `$.evaluators.${id}`;
+  if (!isPlainObject(input)) return reject("config.invalid-value", field);
+  for (const key of Object.keys(input)) {
+    if (key !== "use" && key !== "options") return reject("config.unknown-key", field);
+  }
+  const use = validateComponentRef(input["use"], `${field}.use`);
+  if (!use.ok) return use;
+  const options = input["options"] ?? {};
+  if (!isPlainObject(options)) return reject("config.invalid-value", `${field}.options`);
+  if (BUILTIN_EVALUATORS.has(use.value)) {
+    for (const key of Object.keys(options)) {
+      if (key !== "window" && key !== "minimumRepeats") return reject("config.unknown-key", `${field}.options`);
+    }
+    const window = options["window"] ?? 12;
+    if (typeof window !== "number" || !Number.isInteger(window) || window <= 0 || window > 64) {
+      return reject("config.invalid-value", `${field}.options.window`);
+    }
+    const minimumRepeats = options["minimumRepeats"] ?? 3;
+    if (typeof minimumRepeats !== "number" || !Number.isInteger(minimumRepeats) || minimumRepeats <= 0 || minimumRepeats > window) {
+      return reject("config.invalid-value", `${field}.options.minimumRepeats`);
+    }
+  }
+  return { ok: true, value: { use: use.value, options: options as JsonObject } };
+}
+
+function validatePolicyProfile(id: string, input: unknown): Result<PolicyProfile> {
+  const field = `$.policies.${id}`;
+  if (!isPlainObject(input)) return reject("config.invalid-value", field);
+  for (const key of Object.keys(input)) {
+    if (key !== "use" && key !== "options") return reject("config.unknown-key", field);
+  }
+  const use = validateComponentRef(input["use"], `${field}.use`);
+  if (!use.ok) return use;
+  const options = input["options"] ?? {};
+  if (!isPlainObject(options)) return reject("config.invalid-value", `${field}.options`);
+  if (BUILTIN_POLICIES.has(use.value) && Object.keys(options).length > 0) {
+    return reject("config.unknown-key", `${field}.options`);
+  }
+  return { ok: true, value: { use: use.value, options: options as JsonObject } };
+}
+
+function validatePromptBinding(id: string, input: unknown): Result<PromptBinding> {
+  const field = `$.prompts.${id}`;
+  if (!isPlainObject(input)) return reject("config.invalid-value", field);
+  for (const key of Object.keys(input)) {
+    if (key !== "use" && key !== "options") return reject("config.unknown-key", field);
+  }
+  const use = validateComponentRef(input["use"], `${field}.use`);
+  if (!use.ok) return use;
+  const options = input["options"] ?? {};
+  if (!isPlainObject(options)) return reject("config.invalid-value", `${field}.options`);
+  if (use.value === "core.prompt-files") {
+    for (const key of Object.keys(options)) {
+      if (key !== "instructions") return reject("config.unknown-key", `${field}.options`);
+    }
+    const instructions = options["instructions"];
+    if (!Array.isArray(instructions) || instructions.length === 0) {
+      return reject("config.invalid-value", `${field}.options.instructions`);
+    }
+    for (const entry of instructions) {
+      if (typeof entry !== "string") return reject("config.invalid-value", `${field}.options.instructions`);
+      if (!BUILTIN_PROMPT_RESOURCES.has(entry)) {
+        return reject("config.unresolved-resource", `${field}.options.instructions`);
+      }
+    }
+  }
+  return { ok: true, value: { use: use.value, options: options as JsonObject } };
+}
+
+function validateCheckDefinition(
+  id: string,
+  input: unknown,
+  localIds: { contexts: Set<string>; prompts: Set<string>; evaluators: Set<string>; policies: Set<string> },
+): Result<CheckDefinition> {
+  const field = `$.checks.${id}`;
+  if (!isPlainObject(input)) return reject("config.invalid-value", field);
+  const allowed = new Set([
+    "enabled", "mode", "triggers", "context", "prompt", "evaluator", "policy",
+    "workStates", "priority", "cooldownMs", "timeoutMs", "maxRunsPerEpisode",
+    "freshness", "criteria", "supersedes",
+  ]);
+  for (const key of Object.keys(input)) {
+    if (!allowed.has(key)) return reject("config.unknown-key", field);
+  }
+  const enabled = input["enabled"] ?? true;
+  if (typeof enabled !== "boolean") return reject("config.invalid-value", `${field}.enabled`);
+  const mode = input["mode"] ?? "inherit";
+  if (mode !== "inherit" && mode !== "observe" && mode !== "advise") {
+    return reject("config.invalid-value", `${field}.mode`);
+  }
+  if (mode === "advise") return reject("config.capability-unavailable", `${field}.mode`);
+
+  const triggersInput = input["triggers"] ?? [];
+  if (!Array.isArray(triggersInput)) return reject("config.invalid-value", `${field}.triggers`);
+  const triggers: TriggerBinding[] = [];
+  const seenBindings = new Set<string>();
+  for (const [index, triggerInput] of triggersInput.entries()) {
+    const binding = validateTriggerBinding(triggerInput, `${field}.triggers[${index}]`);
+    if (!binding.ok) return binding;
+    if (seenBindings.has(binding.value.id)) return reject("config.duplicate-id", `${field}.triggers[${index}].id`);
+    seenBindings.add(binding.value.id);
+    triggers.push(binding.value);
+  }
+
+  for (const [key, known] of [
+    ["context", localIds.contexts],
+    ["prompt", localIds.prompts],
+    ["evaluator", localIds.evaluators],
+    ["policy", localIds.policies],
+  ] as const) {
+    const supplied = input[key];
+    if (!isConfigId(supplied) || !known.has(supplied)) {
+      return reject("config.unresolved-reference", `${field}.${key}`);
+    }
+  }
+
+  const workStatesInput = input["workStates"] ?? ["work-expected", "completion-candidate"];
+  if (!Array.isArray(workStatesInput) || workStatesInput.length === 0) {
+    return reject("config.invalid-value", `${field}.workStates`);
+  }
+  const workStates: WorkState[] = [];
+  for (const entry of workStatesInput) {
+    if (typeof entry !== "string" || !WORK_STATES.has(entry as WorkState)) {
+      return reject("config.invalid-value", `${field}.workStates`);
+    }
+    workStates.push(entry as WorkState);
+  }
+
+  const priority = input["priority"] ?? "normal";
+  if (typeof priority !== "string" || !PRIORITIES.has(priority)) {
+    return reject("config.invalid-value", `${field}.priority`);
+  }
+  const cooldownMs = input["cooldownMs"] ?? 30_000;
+  if (typeof cooldownMs !== "number" || !Number.isInteger(cooldownMs) || cooldownMs < 0 || cooldownMs > 3_600_000) {
+    return reject("config.invalid-value", `${field}.cooldownMs`);
+  }
+  const timeoutMs = input["timeoutMs"];
+  if (timeoutMs !== undefined && (typeof timeoutMs !== "number" || !Number.isInteger(timeoutMs) || timeoutMs <= 0)) {
+    return reject("config.invalid-value", `${field}.timeoutMs`);
+  }
+  const maxRunsPerEpisode = input["maxRunsPerEpisode"] ?? 20;
+  if (typeof maxRunsPerEpisode !== "number" || !Number.isInteger(maxRunsPerEpisode) || maxRunsPerEpisode <= 0 || maxRunsPerEpisode > 1_000) {
+    return reject("config.invalid-value", `${field}.maxRunsPerEpisode`);
+  }
+  const freshness = input["freshness"] ?? "dependencies";
+  if (freshness !== "dependencies") return reject("config.capability-unavailable", `${field}.freshness`);
+
+  const criteriaInput = input["criteria"];
+  if (!Array.isArray(criteriaInput) || criteriaInput.length === 0 || criteriaInput.length > 64) {
+    return reject("config.invalid-value", `${field}.criteria`);
+  }
+  const criteria: string[] = [];
+  for (const entry of criteriaInput) {
+    if (typeof entry !== "string" || !CRITERION_ID_PATTERN.test(entry)) {
+      return reject("config.invalid-value", `${field}.criteria`);
+    }
+    if (criteria.includes(entry)) return reject("config.duplicate-id", `${field}.criteria`);
+    criteria.push(entry);
+  }
+
+  const supersedesInput = input["supersedes"] ?? [];
+  if (!Array.isArray(supersedesInput)) return reject("config.invalid-value", `${field}.supersedes`);
+  const supersedes: string[] = [];
+  for (const entry of supersedesInput) {
+    if (!isConfigId(entry)) return reject("config.invalid-value", `${field}.supersedes`);
+    supersedes.push(entry);
+  }
+
+  return {
+    ok: true,
+    value: {
+      enabled,
+      mode: "inherit",
+      triggers,
+      context: input["context"] as string,
+      prompt: input["prompt"] as string,
+      evaluator: input["evaluator"] as string,
+      policy: input["policy"] as string,
+      workStates,
+      priority: priority as CheckDefinition["priority"],
+      cooldownMs,
+      timeoutMs: timeoutMs ?? null,
+      maxRunsPerEpisode,
+      freshness: "dependencies",
+      criteria,
+      supersedes,
+    },
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Configuration layer validation and resolution
+// ---------------------------------------------------------------------------
+
+export interface ConfigurationLayer {
+  schemaVersion: 1;
+  enabled: boolean | undefined;
+  mode: "observe" | undefined;
+  runtime: Partial<RuntimeSettings>;
+  observability: ObservabilitySubset;
+  prompts: Record<string, PromptBinding>;
+  contexts: Record<string, ContextPlan>;
+  evaluators: Record<string, EvaluatorProfile>;
+  policies: Record<string, PolicyProfile>;
+  checks: Record<string, CheckDefinition>;
+}
+
+function validateNamedMap(
+  input: unknown,
+  field: string,
+  validateEntry: (id: string, value: unknown) => Result<unknown>,
+): Result<Record<string, unknown>> {
+  if (input === undefined) return { ok: true, value: {} };
+  if (!isPlainObject(input)) return reject("config.invalid-value", field);
+  if (Object.keys(input).length > MAX_MAP_ENTRIES) return reject("config.too-many-entries", field);
+  const entries: Record<string, unknown> = {};
+  for (const key of Object.keys(input)) {
+    if (!isConfigId(key)) return reject("config.invalid-value", field);
+    const entry = validateEntry(key, input[key]);
+    if (!entry.ok) return entry;
+    entries[key] = entry.value;
+  }
+  return { ok: true, value: entries };
+}
+
+/**
+ * Validates one already-parsed configuration document against the implemented
+ * C1 subset. A valid document supplies cold inactive-compatible defaults plus
+ * the values it explicitly states; unset fields follow the earlier layer.
+ */
 export function validateConfiguration(value: JsonObject): Result<ConfigurationLayer> {
   for (const key of Object.keys(value)) {
     if (!IMPLEMENTED_ROOT_KEYS.has(key) && !(UNIMPLEMENTED_ROOT_KEYS as readonly string[]).includes(key)) {
@@ -352,10 +797,15 @@ export function validateConfiguration(value: JsonObject): Result<ConfigurationLa
   if (mode !== undefined && mode !== "observe" && mode !== "advise") {
     return reject("config.invalid-value", "$.mode");
   }
+  if (mode === "advise") return reject("config.capability-unavailable", "$.mode");
+
+  const runtime = validateRuntimeSettings(value["runtime"]);
+  if (!runtime.ok) return runtime;
   const permissions = validatePermissions(value["permissions"]);
   if (!permissions.ok) return permissions;
   const observability = validateObservability(value["observability"]);
   if (!observability.ok) return observability;
+
   for (const key of UNIMPLEMENTED_ROOT_KEYS) {
     const supplied = value[key];
     if (supplied === undefined) continue;
@@ -363,26 +813,54 @@ export function validateConfiguration(value: JsonObject): Result<ConfigurationLa
       return reject("config.capability-unavailable", `$.${key}`);
     }
   }
-  if (enabled === true) return reject("config.capability-unavailable", "$.enabled");
-  if (mode === "advise") return reject("config.capability-unavailable", "$.mode");
+
+  const prompts = validateNamedMap(value["prompts"], "$.prompts", validatePromptBinding);
+  if (!prompts.ok) return prompts;
+  const contexts = validateNamedMap(value["contexts"], "$.contexts", validateContextPlan);
+  if (!contexts.ok) return contexts;
+  const evaluators = validateNamedMap(value["evaluators"], "$.evaluators", validateEvaluatorProfile);
+  if (!evaluators.ok) return evaluators;
+  const policies = validateNamedMap(value["policies"], "$.policies", validatePolicyProfile);
+  if (!policies.ok) return policies;
+
+  const localIds = {
+    contexts: new Set(Object.keys(contexts.value)),
+    prompts: new Set(Object.keys(prompts.value)),
+    evaluators: new Set(Object.keys(evaluators.value)),
+    policies: new Set(Object.keys(policies.value)),
+  };
+  const checks = validateNamedMap(value["checks"], "$.checks", (id, entry) => validateCheckDefinition(id, entry, localIds));
+  if (!checks.ok) return checks;
+
   return {
     ok: true,
     value: {
       schemaVersion: 1,
-      enabled: false,
-      mode: "observe",
-      permissions: { modelProfiles: [], actions: [] },
+      enabled,
+      mode: mode === "observe" ? "observe" : undefined,
+      runtime: runtime.value,
       observability: observability.value,
+      prompts: prompts.value as Record<string, PromptBinding>,
+      contexts: contexts.value as Record<string, ContextPlan>,
+      evaluators: evaluators.value as Record<string, EvaluatorProfile>,
+      policies: policies.value as Record<string, PolicyProfile>,
+      checks: checks.value as Record<string, CheckDefinition>,
     },
   };
 }
 
-export function defaultConfiguration(): FoundationConfiguration {
+export function defaultConfiguration(): EngineConfiguration {
   return {
     schemaVersion: 1,
     enabled: false,
     mode: "observe",
+    runtime: { ...DEFAULT_RUNTIME_SETTINGS },
     permissions: { modelProfiles: [], actions: [] },
+    prompts: {},
+    contexts: {},
+    evaluators: {},
+    policies: {},
+    checks: {},
     observability: {
       detail: "standard",
       capture: {
@@ -390,12 +868,13 @@ export function defaultConfiguration(): FoundationConfiguration {
         toolResults: "none", modelResponses: "none", images: "none", reasoning: "none",
       },
       recentHistory: { ...DEFAULT_RECENT_HISTORY },
+      journal: { ...DEFAULT_JOURNAL_SETTINGS },
     },
   };
 }
 
 /** Stable semantic fingerprint of an effective configuration. */
-export function configurationRevision(value: FoundationConfiguration): string {
+export function configurationRevision(value: EngineConfiguration): string {
   const digest = createHash("sha256").update(JSON.stringify(value), "utf8").digest("hex");
   return `cfg-${digest.slice(0, 16)}`;
 }
@@ -484,30 +963,88 @@ function rejectionReference(origin: ConfigurationOrigin): string {
   return `rejected-${origin}-${randomUUID()}`;
 }
 
-function applyCandidate(previous: FoundationConfiguration, candidate: ConfigurationLayer): Result<FoundationConfiguration> {
+function applyUserLayer(previous: EngineConfiguration, layer: ConfigurationLayer): EngineConfiguration {
   const previousLimits = previous.observability.recentHistory;
-  const supplied = candidate.observability.recentHistory;
+  const supplied = layer.observability.recentHistory;
+  const previousJournal = previous.observability.journal;
+  const suppliedJournal = layer.observability.journal;
   return {
-    ok: true,
-    value: {
-      schemaVersion: 1,
-      enabled: candidate.enabled,
-      mode: candidate.mode,
-      permissions: candidate.permissions,
-      observability: {
-        detail: candidate.observability.detail,
-        capture: candidate.observability.capture,
-        recentHistory: {
-          maxEvents: supplied.maxEvents ?? previousLimits.maxEvents,
-          maxBytes: supplied.maxBytes ?? previousLimits.maxBytes,
-        },
+    ...previous,
+    enabled: layer.enabled ?? previous.enabled,
+    mode: "observe",
+    runtime: { ...previous.runtime, ...layer.runtime },
+    observability: {
+      detail: "standard",
+      capture: layer.observability.capture,
+      recentHistory: {
+        maxEvents: supplied.maxEvents ?? previousLimits.maxEvents,
+        maxBytes: supplied.maxBytes ?? previousLimits.maxBytes,
+      },
+      journal: {
+        enabled: suppliedJournal.enabled ?? previousJournal.enabled,
+        directory: suppliedJournal.directory ?? previousJournal.directory,
+        maxFileBytes: suppliedJournal.maxFileBytes ?? previousJournal.maxFileBytes,
+        rotationIntervalMs: suppliedJournal.rotationIntervalMs ?? previousJournal.rotationIntervalMs,
+        compressArchives: suppliedJournal.compressArchives ?? previousJournal.compressArchives,
       },
     },
+    prompts: { ...previous.prompts, ...layer.prompts },
+    contexts: { ...previous.contexts, ...layer.contexts },
+    evaluators: { ...previous.evaluators, ...layer.evaluators },
+    policies: { ...previous.policies, ...layer.policies },
+    checks: { ...previous.checks, ...layer.checks },
   };
 }
 
+/**
+ * Project configuration may add new named entries but cannot redefine a user
+ * entry, override user-owned runtime/observability policy, or widen the
+ * implemented numeric ceilings. Larger or redefining values are errors.
+ */
+function applyProjectLayer(previous: EngineConfiguration, layer: ConfigurationLayer): Result<EngineConfiguration> {
+  if (Object.keys(layer.runtime).length > 0) {
+    return reject("config.capability-unavailable", "$.runtime");
+  }
+  for (const [family, entries] of [
+    ["prompts", layer.prompts],
+    ["contexts", layer.contexts],
+    ["evaluators", layer.evaluators],
+    ["policies", layer.policies],
+    ["checks", layer.checks],
+  ] as const) {
+    for (const id of Object.keys(entries)) {
+      if (Object.hasOwn(previous[family], id)) return reject("config.project-redefinition", `$.${family}.${id}`);
+    }
+  }
+  for (const [id, check] of Object.entries(layer.checks)) {
+    if (check.timeoutMs !== null && check.timeoutMs > previous.runtime.maxRunTimeoutMs) {
+      return reject("config.widens-limit", `$.checks.${id}.timeoutMs`);
+    }
+  }
+  return { ok: true, value: applyUserLayer(previous, layer) };
+}
+
+function validateResolvedReferences(configuration: EngineConfiguration): Result<true> {
+  for (const [checkId, check] of Object.entries(configuration.checks)) {
+    const field = `$.checks.${checkId}`;
+    if (!Object.hasOwn(configuration.contexts, check.context)) return reject("config.unresolved-reference", `${field}.context`);
+    if (!Object.hasOwn(configuration.prompts, check.prompt)) return reject("config.unresolved-reference", `${field}.prompt`);
+    if (!Object.hasOwn(configuration.evaluators, check.evaluator)) return reject("config.unresolved-reference", `${field}.evaluator`);
+    if (!Object.hasOwn(configuration.policies, check.policy)) return reject("config.unresolved-reference", `${field}.policy`);
+    if (check.timeoutMs !== null && check.timeoutMs > configuration.runtime.maxRunTimeoutMs) {
+      return reject("config.widens-limit", `${field}.timeoutMs`);
+    }
+    for (const superseded of check.supersedes) {
+      if (!Object.hasOwn(configuration.checks, superseded)) {
+        return reject("config.unresolved-reference", `${field}.supersedes`);
+      }
+    }
+  }
+  return { ok: true, value: true };
+}
+
 function toResolved(
-  effective: FoundationConfiguration,
+  effective: EngineConfiguration,
   sources: ConfigurationSourceStatus,
   origins: ConfigurationOrigin[],
 ): ResolvedConfiguration {
@@ -540,15 +1077,23 @@ export async function loadEffectiveConfiguration(locations: ConfigurationLocatio
   }
   if (userRead.value !== null) {
     const candidate = parseAndValidate(userRead.value);
-    const applied = candidate.ok ? applyCandidate(effective, candidate.value) : candidate;
-    if (!applied.ok) {
+    if (!candidate.ok) {
       sources.user = "rejected";
       return {
         resolved: toResolved(effective, sources, origins),
-        rejection: { origin: "user", format: userRead.value.format, candidateRevision: rejectionReference("user"), error: applied.error },
+        rejection: { origin: "user", format: userRead.value.format, candidateRevision: rejectionReference("user"), error: candidate.error },
       };
     }
-    effective = applied.value;
+    const applied = applyUserLayer(effective, candidate.value);
+    const references = validateResolvedReferences(applied);
+    if (!references.ok) {
+      sources.user = "rejected";
+      return {
+        resolved: toResolved(effective, sources, origins),
+        rejection: { origin: "user", format: userRead.value.format, candidateRevision: rejectionReference("user"), error: references.error },
+      };
+    }
+    effective = applied;
     sources.user = "applied";
     origins.push("user");
   }
@@ -565,17 +1110,26 @@ export async function loadEffectiveConfiguration(locations: ConfigurationLocatio
   }
   if (projectRead.value !== null) {
     const candidate = parseAndValidate(projectRead.value);
-    const applied = candidate.ok ? applyCandidate(effective, candidate.value) : candidate;
-    if (!applied.ok) {
+    const applied = candidate.ok ? applyProjectLayer(effective, candidate.value) : candidate;
+    if (applied.ok) {
+      const references = validateResolvedReferences(applied.value);
+      if (!references.ok) {
+        sources.project = "rejected";
+        return {
+          resolved: toResolved(effective, sources, origins),
+          rejection: { origin: "project", format: projectRead.value.format, candidateRevision: rejectionReference("project"), error: references.error },
+        };
+      }
+      effective = applied.value;
+      sources.project = "applied";
+      origins.push("project");
+    } else {
       sources.project = "rejected";
       return {
         resolved: toResolved(effective, sources, origins),
         rejection: { origin: "project", format: projectRead.value.format, candidateRevision: rejectionReference("project"), error: applied.error },
       };
     }
-    effective = applied.value;
-    sources.project = "applied";
-    origins.push("project");
   }
 
   return { resolved: toResolved(effective, sources, origins), rejection };

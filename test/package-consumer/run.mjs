@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { existsSync } from "node:fs";
 import { mkdir, readFile, readdir, writeFile } from "node:fs/promises";
 import { dirname, join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -77,7 +78,10 @@ assert.ok(extension);
 assert.equal(resolve(extension.resolvedPath), entryPath);
 assert.equal(extension.tools.size, 0);
 assert.deepEqual([...extension.commands.keys()], ["quality"]);
-assert.deepEqual([...extension.handlers.keys()].sort(), ["session_shutdown", "session_start"]);
+assert.deepEqual([...extension.handlers.keys()].sort(), [
+  "input", "session_shutdown", "session_start", "tool_execution_end",
+  "tool_execution_start", "turn_end",
+]);
 for (const providerEvent of ["before_provider_request", "before_provider_headers", "after_provider_response"]) {
   assert.equal(extension.handlers.has(providerEvent), false);
 }
@@ -115,19 +119,80 @@ const active = await readStatus(runner, messages);
 assert.equal(active.runtime.state, "active");
 assert.equal(active.configuration.enabled, false);
 assert.equal(active.configuration.mode, "observe");
-assert.deepEqual(active.diagnostics.recentEvents.map(record => record.event), ["quality.runtime.started"]);
+assert.deepEqual(active.diagnostics.recentEvents.map(record => record.event), [
+  "quality.runtime.started",
+  "quality.config.applied",
+]);
 
 await runner.emit({ type: "session_shutdown", reason: "quit" });
 const retired = await readStatus(runner, messages);
 assert.equal(retired.runtime.state, "retired");
 assert.deepEqual(retired.diagnostics.recentEvents.map(record => record.event), [
   "quality.runtime.started",
+  "quality.config.applied",
   "quality.runtime.retired",
 ]);
 assert.deepEqual(await listOrEmpty(fixtureRoot), fixtureBefore, "the installed engine must not create fixture files");
 assert.deepEqual(await listOrEmpty(agentDir), [], "the installed engine must not create an agent-side directory");
 assert.deepEqual(await listOrEmpty(projectDir), []);
 assert.deepEqual(effects, { sendMessage: 0, sendUserMessage: 0, appendEntry: 0, abort: 0 }, "the installed engine attempts no primary effect");
+
+// Phase two: the installed package runs the enabled deterministic loop and
+// resolves its shipped prompt resource through the real timer.
+const promptResourcePath = join(packageRoot, "resources", "prompts", "repetition-v1.md");
+const resourcesResolved = existsSync(promptResourcePath);
+assert.equal(resourcesResolved, true, "the packed artifact ships its prompt resource");
+await mkdir(join(agentDir, "quality"), { recursive: true });
+await writeFile(join(agentDir, "quality", "config.json"), JSON.stringify({
+  schemaVersion: 1,
+  enabled: true,
+  mode: "observe",
+  prompts: { repetition: { use: "core.prompt-files", options: { instructions: ["builtin:repetition-v1.md"] } } },
+  contexts: {
+    "recent-work": {
+      providers: [
+        { id: "task", use: "core.task" },
+        { id: "history", use: "core.history", options: { limit: 12, includeToolBodies: false } },
+        { id: "waits", use: "core.waits" },
+      ],
+    },
+  },
+  evaluators: { "repetition-check": { use: "core.repeated-tools" } },
+  policies: { record: { use: "core.record-only" } },
+  checks: {
+    repetition: {
+      triggers: [{ id: "periodic", use: "core.periodic", options: { everyMs: 150, requireNewEvidence: false } }],
+      context: "recent-work",
+      prompt: "repetition",
+      evaluator: "repetition-check",
+      policy: "record",
+      cooldownMs: 0,
+      criteria: ["efficiency.repetition"],
+    },
+  },
+}), "utf8");
+await runner.emit({ type: "session_start", reason: "reload" });
+await runner.emit({ type: "input", text: "assess repetition", source: "interactive" });
+const loopDeadline = Date.now() + 2_500;
+let installedLoopRuns = 0;
+let promptResourceRefs = [];
+for (;;) {
+  const status = await readStatus(runner, messages);
+  installedLoopRuns = status.checks.runs;
+  promptResourceRefs = status.diagnostics.recentEvents
+    .filter(record => record.event === "quality.context.manifest")
+    .flatMap(record => record.fields.data.resourceRefs ?? []);
+  if (installedLoopRuns >= 1 || Date.now() > loopDeadline) break;
+  await new Promise(resolvePromise => setTimeout(resolvePromise, 25));
+}
+assert.ok(installedLoopRuns >= 1, "the installed package admitted a check by time");
+assert.ok(promptResourceRefs.includes("builtin:repetition-v1.md"), "the installed prompt resource resolved");
+const journalDirectory = join(agentDir, "quality", "logs");
+const journalFiles = await listOrEmpty(journalDirectory);
+assert.equal(journalFiles.length, 1, "the installed engine wrote one session journal");
+const journalText = await readFile(join(journalDirectory, journalFiles[0]), "utf8");
+assert.ok(journalText.includes("quality.check.settled"), "the installed journal contains the settlement");
+await runner.emit({ type: "session_shutdown", reason: "quit" });
 
 process.stdout.write(`QE_CONSUMER_REPORT=${JSON.stringify({
   ok: true,
@@ -149,5 +214,9 @@ process.stdout.write(`QE_CONSUMER_REPORT=${JSON.stringify({
   },
   eventNames: retired.diagnostics.recentEvents.map(record => record.event),
   effectCounts: effects,
+  resourcesResolved,
+  installedLoopRuns,
+  promptResourceRefs,
+  journalFiles,
   fixtureFilesCreated: [],
 })}\n`);

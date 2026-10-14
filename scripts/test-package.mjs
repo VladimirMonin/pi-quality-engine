@@ -15,13 +15,25 @@ import { fileURLToPath } from "node:url";
 // package cache. It never reads personal npm or Pi settings.
 
 const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const npm = process.env.npm_execpath
-  ? [process.execPath, process.env.npm_execpath]
-  : [process.platform === "win32" ? "npm.cmd" : "npm"];
+function resolveNpm() {
+  const candidates = [
+    process.env.npm_execpath,
+    join(dirname(process.execPath), "node_modules", "npm", "bin", "npm-cli.js"),
+  ].filter(Boolean);
+  const cli = candidates.find(candidate => existsSync(candidate));
+  if (cli !== undefined) return { command: process.execPath, prefix: [cli], shell: false };
+  return {
+    command: process.platform === "win32" ? "npm.cmd" : "npm",
+    prefix: [],
+    shell: process.platform === "win32",
+  };
+}
+
+const npm = resolveNpm();
 const workDir = mkdtempSync(join(tmpdir(), "qe-package-"));
 const packDir = join(workDir, "pack");
 const consumer = join(workDir, "consumer");
-const evidenceDir = join(packageRoot, "verification", "K01");
+const evidenceDir = process.env.QE_EVIDENCE_DIR ?? join(packageRoot, "verification", "K02-repair3");
 const HOST_PEER = "@earendil-works/pi-coding-agent@1.1.0";
 
 function sha256File(path) {
@@ -66,7 +78,7 @@ function run(command, args, options = {}) {
 }
 
 function runNpm(args, options = {}) {
-  return run(npm[0], [...npm.slice(1), ...args], { env: isolatedNpmEnvironment(), ...options });
+  return run(npm.command, [...npm.prefix, ...args], { env: isolatedNpmEnvironment(), shell: npm.shell, ...options });
 }
 
 function consumerEnvironment() {
@@ -92,9 +104,9 @@ try {
   const packResult = runNpm(["pack", "--json", "--pack-destination", packDir], { cwd: packageRoot });
   const packInfo = JSON.parse(packResult.stdout)[0];
   assert.equal(packInfo.name, "pi-quality-engine");
-  assert.equal(packInfo.version, "0.0.1");
+  assert.equal(packInfo.version, "0.0.2");
   const paths = packInfo.files.map(file => file.path);
-  for (const required of ["package.json", "README.md", "THIRD_PARTY_NOTICES.md", "dist/index.js", "dist/contracts.js"]) {
+  for (const required of ["package.json", "README.md", "THIRD_PARTY_NOTICES.md", "dist/index.js", "dist/contracts.js", "resources/prompts/repetition-v1.md"]) {
     assert.ok(paths.includes(required), `packed artifact is missing ${required}`);
   }
   for (const path of paths) {
@@ -134,21 +146,28 @@ try {
   assert.ok(markerLine, `consumer report missing from stdout:\n${consumerResult.stdout}\n${consumerResult.stderr}`);
   const report = JSON.parse(markerLine.slice("QE_CONSUMER_REPORT=".length));
   assert.equal(report.ok, true);
-  assert.equal(report.packageVersion, "0.0.1");
+  assert.equal(report.packageVersion, "0.0.2");
   assert.equal(report.hostVersion, "1.1.0");
   assert.equal(report.peerRange, "*");
   assert.deepEqual(report.loadErrors, []);
   assert.deepEqual(report.commandNames, ["quality"]);
-  assert.deepEqual(report.handlerEvents, ["session_shutdown", "session_start"]);
+  assert.deepEqual(report.handlerEvents, [
+    "input", "session_shutdown", "session_start", "tool_execution_end",
+    "tool_execution_start", "turn_end",
+  ]);
   assert.equal(report.toolCount, 0);
   assert.deepEqual(report.statuses, { inactive: "inactive", active: "active", retired: "retired" });
-  assert.deepEqual(report.eventNames, ["quality.runtime.started", "quality.runtime.retired"]);
+  assert.deepEqual(report.eventNames, ["quality.runtime.started", "quality.config.applied", "quality.runtime.retired"]);
   assert.deepEqual(report.effectCounts, { sendMessage: 0, sendUserMessage: 0, appendEntry: 0, abort: 0 });
   assert.deepEqual(report.fixtureFilesCreated, []);
+  assert.equal(report.resourcesResolved, true);
+  assert.ok(report.installedLoopRuns >= 1);
+  assert.ok(report.promptResourceRefs.includes("builtin:repetition-v1.md"));
+  assert.equal(report.journalFiles.length, 1);
 
   const evidence = {
-    checkpoint: "K01",
-    case: "K01-T04",
+    checkpoint: "K02",
+    case: "K02-T04",
     tarball: {
       filename: packInfo.filename,
       retainedAt: retainedTarball,
@@ -174,7 +193,7 @@ try {
 
   console.log(`packed ${packInfo.filename} (${paths.length} files, sha256 ${tarballSha256.slice(0, 16)}...)`);
   console.log(`installed host peer ${HOST_PEER} into an isolated consumer and loaded ${report.entryPath}`);
-  console.log("K01-T04 package consumer assertions passed");
+  console.log("K02-T04 package consumer assertions passed");
 } finally {
   rmSync(workDir, { recursive: true, force: true });
 }

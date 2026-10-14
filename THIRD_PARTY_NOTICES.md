@@ -1,8 +1,10 @@
 # Third-party notices
 
 This package contains original source code. No donor extension source code has
-been copied into `src/` or `dist/`. Reference checkouts, when needed, stay under
-the ignored `donors/` directory and are not shipped.
+been copied into `src/`, `dist/` or `resources/`. Reference checkouts, when
+needed, stay under the ignored `donors/` directory and are not shipped. The
+`examples/independent-extension/` fixture is original project code and is not
+part of the published package.
 
 ## Frozen baseline used for interface inspection
 
@@ -17,8 +19,8 @@ the ignored `donors/` directory and are not shipped.
 Declared in `peerDependencies` with range `"*"`, supplied by Pi at runtime:
 
 - `@earendil-works/pi-coding-agent` — the extension API, agent directory
-  resolution and host version used by this package. Pi supplies this package;
-  see the upstream Pi package guide for its license.
+  resolution, host version and event surface used by this package. Pi supplies
+  this package; see the upstream Pi package guide for its license.
 
 ## Runtime dependency
 
@@ -34,4 +36,4 @@ Declared in `peerDependencies` with range `"*"`, supplied by Pi at runtime:
   tests) — host package, see above.
 
 The verification evidence under `verification/` records the actual installed
-versions used for each probe.
+versions and SDK file digests used for each probe.

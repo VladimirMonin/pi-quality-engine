@@ -10,10 +10,10 @@ import { fileURLToPath } from "node:url";
 // digests describe exactly the tested working tree.
 
 const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const evidenceDir = join(packageRoot, "verification", "K01");
+const evidenceDir = process.env.QE_EVIDENCE_DIR ?? join(packageRoot, "verification", "K02-repair3");
 mkdirSync(evidenceDir, { recursive: true });
 const SKIP_DIRECTORIES = new Set(["node_modules", "dist", ".test-build", "donors", "verification", ".serena", ".git", "logs"]);
-const CANDIDATE_ROOTS = ["src", "test", "scripts"];
+const CANDIDATE_ROOTS = ["src", "test", "scripts", "resources", "examples"];
 const CANDIDATE_FILES = [
   "package.json", "package-lock.json", "tsconfig.json", "tsconfig.test.json",
   "README.md", "THIRD_PARTY_NOTICES.md", ".gitignore",
@@ -105,7 +105,7 @@ function npmVersion() {
 }
 
 const manifest = {
-  checkpoint: "K01",
+  checkpoint: "K02",
   projectVersion: JSON.parse(readFileSync(join(packageRoot, "package.json"), "utf8")).version,
   baseCommit: execFileSync("git", ["rev-parse", "HEAD"], { cwd: packageRoot, encoding: "utf8" }).trim(),
   candidateState: "uncommitted working tree; the acceptance owner owns the commit",
@@ -133,4 +133,4 @@ writeFileSync(join(evidenceDir, "manifest.json"), `${JSON.stringify(manifest, nu
 console.log(`candidate files: ${candidateDigests.length}, digest ${candidateDigest.slice(0, 16)}...`);
 console.log(`host SDK: ${hostManifest.name}@${hostManifest.version} integrity ${String(sdkIdentity.host.npmIntegrity).slice(0, 24)}...`);
 console.log(`tarball: ${tarball ? `${tarball.filename} sha256 ${tarball.sha256.slice(0, 16)}...` : "not retained yet"}`);
-console.log(`evidence: ${manifest.artifacts.evidenceFiles.length} files in verification/K01`);
+console.log(`evidence: ${manifest.artifacts.evidenceFiles.length} files in ${relative(packageRoot, evidenceDir).split("\\").join("/")}`);

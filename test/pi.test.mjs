@@ -149,7 +149,10 @@ test("the built package loads in real Pi and starts then retires an inert runtim
     assert.equal(resolve(extension.resolvedPath), extensionEntry);
     assert.equal(extension.tools.size, 0);
     assert.deepEqual([...extension.commands.keys()], ["quality"]);
-    assert.deepEqual([...extension.handlers.keys()].sort(), ["session_shutdown", "session_start"]);
+    assert.deepEqual([...extension.handlers.keys()].sort(), [
+      "input", "session_shutdown", "session_start", "tool_execution_end",
+      "tool_execution_start", "turn_end",
+    ]);
     for (const providerEvent of ["before_provider_request", "before_provider_headers", "after_provider_response", "provider_stream_event"]) {
       assert.equal(extension.handlers.has(providerEvent), false);
     }
@@ -158,7 +161,7 @@ test("the built package loads in real Pi and starts then retires an inert runtim
     const inactive = await readStatus(host);
     assert.equal(inactive.runtime.state, "inactive");
     assert.equal(inactive.runtime.generation, null);
-    assert.equal(inactive.engine.version, "0.0.1");
+    assert.equal(inactive.engine.version, "0.0.2");
     assert.equal(inactive.configuration.enabled, false);
     assert.equal(inactive.configuration.mode, "observe");
     assert.equal(inactive.configuration.rejection, null);
@@ -175,8 +178,15 @@ test("the built package loads in real Pi and starts then retires an inert runtim
     assert.equal(active.activation.checkExecution, "unavailable");
     assert.equal(active.activation.autonomousModelCalls, "unavailable");
     assert.equal(active.capabilities.modelEvaluation, "unavailable");
-    assert.equal(active.capabilities.journalFiles, "unavailable");
-    assert.deepEqual(active.diagnostics.recentEvents.map(record => record.event), ["quality.runtime.started"]);
+    assert.equal(active.capabilities.feedbackActions, "unavailable");
+    assert.equal(active.capabilities.journalFiles, "available");
+    assert.equal(active.capabilities.triggersAndScheduling, "available");
+    assert.equal(active.capabilities.componentRegistry, "available");
+    assert.equal(active.capabilities.functionalStatePersistence, "unavailable");
+    assert.deepEqual(active.diagnostics.recentEvents.map(record => record.event), [
+      "quality.runtime.started",
+      "quality.config.applied",
+    ]);
     assert.equal(JSON.stringify(active).includes("quality.model.dispatched"), false);
     assert.deepEqual(host.effects, { sendMessage: 0, sendUserMessage: 0, appendEntry: 0, abort: 0 }, "the inert engine attempts no primary effect");
 
@@ -186,9 +196,10 @@ test("the built package loads in real Pi and starts then retires an inert runtim
     assert.equal(retired.runtime.executionState, "shutdown");
     assert.deepEqual(retired.diagnostics.recentEvents.map(record => record.event), [
       "quality.runtime.started",
+      "quality.config.applied",
       "quality.runtime.retired",
     ]);
-    assert.equal(retired.diagnostics.recentEvents[1]?.fields.data.cause, "quit");
+    assert.equal(retired.diagnostics.recentEvents[2]?.fields.data.cause, "quit");
 
     assert.deepEqual(await listTree(root), filesBefore, "the inert engine must not create host or project files");
     assert.deepEqual(await listOrEmpty(host.agentDir), [], "no owned journal or state directory is created yet");
@@ -205,11 +216,11 @@ test("the built package loads in real Pi and starts then retires an inert runtim
       capabilities: active.capabilities,
       createdFiles: [],
       notes: [
-        "The lifecycle records are the only diagnostic destination implemented at K01.",
+        "The lifecycle records are the implemented diagnostic destination; the K02 session journal is exercised by the K02 host cases.",
         "No quality.model.dispatched or action event exists in the retained history.",
       ],
     });
-    assert.equal(journalText.trim().split("\n").length, 2);
+    assert.equal(journalText.trim().split("\n").length, 3);
   } finally {
     await rm(root, { recursive: true, force: true });
   }
@@ -231,6 +242,7 @@ test("an invalid user configuration with a secret sentinel is rejected without l
     assert.deepEqual(status.diagnostics.recentEvents.map(record => record.event), [
       "quality.config.rejected",
       "quality.runtime.started",
+      "quality.config.applied",
     ]);
     const rejection = status.diagnostics.recentEvents[0];
     assert.deepEqual(rejection.fields.data.fieldPaths, ["$"]);
@@ -303,6 +315,7 @@ test("a project configuration is applied only for a trusted project and cannot s
     assert.deepEqual(trusted.diagnostics.recentEvents.map(record => record.event), [
       "quality.config.rejected",
       "quality.runtime.started",
+      "quality.config.applied",
     ]);
     await trustedHost.runner.emit({ type: "session_shutdown", reason: "quit" });
 
@@ -349,7 +362,7 @@ test("the public contracts entry imports without session-owned side effects", { 
       `const module = await import(${JSON.stringify(pathToFileURL(contractsEntry).href)}); process.stdout.write(JSON.stringify(Object.keys(module)));`,
     ], { cwd: project, env: process.env, encoding: "utf8", timeout: 15000 });
     assert.equal(probe.status, 0, probe.stderr);
-    assert.deepEqual(JSON.parse(probe.stdout), []);
+    assert.deepEqual(JSON.parse(probe.stdout), ["REGISTRY_AVAILABLE_CHANNEL", "REGISTRY_QUERY_CHANNEL"]);
     assert.deepEqual(await listTree(root), before, "a contract import must not create files");
   } finally {
     await rm(root, { recursive: true, force: true });

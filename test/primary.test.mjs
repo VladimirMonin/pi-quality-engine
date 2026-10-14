@@ -10,7 +10,7 @@ import {
 // Real primary-session smoke with a scripted, no-paid provider route.
 //
 // The scripted provider counts every dispatch at the actual provider boundary.
-// That counter is the independent witness for K01-B.10: engine lifecycle work
+// That counter is the independent witness for K02-B.10/K02-B.12: engine lifecycle work
 // (start, status, retirement) adds zero dispatches, while ordinary prompt turns
 // reach the provider exactly once each. The same session then proves that the
 // primary keeps working after engine retirement and that the retired generation
@@ -130,7 +130,10 @@ test("the real primary stays usable through engine retirement with zero owned di
       const active = JSON.parse(messages.at(-1));
       assert.equal(active.runtime.state, "active");
       assert.equal(active.configuration.enabled, false);
-      assert.deepEqual(active.diagnostics.recentEvents.map(record => record.event), ["quality.runtime.started"]);
+      assert.deepEqual(active.diagnostics.recentEvents.map(record => record.event), [
+        "quality.runtime.started",
+        "quality.config.applied",
+      ]);
 
       // A normal primary turn reaches the scripted provider exactly once.
       await session.prompt("Say hello");
@@ -147,6 +150,8 @@ test("the real primary stays usable through engine retirement with zero owned di
       assert.equal(retired.runtime.executionState, "shutdown");
       assert.deepEqual(retired.diagnostics.recentEvents.map(record => record.event), [
         "quality.runtime.started",
+        "quality.config.applied",
+        "quality.runtime.state",
         "quality.runtime.retired",
       ]);
       const recordsAfterRetirement = retired.diagnostics.recentEvents.length;
@@ -166,8 +171,8 @@ test("the real primary stays usable through engine retirement with zero owned di
       if (evidenceDir) {
         await mkdir(evidenceDir, { recursive: true });
         await writeFile(join(evidenceDir, "primary-smoke.json"), `${JSON.stringify({
-          checkpoint: "K01",
-          case: "K01-T01/K01-B.10 primary counter",
+          checkpoint: "K02",
+          case: "K02 primary provider counter",
           route: "scripted in-process provider (no network, no credentials)",
           providerDispatches: dispatchCounter.total,
           engineOwnedDispatches: 0,

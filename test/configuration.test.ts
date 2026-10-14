@@ -186,25 +186,193 @@ test("present configuration requires schema version 1 and typed implemented valu
 });
 
 test("valid C1 values outside the implemented slice are reported unavailable, not accepted", () => {
-  const cases: Array<[unknown, string]> = [
-    [{ schemaVersion: 1, enabled: true }, "$.enabled"],
+  const unavailable: Array<[unknown, string]> = [
     [{ schemaVersion: 1, mode: "advise" }, "$.mode"],
     [{ schemaVersion: 1, observability: { detail: "trace" } }, "$.observability.detail"],
     [{ schemaVersion: 1, observability: { capture: { prompts: "excerpt" } } }, "$.observability.capture.prompts"],
-    [{ schemaVersion: 1, observability: { journal: { enabled: false } } }, "$.observability.journal"],
+    [{ schemaVersion: 1, observability: { journal: { rotationIntervalMs: 60_000 } } }, "$.observability.journal.rotationIntervalMs"],
     [{ schemaVersion: 1, observability: { presentation: "diagnostic" } }, "$.observability.presentation"],
     [{ schemaVersion: 1, permissions: { modelProfiles: ["local"] } }, "$.permissions.modelProfiles"],
     [{ schemaVersion: 1, permissions: { allowIdleContinuation: true } }, "$.permissions.allowIdleContinuation"],
-    [{ schemaVersion: 1, checks: { repetition: {} } }, "$.checks"],
     [{ schemaVersion: 1, modelProfiles: { local: {} } }, "$.modelProfiles"],
+    [{ schemaVersion: 1, sources: { docs: {} } }, "$.sources"],
+    [{ schemaVersion: 1, runtime: { maxFeedbackPerEpisode: 1 } }, "$.runtime.maxFeedbackPerEpisode"],
   ];
-  for (const [input, expectedField] of cases) {
+  for (const [input, expectedField] of unavailable) {
     const parsed = validateConfiguration(JSON.parse(JSON.stringify(input)));
-    assert.equal(parsed.ok, false);
+    assert.equal(parsed.ok, false, JSON.stringify(input));
     if (parsed.ok) continue;
     assert.equal(parsed.error.code, "config.capability-unavailable", JSON.stringify(input));
     assert.equal(parsed.error.field, expectedField);
   }
+
+  // K02 activates the deterministic loop: `enabled: true` and a disabled
+  // journal are valid implemented configuration now.
+  const enabled = validateConfiguration({ schemaVersion: 1, enabled: true });
+  assert.equal(enabled.ok, true);
+  if (enabled.ok) assert.equal(enabled.value.enabled, true);
+  const noJournal = validateConfiguration({ schemaVersion: 1, observability: { journal: { enabled: false } } });
+  assert.equal(noJournal.ok, true);
+  if (noJournal.ok) assert.equal(noJournal.value.observability.journal.enabled, false);
+});
+
+test("the S1 deterministic check profile validates references and bounded options", async () => {
+  const valid = validateConfiguration(JSON.parse(JSON.stringify({
+    schemaVersion: 1,
+    enabled: true,
+    mode: "observe",
+    prompts: { repetition: { use: "core.prompt-files", options: { instructions: ["builtin:repetition-v1.md"] } } },
+    contexts: {
+      "recent-work": {
+        providers: [
+          { id: "task", use: "core.task" },
+          { id: "history", use: "core.history", options: { limit: 12, includeToolBodies: false } },
+          { id: "waits", use: "core.waits" },
+        ],
+        maxEstimatedTokens: 4000,
+      },
+    },
+    evaluators: { "repetition-check": { use: "core.repeated-tools", options: { window: 12, minimumRepeats: 3 } } },
+    policies: { record: { use: "core.record-only" } },
+    checks: {
+      repetition: {
+        enabled: true,
+        triggers: [
+          { id: "every-five", use: "core.every-tools", options: { count: 5 } },
+          { id: "periodic", use: "core.periodic", options: { everyMs: 120000, requireNewEvidence: true } },
+        ],
+        context: "recent-work",
+        prompt: "repetition",
+        evaluator: "repetition-check",
+        policy: "record",
+        criteria: ["efficiency.repetition"],
+      },
+    },
+    observability: { detail: "standard", presentation: "summary" },
+  })));
+  assert.equal(valid.ok, true);
+  if (!valid.ok) return;
+  assert.equal(valid.value.checks["repetition"]?.triggers.length, 2);
+  assert.equal(valid.value.checks["repetition"]?.timeoutMs, null);
+  assert.equal(valid.value.enabled, true);
+
+  await withFixture(async paths => {
+    await writeConfig(join(paths.agentDir, "quality", "config.yaml"), [
+      "schemaVersion: 1",
+      "enabled: true",
+      "mode: observe",
+      "prompts:",
+      "  repetition:",
+      "    use: core.prompt-files",
+      "    options:",
+      "      instructions: [builtin:repetition-v1.md]",
+      "contexts:",
+      "  recent-work:",
+      "    providers:",
+      "      - id: task",
+      "        use: core.task",
+      "      - id: history",
+      "        use: core.history",
+      "        options: {limit: 12, includeToolBodies: false}",
+      "      - id: waits",
+      "        use: core.waits",
+      "    maxEstimatedTokens: 4000",
+      "evaluators:",
+      "  repetition-check:",
+      "    use: core.repeated-tools",
+      "    options: {window: 12, minimumRepeats: 3}",
+      "policies:",
+      "  record:",
+      "    use: core.record-only",
+      "checks:",
+      "  repetition:",
+      "    triggers:",
+      "      - id: every-five",
+      "        use: core.every-tools",
+      "        options: {count: 5}",
+      "      - id: periodic",
+      "        use: core.periodic",
+      "        options: {everyMs: 120000, requireNewEvidence: true}",
+      "    context: recent-work",
+      "    prompt: repetition",
+      "    evaluator: repetition-check",
+      "    policy: record",
+      "    criteria: [efficiency.repetition]",
+      "observability:",
+      "  detail: standard",
+      "  presentation: summary",
+      "",
+    ].join("\n"));
+    const loaded = await loadEffectiveConfiguration({ ...paths, projectTrusted: true });
+    assert.equal(loaded.rejection, null);
+    assert.equal(loaded.resolved.value.enabled, true);
+    assert.equal(loaded.resolved.value.runtime.maxConcurrentEvaluations, 2);
+    assert.equal(loaded.resolved.value.runtime.maxRunTimeoutMs, 600_000);
+    assert.equal(loaded.resolved.value.observability.journal.enabled, true);
+    assert.equal(loaded.resolved.value.observability.recentHistory.maxEvents, 512);
+    assert.equal(Object.keys(loaded.resolved.value.checks).length, 1);
+  });
+
+  const rejected: Array<[unknown, string, string]> = [
+    [{
+      schemaVersion: 1,
+      prompts: { repetition: { use: "core.prompt-files", options: { instructions: ["builtin:missing.md"] } } },
+    }, "config.unresolved-resource", "$.prompts.repetition.options.instructions"],
+    [{
+      schemaVersion: 1,
+      contexts: { work: { providers: [{ id: "history", use: "core.history", options: { limit: 0 } }] } },
+    }, "config.invalid-value", "$.contexts.work.providers[0].options.limit"],
+    [{
+      schemaVersion: 1,
+      evaluators: { repeat: { use: "core.repeated-tools", options: { window: 3, minimumRepeats: 4 } } },
+    }, "config.invalid-value", "$.evaluators.repeat.options.minimumRepeats"],
+    [{
+      schemaVersion: 1,
+      checks: { repetition: { context: "missing", prompt: "missing", evaluator: "missing", policy: "missing", criteria: ["efficiency.repetition"] } },
+    }, "config.unresolved-reference", "$.checks.repetition.context"],
+    [{
+      schemaVersion: 1,
+      contexts: { c: { providers: [{ id: "task", use: "core.task" }] } },
+      prompts: { p: { use: "core.prompt-files", options: { instructions: ["builtin:repetition-v1.md"] } } },
+      evaluators: { e: { use: "core.repeated-tools" } },
+      checks: { repetition: { context: "c", prompt: "p", evaluator: "e", policy: "x", criteria: ["efficiency.repetition"] } },
+    }, "config.unresolved-reference", "$.checks.repetition.policy"],
+    [{
+      schemaVersion: 1,
+      contexts: { c: { providers: [{ id: "task", use: "core.task" }] } },
+      prompts: { p: { use: "core.prompt-files", options: { instructions: ["builtin:repetition-v1.md"] } } },
+      evaluators: { e: { use: "core.repeated-tools" } },
+      policies: { x: { use: "core.record-only" } },
+      checks: { repetition: { context: "c", prompt: "p", evaluator: "missing", policy: "x", criteria: ["efficiency.repetition"] } },
+    }, "config.unresolved-reference", "$.checks.repetition.evaluator"],
+  ];
+  for (const [input, code, field] of rejected) {
+    const parsed = validateConfiguration(JSON.parse(JSON.stringify(input)));
+    assert.equal(parsed.ok, false, JSON.stringify(input));
+    if (parsed.ok) continue;
+    assert.equal(parsed.error.code, code, JSON.stringify(input));
+    assert.equal(parsed.error.field, field, JSON.stringify(input));
+  }
+
+  // Cross-entry references such as `supersedes` resolve on the merged effective
+  // configuration, so a dangling target is rejected by the load path.
+  await withFixture(async paths => {
+    await writeConfig(join(paths.agentDir, "quality", "config.json"), {
+      schemaVersion: 1,
+      contexts: { c: { providers: [{ id: "task", use: "core.task" }] } },
+      prompts: { p: { use: "core.prompt-files", options: { instructions: ["builtin:repetition-v1.md"] } } },
+      evaluators: { e: { use: "core.repeated-tools" } },
+      policies: { x: { use: "core.record-only" } },
+      checks: {
+        repetition: { context: "c", prompt: "p", evaluator: "e", policy: "x", criteria: ["efficiency.repetition"], supersedes: ["missing"] },
+      },
+    });
+    const loaded = await loadEffectiveConfiguration({ ...paths, projectTrusted: true });
+    assert.ok(loaded.rejection);
+    assert.equal(loaded.rejection.error.code, "config.unresolved-reference");
+    assert.equal(loaded.rejection.error.field, "$.checks.repetition.supersedes");
+    assert.deepEqual(loaded.resolved.sources, { user: "rejected", project: "absent" });
+  });
 });
 
 test("an untrusted project file is never read or applied", async () => {

@@ -1,0 +1,12 @@
+{
+  "name": "qe-independent-fixture",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Independent C1 contribution used by real-boundary integration tests.",
+  "pi": {
+    "extensions": [
+      "./extension.mjs"
+    ]
+  }
+}

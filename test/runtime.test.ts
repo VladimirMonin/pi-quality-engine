@@ -31,6 +31,7 @@ function sessionInput(paths: FixturePaths): EngineSessionInput {
     projectTrusted: true,
     hostVersion: "1.1.0",
     hostMode: "rpc",
+    resourcesDir: join(process.cwd(), "resources"),
   };
 }
 
@@ -41,7 +42,7 @@ async function writeConfig(path: string, contents: object): Promise<void> {
 
 test("session start creates one inactive observation generation with lifecycle records", async () => {
   await withFixture(async paths => {
-    const session = await EngineSession.start({ ...sessionInput(paths), hostIdle: true });
+    const session = await EngineSession.start({ ...sessionInput(paths), hostIdleAtStart: true });
     try {
       const status = session.status(true);
       assert.equal(status.engine.version, ENGINE_VERSION);
@@ -57,11 +58,17 @@ test("session start creates one inactive observation generation with lifecycle r
       assert.equal(status.activation.autonomousModelCalls, "unavailable");
       assert.equal(status.capabilities.configurationDiscovery, "available");
       assert.equal(status.capabilities.modelEvaluation, "unavailable");
-      assert.equal(status.capabilities.journalFiles, "unavailable");
+      assert.equal(status.capabilities.journalFiles, "available");
+      assert.equal(status.capabilities.triggersAndScheduling, "available");
+      assert.equal(status.capabilities.deterministicEvaluation, "available");
       assert.equal(status.diagnostics.detail, "standard");
       assert.equal(status.diagnostics.capture, "none");
-      assert.deepEqual(status.diagnostics.recentEvents.map(record => record.event), ["quality.runtime.started"]);
+      assert.deepEqual(status.diagnostics.recentEvents.map(record => record.event), [
+        "quality.runtime.started",
+        "quality.config.applied",
+      ]);
       assert.equal(status.diagnostics.recentEvents[0]?.fields.data["engineVersion"], ENGINE_VERSION);
+      assert.equal(status.journal, null, "a cold disabled engine opens no journal file");
     } finally {
       session.retire("quit");
     }
@@ -70,7 +77,7 @@ test("session start creates one inactive observation generation with lifecycle r
 
 test("retirement is idempotent and reports shutdown without unsettled work", async () => {
   await withFixture(async paths => {
-    const session = await EngineSession.start({ ...sessionInput(paths), hostIdle: true });
+    const session = await EngineSession.start({ ...sessionInput(paths), hostIdleAtStart: true });
     session.retire("quit");
     session.retire("quit");
     const status = session.status(true);
@@ -79,24 +86,26 @@ test("retirement is idempotent and reports shutdown without unsettled work", asy
     assert.ok(status.runtime.retiredAt);
     assert.deepEqual(status.diagnostics.recentEvents.map(record => record.event), [
       "quality.runtime.started",
+      "quality.config.applied",
       "quality.runtime.retired",
     ]);
-    const retired = status.diagnostics.recentEvents[1];
+    const retired = status.diagnostics.recentEvents[2];
     assert.equal(retired?.fields.data["cause"], "quit");
     assert.equal(retired?.fields.data["unsettledOperations"], 0);
-    assert.equal(retired?.fields.data["journalFlushState"], "not-implemented");
+    assert.equal(retired?.fields.data["journalFlushState"], "disabled");
   });
 });
 
 test("a cold invalid configuration is rejected before activation and stays ineffective", async () => {
   await withFixture(async paths => {
     await writeConfig(join(paths.agentDir, "quality", "config.json"), { schemaVersion: 1, [SENTINEL]: SENTINEL });
-    const session = await EngineSession.start({ ...sessionInput(paths), hostIdle: true });
+    const session = await EngineSession.start({ ...sessionInput(paths), hostIdleAtStart: true });
     try {
       const status = session.status(true);
       assert.deepEqual(status.diagnostics.recentEvents.map(record => record.event), [
         "quality.config.rejected",
         "quality.runtime.started",
+        "quality.config.applied",
       ]);
       const rejection = status.diagnostics.recentEvents[0];
       assert.equal(rejection?.fields.data["runtimeUnchanged"], true);
@@ -113,11 +122,11 @@ test("a cold invalid configuration is rejected before activation and stays ineff
 
 test("each session generation owns its own identity and diagnostic sequence", async () => {
   await withFixture(async paths => {
-    const first = await EngineSession.start({ ...sessionInput(paths), hostIdle: true });
-    const second = await EngineSession.start({ ...sessionInput(paths), hostIdle: true });
+    const first = await EngineSession.start({ ...sessionInput(paths), hostIdleAtStart: true });
+    const second = await EngineSession.start({ ...sessionInput(paths), hostIdleAtStart: true });
     try {
       assert.notEqual(first.generation, second.generation);
-      assert.deepEqual(second.status(true).diagnostics.recentEvents.map(record => record.sequence), [1]);
+      assert.deepEqual(second.status(true).diagnostics.recentEvents.map(record => record.sequence), [1, 2]);
       assert.equal(first.status(true).runtime.generation, first.generation);
     } finally {
       first.retire("replaced");
@@ -146,7 +155,7 @@ test("the engine identity constant matches the packaged version", async () => {
 
 test("a busy primary is never reported as idle", async () => {
   await withFixture(async paths => {
-    const session = await EngineSession.start({ ...sessionInput(paths), hostIdle: false });
+    const session = await EngineSession.start({ ...sessionInput(paths), hostIdleAtStart: false });
     try {
       const busy = session.status(false);
       assert.equal(busy.runtime.executionState, "unknown");
@@ -165,7 +174,7 @@ test("zero recent-history limits retain no records while accounting drops", asyn
       schemaVersion: 1,
       observability: { recentHistory: { maxEvents: 0, maxBytes: 0 } },
     });
-    const session = await EngineSession.start({ ...sessionInput(paths), hostIdle: true });
+    const session = await EngineSession.start({ ...sessionInput(paths), hostIdleAtStart: true });
     try {
       const status = session.status(true);
       assert.equal(status.configuration.rejection, null);
