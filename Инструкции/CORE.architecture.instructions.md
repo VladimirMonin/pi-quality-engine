@@ -12,6 +12,10 @@ Roles are boundaries, not mandatory classes or folders. Create only exercised mo
 
 - `src/index.ts` is the Pi entry/composition root. Module import does not start work.
 - `src/contracts.ts` contains inert public declarations, not host instances or files.
+- The current owners are `src/configuration.ts` (cold resolution), `src/runtime.ts`
+  (session generation/status) and `src/diagnostics.ts` (bounded metadata history).
+  `/quality status` is read-only; checks, scheduling, models, feedback and persistence
+  remain unavailable until their own checkpoint behavior is implemented and proved.
 - Configuration validates before activation; cold invalid configuration remains inactive.
 - The runtime owns each observed session generation, admission and effect authority.
 - Trigger/policy decisions do not perform direct host effects, network calls or hidden timers.

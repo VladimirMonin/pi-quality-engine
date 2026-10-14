@@ -13,7 +13,7 @@ source_baseline_date: "2026-10-12"
 prepared_date: "2026-10-13"
 planned_project_version_range: "0.0.1 through 1.0.0"
 language: "en"
-status: "Proposed execution workbook; no checkbox, test, checkpoint, project release, or Git tag is claimed complete"
+status: "K01 accepted at the recorded local v0.0.1 tag for its limited scope; K02–K13 and all stage exits remain not-run"
 ---
 
 ## Pi Quality Engine — Development Checkpoints and Release Checklists 🧭
@@ -27,7 +27,7 @@ This workbook turns the four delivery stages already defined in [Document 04](04
 > [!important] What a checked box means
 > A checked box means there is evidence for **this candidate commit and the stated scope**: an executed case, a concrete assertion, and a retained artifact or an explicit documented non-artifact reason. The box does not mean that an implementing model is confident, that a source file exists, or that a helper returned `success`.
 >
-> All boxes in this document intentionally start unchecked. Writing this workbook has not executed the product or created any release tags.
+> Boxes started unchecked. Checked common/reviewer/tag items below apply only to the accepted K01 candidate recorded in §5; they are not inherited approval for later versions. Unchecked later-checkpoint items remain unproved.
 
 ### Authority and use 📑
 
@@ -150,35 +150,37 @@ Tests adapt to harmless implementation refactoring, not to broken required behav
 
 ## 3. Common gate for every accepted version ✅
 
+The checked items here are evidenced only for K01 at `7efe1ff097319b741423c92cd327abb4c9633b6e`. COMMON-E.04 is not applicable to its memory-only diagnostic subset: no intentionally broken persistent/contributed destination is shipped. Reevaluate this gate for every later candidate.
+
 ### Candidate and scope checklist 📌
 
-- [ ] **COMMON-C.01** Identify the intended project version, checkpoint, existing D1 stage, exact candidate commit, and declared capability subset before running acceptance.
-- [ ] **COMMON-C.02** Read the relevant A1/C1/O1/M1 sections and record any explicit contract amendment. Do not resolve a conflict by inventing a replacement field or event name.
-- [ ] **COMMON-C.03** Set the candidate version and any packaged defaults, schemas, prompts, notices, and lockfile changes before freezing the commit to be tested.
-- [ ] **COMMON-C.04** Record the actual Node, package-manager, Pi artifact/build, OS, host mode, and filesystem. A manifest version alone does not establish an identical loaded artifact.
-- [ ] **COMMON-C.05** Use a disposable fixture project and Pi configuration. Keep reference donors, acceptance artifacts, credentials, and generated logs outside the observed source scope and publishable package.
-- [ ] **COMMON-C.06** Keep cold activation disabled, default mode observe, capture categories none, and spending/action grants explicit unless an authoritative contract change says otherwise.
-- [ ] **COMMON-C.07** Enumerate required cases, allowed optional exclusions, and expected external effects. Freeze test-quality/performance thresholds before interpreting candidate results.
-- [ ] **COMMON-C.08** Confirm there is no unapproved donor plugin in the ordinary loaded inventory. A scripted test provider is identified as a fixture, not a production dependency.
+- [x] **COMMON-C.01** Identify the intended project version, checkpoint, existing D1 stage, exact candidate commit, and declared capability subset before running acceptance.
+- [x] **COMMON-C.02** Read the relevant A1/C1/O1/M1 sections and record any explicit contract amendment. Do not resolve a conflict by inventing a replacement field or event name.
+- [x] **COMMON-C.03** Set the candidate version and any packaged defaults, schemas, prompts, notices, and lockfile changes before freezing the commit to be tested.
+- [x] **COMMON-C.04** Record the actual Node, package-manager, Pi artifact/build, OS, host mode, and filesystem. A manifest version alone does not establish an identical loaded artifact.
+- [x] **COMMON-C.05** Use a disposable fixture project and Pi configuration. Keep reference donors, acceptance artifacts, credentials, and generated logs outside the observed source scope and publishable package.
+- [x] **COMMON-C.06** Keep cold activation disabled, default mode observe, capture categories none, and spending/action grants explicit unless an authoritative contract change says otherwise.
+- [x] **COMMON-C.07** Enumerate required cases, allowed optional exclusions, and expected external effects. Freeze test-quality/performance thresholds before interpreting candidate results.
+- [x] **COMMON-C.08** Confirm there is no unapproved donor plugin in the ordinary loaded inventory. A scripted test provider is identified as a fixture, not a production dependency.
 
 ### Execution and evidence checklist 🧾
 
-- [ ] **COMMON-E.01** Run checks against the actual candidate implementation. Record command, exit status, timestamps, test inventory, and relevant configuration/profile revisions.
-- [ ] **COMMON-E.02** Pair each consequential outcome with an independent assertion at the host, provider, filesystem, or functional ledger boundary.
-- [ ] **COMMON-E.03** Parse retained O1 records using the public envelope and link relevant run, attempt, action, generation, and manifest identities. Do not require a global total order across concurrent work.
+- [x] **COMMON-E.01** Run checks against the actual candidate implementation. Record command, exit status, timestamps, test inventory, and relevant configuration/profile revisions.
+- [x] **COMMON-E.02** Pair each consequential outcome with an independent assertion at the host, provider, filesystem, or functional ledger boundary.
+- [x] **COMMON-E.03** Parse retained O1 records using the public envelope and link relevant run, attempt, action, generation, and manifest identities. Do not require a global total order across concurrent work.
 - [ ] **COMMON-E.04** Where a destination is intentionally broken, use the permitted in-memory diagnostic observer and independently measured filesystem/host behavior; do not fabricate a missing on-disk receipt.
-- [ ] **COMMON-E.05** Run the relevant earlier regression cases. List reused evidence narrowly and justify unchanged inputs; do not carry a whole green release report across a changed candidate.
-- [ ] **COMMON-E.06** Keep unknown usage, interrupted effects, incomplete context, and lost diagnostic ranges visible. No substitute zero, success, or clean-review verdict is inserted.
-- [ ] **COMMON-E.07** Leave a bounded evidence bundle with a manifest, case results, selected sanitized logs, and the independent observations needed for disputed claims.
-- [ ] **COMMON-E.08** Inspect substantive new abstractions for a real ownership, lifecycle, integration, or extension responsibility. Reject test-only branches and unrelated cleanup mixed into the checkpoint.
+- [x] **COMMON-E.05** Run the relevant earlier regression cases. List reused evidence narrowly and justify unchanged inputs; do not carry a whole green release report across a changed candidate.
+- [x] **COMMON-E.06** Keep unknown usage, interrupted effects, incomplete context, and lost diagnostic ranges visible. No substitute zero, success, or clean-review verdict is inserted.
+- [x] **COMMON-E.07** Leave a bounded evidence bundle with a manifest, case results, selected sanitized logs, and the independent observations needed for disputed claims.
+- [x] **COMMON-E.08** Inspect substantive new abstractions for a real ownership, lifecycle, integration, or extension responsibility. Reject test-only branches and unrelated cleanup mixed into the checkpoint.
 
 ### Acceptance and release checklist 🏷️
 
-- [ ] **COMMON-X.01** All required checkpoint cases pass; optional exclusions have explicit scope and never cover a mandatory baseline function.
-- [ ] **COMMON-X.02** The final artifact or checkpoint build is traceable to the tested commit, not merely to the same branch name. Repack/retest when packaged bytes change.
-- [ ] **COMMON-X.03** The approval record states the accepted capabilities, known limitations, and evidence references. Model-written confidence language is not used as an oracle.
-- [ ] **COMMON-X.04** Create an annotated version tag only after the local evidence gate passes. Do not create or push tags as a side effect of ordinary test scripts.
-- [ ] **COMMON-X.05** Push or publish only with the repository operator's authorization, using the accepted artifact and exact named ref. A local tag is not a remotely published release.
+- [x] **COMMON-X.01** All required checkpoint cases pass; optional exclusions have explicit scope and never cover a mandatory baseline function.
+- [x] **COMMON-X.02** The final artifact or checkpoint build is traceable to the tested commit, not merely to the same branch name. Repack/retest when packaged bytes change.
+- [x] **COMMON-X.03** The approval record states the accepted capabilities, known limitations, and evidence references. Model-written confidence language is not used as an oracle.
+- [x] **COMMON-X.04** Create an annotated version tag only after the local evidence gate passes. Do not create or push tags as a side effect of ordinary test scripts.
+- [x] **COMMON-X.05** Push or publish only with the repository operator's authorization, using the accepted artifact and exact named ref. A local tag is not a remotely published release.
 
 All common boxes apply to the checkpoint's implemented scope. Early releases do not need future components, but they may not present a missing component as a successful empty implementation.
 
@@ -251,7 +253,11 @@ flowchart LR
 
 ## 5. 0.0.1 — A real package that stays inert until configured 🏁
 
-**Checkpoint K01 · D1 S1 entry · Candidate tag `v0.0.1` · Initial state: not-run**
+**Checkpoint K01 · D1 S1 entry · Accepted local tag `v0.0.1` · State: passed for K01 scope**
+
+Independent acceptance: implementation commit `7efe1ff097319b741423c92cd327abb4c9633b6e`; unsigned annotated tag object `c4ff06f2ea0ff986b629ccc5339ab138288633d8`. Strict build, 28 units, 6 real Pi/primary cases, seven repaired public-path counterexamples and one clean installed consumer passed with zero failed/skipped/TODO cases. The retained 13-file tarball SHA-256 is `5c50f703107df09d5e1d76fea70d262fede2c09ef37d9f04dafeb65b5e0c7b7c`; sealed local [evidence manifest](../verification/K01-reacceptance/manifest.json) SHA-256 is `6c7fe344147e5f618722a72d59c62b62e83353f61b020c2f16444f8c1ae4becd`. Detailed case mapping, [independent review](../verification/K01-reacceptance/review.md) and [tag receipt](../verification/K01-reacceptance/tag-receipt.json) remain local ignored evidence, not shipped resources.
+
+Accepted scope is the inert foundation only: safe configuration, session-owned minimal lifecycle, truthful read-only status and bounded metadata-only memory history. Measured host is npm Pi 1.1.0 on native Windows/NTFS x64; source pin and actual npm SDK hashes are recorded separately, without whole npm/Git byte-equivalence claims. The real scripted primary remains usable after retirement and engine dispatch/effect counters stay zero. No product journal files, checks/timers, model evaluation, reviewers, feedback, interactive-TUI/other-platform certification or stage-exit acceptance is claimed. No remote push/publication occurred. Later instruction maintenance does not move this tested tag.
 
 The first checkpoint is intentionally small. It proves that the actual package can be loaded by Pi, has an identifiable version, exposes only its implemented surface, and does not start a review, network call, timer storm, or extra plugin stack on import. A minimal runtime lifecycle record is real; the rest of the product is not represented by successful stubs.
 
@@ -263,16 +269,16 @@ The first checkpoint is intentionally small. It proves that the actual package c
 
 ### Construction and behavior checklist 🛠️
 
-- [ ] **K01-B.01** Create one package entry and only the contract/schema code needed for the first real slice. Do not generate the entire growth-layout tree as empty classes.
-- [ ] **K01-B.02** Use the host-provided Pi peer packages as documented. Test resolution must not be rescued by an undeclared sibling workspace dependency.
-- [ ] **K01-B.03** Record the agreed source baseline and actual loaded host/build identity; keep copied donor units and their notices explicit.
-- [ ] **K01-B.04** Keep public contract imports inert. Importing a type/runtime contract entry must not open files, start timers, load credentials, or create a session.
-- [ ] **K01-B.05** Implement cold configuration resolution with `enabled: false`, `mode: observe`, empty spending/effect grants, and metadata-only observability defaults.
-- [ ] **K01-B.06** Reject an invalid initial configuration without enabling the observer. Report a bounded configuration error without embedding the offending raw text.
-- [ ] **K01-B.07** Expose truthful local status for the implemented subset. Unsupported evaluators/actions are unavailable, not green placeholders.
-- [ ] **K01-B.08** Write actual `quality.runtime.started` / retirement metadata for an activated runtime lifecycle, without claiming any completed check.
-- [ ] **K01-B.09** Build the extension and verify its resource entry from the built package rather than reading a hidden development source path.
-- [ ] **K01-B.10** Ensure loading, listing capabilities, and retiring the package make zero owned provider dispatches and zero primary feedback calls.
+- [x] **K01-B.01** Create one package entry and only the contract/schema code needed for the first real slice. Do not generate the entire growth-layout tree as empty classes.
+- [x] **K01-B.02** Use the host-provided Pi peer packages as documented. Test resolution must not be rescued by an undeclared sibling workspace dependency.
+- [x] **K01-B.03** Record the agreed source baseline and actual loaded host/build identity; keep copied donor units and their notices explicit.
+- [x] **K01-B.04** Keep public contract imports inert. Importing a type/runtime contract entry must not open files, start timers, load credentials, or create a session.
+- [x] **K01-B.05** Implement cold configuration resolution with `enabled: false`, `mode: observe`, empty spending/effect grants, and metadata-only observability defaults.
+- [x] **K01-B.06** Reject an invalid initial configuration without enabling the observer. Report a bounded configuration error without embedding the offending raw text.
+- [x] **K01-B.07** Expose truthful local status for the implemented subset. Unsupported evaluators/actions are unavailable, not green placeholders.
+- [x] **K01-B.08** Write actual `quality.runtime.started` / retirement metadata for an activated runtime lifecycle, without claiming any completed check.
+- [x] **K01-B.09** Build the extension and verify its resource entry from the built package rather than reading a hidden development source path.
+- [x] **K01-B.10** Ensure loading, listing capabilities, and retiring the package make zero owned provider dispatches and zero primary feedback calls.
 
 ### Pragmatic checkpoint tests 🧪
 
@@ -288,16 +294,16 @@ The table describes tests to execute, not results already obtained. Each row mus
 
 ### Evidence to retain 🔍
 
-- [ ] **K01-E.01** Retain candidate commit, package version, lockfile digest, loaded Pi identity, and the exact built entry exercised.
-- [ ] **K01-E.02** Retain the actual cold-start and rejection test outcomes, including zero-dispatch counters from the boundary fixture.
-- [ ] **K01-E.03** Retain one small parsed lifecycle journal and the sentinel-scan result; do not generate fake model traffic to enrich it.
-- [ ] **K01-E.04** Record which commands and component families are intentionally unavailable at this checkpoint.
+- [x] **K01-E.01** Retain candidate commit, package version, lockfile digest, loaded Pi identity, and the exact built entry exercised.
+- [x] **K01-E.02** Retain the actual cold-start and rejection test outcomes, including zero-dispatch counters from the boundary fixture.
+- [x] **K01-E.03** Retain one small parsed lifecycle journal and the sentinel-scan result; do not generate fake model traffic to enrich it.
+- [x] **K01-E.04** Record which commands and component families are intentionally unavailable at this checkpoint.
 
 ### Exit and tag decision ✅
 
-- [ ] **K01-X.01** Complete the common candidate gate for this limited scope; all K01 cases are executed, not merely compiled.
-- [ ] **K01-X.02** Prove inactive startup without cloud access or another observer plugin.
-- [ ] **K01-X.03** Confirm that the version in the loaded runtime and package is `0.0.1` before creating `v0.0.1`.
+- [x] **K01-X.01** Complete the common candidate gate for this limited scope; all K01 cases are executed, not merely compiled.
+- [x] **K01-X.02** Prove inactive startup without cloud access or another observer plugin.
+- [x] **K01-X.03** Confirm that the version in the loaded runtime and package is `0.0.1` before creating `v0.0.1`.
 
 **The accepted tag may claim:** An installable, identifiable foundation with safe inactive startup and initial lifecycle diagnostics.
 
@@ -1196,12 +1202,14 @@ A version tag, a remote Git ref, a GitHub-style release page, and an npm package
 
 ### Before preparing a candidate 📋
 
+K01 is a private local preview only. Its local tag name was free and is bound to the tested bytes; remote-tag/registry namespace collisions were not assessed because publication was neither requested nor performed. TAG-PRE.01's publication-specific verification remains unclaimed, as do remote/stable-release items below.
+
 - [ ] **TAG-PRE.01** Select the intended checkpoint/version and verify that the same published tag/package version does not already designate different bytes.
-- [ ] **TAG-PRE.02** Commit the implementation, tests, packaged prompts/schemas/defaults, notices, and candidate version before acceptance. Review the actual changed paths rather than staging unrelated work.
-- [ ] **TAG-PRE.03** Confirm the intended source state is clean. Inspect untracked files as well as tracked diffs; a status command returning exit zero does not itself mean the tree is clean.
-- [ ] **TAG-PRE.04** Keep generated acceptance artifacts outside the candidate source commit/package and outside observed evidence collection.
-- [ ] **TAG-PRE.05** Record the full candidate commit, lockfile digest, environment, and exact artifact to be tested.
-- [ ] **TAG-PRE.06** Ensure a version-preparation command does not automatically create an untested tag or run unapproved lifecycle scripts.
+- [x] **TAG-PRE.02** Commit the implementation, tests, packaged prompts/schemas/defaults, notices, and candidate version before acceptance. Review the actual changed paths rather than staging unrelated work.
+- [x] **TAG-PRE.03** Confirm the intended source state is clean. Inspect untracked files as well as tracked diffs; a status command returning exit zero does not itself mean the tree is clean.
+- [x] **TAG-PRE.04** Keep generated acceptance artifacts outside the candidate source commit/package and outside observed evidence collection.
+- [x] **TAG-PRE.05** Record the full candidate commit, lockfile digest, environment, and exact artifact to be tested.
+- [x] **TAG-PRE.06** Ensure a version-preparation command does not automatically create an untested tag or run unapproved lifecycle scripts.
 
 ### Separate commands for a candidate workflow 💻
 
@@ -1342,14 +1350,14 @@ Registry publication, when used, must upload the accepted tarball rather than re
 
 ### Immutable tag policy checklist 🧱
 
-- [ ] **TAG-END.01** The tag is annotated and resolves to the accepted candidate commit; the package manifest version matches the tag version without its `v` prefix.
-- [ ] **TAG-END.02** The annotation names the actual artifact/evidence digests and accepted scope; it does not contain synthetic placeholder values.
-- [ ] **TAG-END.03** If signing is used, verification succeeds under the project's trusted key policy. If not, the release is described as unsigned rather than falsely verified.
+- [x] **TAG-END.01** The tag is annotated and resolves to the accepted candidate commit; the package manifest version matches the tag version without its `v` prefix.
+- [x] **TAG-END.02** The annotation names the actual artifact/evidence digests and accepted scope; it does not contain synthetic placeholder values.
+- [x] **TAG-END.03** If signing is used, verification succeeds under the project's trusted key policy. If not, the release is described as unsigned rather than falsely verified.
 - [ ] **TAG-END.04** The pushed ref, when authorized, is exactly the intended tag. Remote readback matches the local tag object and target.
 - [ ] **TAG-END.05** A publication error is recorded separately from test acceptance; no forced retagging or history rewrite is used to disguise it.
 - [ ] **TAG-END.06** A shared tag remains immutable. Corrections use a new patch version or RC suffix and new affected evidence.
 - [ ] **TAG-END.07** The stable release is built from a commit whose package says the stable version. The stable tag is not merely another name for an RC artifact.
-- [ ] **TAG-END.08** An artifact changed by a last-minute prompt/schema/version/notice edit is repacked and retested before release.
+- [x] **TAG-END.08** An artifact changed by a last-minute prompt/schema/version/notice edit is repacked and retested before release.
 
 ### Regression fixes and rollback 🔁
 
@@ -1464,14 +1472,16 @@ The report should be short; detailed logs and structured case results remain lin
 
 ### Reviewer checkpoint checklist 🔎
 
-- [ ] **REVIEW.01** Read the actual candidate diff and the declared checkpoint scope before interpreting the author's summary.
-- [ ] **REVIEW.02** Open at least the decisive artifacts for the important new behavior; verify their candidate/attempt/action identities and coverage.
-- [ ] **REVIEW.03** Confirm the test contains a meaningful positive and negative control rather than always-successful fixture output.
-- [ ] **REVIEW.04** Look for direct model/feedback/filesystem access which bypasses the common runtime/permission/ledger/projection boundaries.
-- [ ] **REVIEW.05** Check that a new abstraction has an actual responsibility. Do not demand another class, wrapper, service, or generic framework merely to make the design look formal.
-- [ ] **REVIEW.06** Confirm failures were repaired at the correct layer and required tests were not silently skipped or weakened.
-- [ ] **REVIEW.07** Verify the proposed tag target and artifact digest against the evidence; do not approve an untested follow-up commit by analogy.
-- [ ] **REVIEW.08** Record a concrete acceptance or a specific blocking discrepancy. A reviewer model's opinion alone cannot certify an unexecuted boundary.
+Checked reviewer items apply only to the K01 decision and exact tested commit in §5.
+
+- [x] **REVIEW.01** Read the actual candidate diff and the declared checkpoint scope before interpreting the author's summary.
+- [x] **REVIEW.02** Open at least the decisive artifacts for the important new behavior; verify their candidate/attempt/action identities and coverage.
+- [x] **REVIEW.03** Confirm the test contains a meaningful positive and negative control rather than always-successful fixture output.
+- [x] **REVIEW.04** Look for direct model/feedback/filesystem access which bypasses the common runtime/permission/ledger/projection boundaries.
+- [x] **REVIEW.05** Check that a new abstraction has an actual responsibility. Do not demand another class, wrapper, service, or generic framework merely to make the design look formal.
+- [x] **REVIEW.06** Confirm failures were repaired at the correct layer and required tests were not silently skipped or weakened.
+- [x] **REVIEW.07** Verify the proposed tag target and artifact digest against the evidence; do not approve an untested follow-up commit by analogy.
+- [x] **REVIEW.08** Record a concrete acceptance or a specific blocking discrepancy. A reviewer model's opinion alone cannot certify an unexecuted boundary.
 
 <a id="crosswalk"></a>
 
@@ -1506,7 +1516,7 @@ The row groupings do not waive individual D/O obligations. The candidate manifes
 
 | Stage | Exit version | State | Accepted commit/tag | Evidence manifest | Outstanding blockers |
 |---|---|---|---|---|---|
-| S1 — Observable standalone runtime | 0.1.0 | Not run | — | — | Not assessed |
+| S1 — Observable standalone runtime | 0.1.0 | K01 entry passed; exit not run | K01 `7efe1ff097319b741423c92cd327abb4c9633b6e` / `v0.0.1` | [Local K01 manifest](../verification/K01-reacceptance/manifest.json) | K02–K03 not run |
 | S2 — Real evidence and owned evaluators | 0.3.0 | Not run | — | — | Not assessed |
 | S3 — Bounded feedback and recovery | 0.5.0 | Not run | — | — | Not assessed |
 | S4 — Public extensibility and release validation | 1.0.0 | Not run | — | — | Not assessed |

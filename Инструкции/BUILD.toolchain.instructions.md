@@ -28,6 +28,12 @@ manifest must resolve after packing, outside this checkout. Exclude source donor
 fixtures, docs unless intentionally shipped, logs, credentials and test build output.
 Keep public contracts imports separate from the extension entry and inert.
 
+Active gates are `npm run build`, `npm test`, `npm run test:pi`,
+`npm run test:package` and aggregate `npm run check`; see [README](../README.md).
+Package/evidence helpers currently write to `verification/K01`; keep accepted
+bundles separate, preserve prior results and retain the exact tested tarball.
+`node scripts/collect-evidence.mjs` collects identities, not proof of passing gates;
+independently bind acceptance to actual Git state and artifact bytes.
 Document only commands that exist. Future test:live/bench tasks stay unavailable
 until implemented, never empty successful scripts. Build/check/install/status may
 not dispatch a public-provider request. Real Pi and pack/install tests use disposable

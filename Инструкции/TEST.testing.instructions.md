@@ -19,6 +19,9 @@ Run the smallest affected tests during development, then the relevant static,
 build and regression checks before commit. No coverage target or repeated unchanged
 checks for their own sake. Include a meaningful negative control for absence/safety
 claims: inject a harmless sentinel for privacy and actionable work for Stop.
+For zero-provider/feedback claims, observe dispatch/effect boundary counters;
+a normal scripted primary turn is the positive control. Scan serialized diagnostic
+surfaces through retirement/final flush, not only active in-memory objects.
 
 Keep claims separate:
 - Source inspection proves what the pinned source declares.
