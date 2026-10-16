@@ -13,7 +13,7 @@ source_baseline_date: "2026-10-12"
 prepared_date: "2026-10-13"
 planned_project_version_range: "0.0.1 through 1.0.0"
 language: "en"
-status: "K01 and K02 accepted at their recorded local tags for limited scopes; K03–K13 and all stage exits remain not-run"
+status: "K01–K04 accepted at their recorded local tags; bounded S1 complete, K04 S2 increment locally released; K05–K13 and later stage exits remain not-run"
 ---
 
 ## Pi Quality Engine — Development Checkpoints and Release Checklists 🧭
@@ -27,7 +27,7 @@ This workbook turns the four delivery stages already defined in [Document 04](04
 > [!important] What a checked box means
 > A checked box means there is evidence for **this candidate commit and the stated scope**: an executed case, a concrete assertion, and a retained artifact or an explicit documented non-artifact reason. The box does not mean that an implementing model is confident, that a source file exists, or that a helper returned `success`.
 >
-> Boxes started unchecked. Checked items below apply only to the recorded accepted K01 (§5) and K02 (§6) candidates and their limited scopes; they are not inherited approval for later versions. Unchecked K03–K13 and stage-exit items remain unproved.
+> Boxes started unchecked. Checked items apply only to the recorded accepted K01–K04 candidates and their stated qualifications. Bounded S1 exit is accepted; K04 is not full S2. K05–K13 and later stage exits remain unproved. Evidence reuse is explicitly scoped, never an assertion that every mapped subcase was freshly run.
 
 ### Authority and use 📑
 
@@ -461,7 +461,38 @@ The table describes tests to execute, not results already obtained. Each row mus
 
 ## 8. 0.2.0 — Original project evidence and direct model assessment 🏁
 
-**Checkpoint K04 · D1 S2 · Candidate tag `v0.2.0` · Initial state: not-run**
+**Checkpoint K04 · D1 S2 increment · ACCEPTED / verified local implementation release · `v0.2.0`**
+
+Astra's [final independent decision](../verification/K04/reviewer/input-capability-20261016T010630Z-f1689a96/FINAL.md),
+[verdict](../verification/K04/reviewer/input-capability-20261016T010630Z-f1689a96/verdict.json) and
+[coverage continuity](../verification/K04/reviewer/input-capability-20261016T010630Z-f1689a96/coverage-continuity.json)
+accept working candidate57 **`d3aca6976e9d05bf46dfbbf27ff7fd7a2dd9b77b7fa59a24a9ff462724493ba3`**,
+not partial acceptance or consultation. Fresh final review:3 real-host cases/10 focused
+regressions; earlier115-unit/26-host/routing/consumer receipts remain author execution
+with independent readback. Prior33/36/56 dispositions retain every qualification,
+unrun/unavailable/intrinsic boundary and evidence class; checked boxes are not all-fresh PASS.
+
+Sol's [exact-commit gate](../verification/K04/reviewer/local-release-20261016T014116Z-1c6a6ecb/implementation-gate.json),
+[artifact binding](../verification/K04/reviewer/local-release-20261016T014116Z-1c6a6ecb/artifact-binding.json) and
+[tag readback](../verification/K04/reviewer/local-release-20261016T014116Z-1c6a6ecb/tag-readback.json)
+close **COMMIT_EOL_TAG / K04-X.03** at implementation
+**`28960100016fbe85729159413a1b6e977c2cdac2`**, unsigned annotated local tag object
+**`4b46dbe1378fbf8d7c5f643be76b153931bdc21e`**. All57 committed source members match
+accepted bytes or only CRLF→LF (10 files); committed57 digest
+**`1272e5570cf56da3a9506d4acc7258d23ba5118d378ab5e1cb75a12f6e4486f1`**.
+The settled exact-commit common/package cycle passes115 unit/26 host/routing/one installed
+consumer. All42 compiled files and50 payloads match; actual tested tar144,733B SHA256
+**`403f2e58a9b9383ba32d06f07dddc107db02362cafae9369c72dcba5b22f8dde`** is byte-identical
+to Astra's accepted artifact. First unit114/115 failed because owned TEMP discovered
+an ancestor checkout; its failure and narrow Git-ceiling environment correction are retained.
+Only unit was repeated; no source/test repair or extra queue/rotation acceptance replay.
+
+The [single canonical handoff](../verification/K04-repair17-s5-final-handoff.md) preserves
+prior rejections and current closure. Later instruction synchronization is a distinct
+docs commit and does not move the tag or change packaged README/resources. **Polza/Jev,
+OpenRouter/Jev and local d3-mini Q8 each remain UNVERIFIED**. No full S2, clean Pi-reviewer,
+feedback/usefulness, hidden vendor-wire, universal durability or publication claim.
+Next canonical locator: [K05](#k05), still not-run; this release task launches nothing.
 
 The observer now assembles real project evidence and can make an explicitly approved direct model judgment. Mechanical acceptance uses a scripted provider and known usage values; actual paid-route validation remains separately identified. Feedback stays observe-only during this increment.
 
@@ -473,22 +504,22 @@ The observer now assembles real project evidence and can make an explicitly appr
 
 ### Construction and behavior checklist 🛠️
 
-- [ ] **K04-B.01** Read instructions and technical documents from existing configured sources. Do not create a second manually maintained rules database.
-- [ ] **K04-B.02** Resolve paths relative to their declarations and enforce canonical read roots, protected paths, and symlink policy before reading.
-- [ ] **K04-B.03** Distinguish configured, retrieved, selected, assembled, and actually sent materials. Produce a final observable-request manifest rather than just a requested-file list.
-- [ ] **K04-B.04** Retain required/optional coverage and explicit missing/truncated information. Required missing evidence cannot become a complete clean verdict.
-- [ ] **K04-B.05** Build episode-relative Git evidence without changing the real index, worktree, stash, or broad Git object store. Preserve dirty/staged/untracked baselines within declared bounds.
-- [ ] **K04-B.06** Include relevant changes committed during the episode. A later commit must not make those changes disappear from assessment.
-- [ ] **K04-B.07** Treat shared-worktree changes as evidence with uncertain authorship when appropriate; do not attribute them solely because they appeared after session start.
-- [ ] **K04-B.08** Version the prompt, typed question set, output schema, selected source revisions, and evaluator profile. Do not mix calibration from different prompt generations.
-- [ ] **K04-B.09** Implement direct classifier and/or chat assessment through the allowed common model service; keep typed questions distinct from free-form chat instructions.
-- [ ] **K04-B.10** Authorize concrete routes and capabilities before dispatch. An absent model or unsupported image/reasoning capability is unavailable, not a reason for silent fallback.
-- [ ] **K04-B.11** Create an owned attempt identity at the actual observable request boundary. Preparation or format-repair calls use the same accounting path.
-- [ ] **K04-B.12** Validate the assessment operational outcome, coverage, conclusion, findings, and references. A provider error is not a negative score for the code.
-- [ ] **K04-B.13** Normalize usage and prices with explicit provenance, precision, missing fields, cache/reasoning semantics, and replacement revisions.
-- [ ] **K04-B.14** Keep budgets and unresolved spending outside the rotatable diagnostic file. Concurrent admissions reserve from one shared allowance.
-- [ ] **K04-B.15** Preserve capture none for all diagnostic destinations even when the provider legitimately receives source text.
-- [ ] **K04-B.16** Leave autonomous feedback and expert escalation disabled until their S3 permissions and receipts are implemented.
+- [x] **K04-B.01** Read instructions and technical documents from existing configured sources. Do not create a second manually maintained rules database.
+- [x] **K04-B.02** Resolve paths relative to their declarations and enforce canonical read roots, protected paths, and symlink policy before reading.
+- [x] **K04-B.03** Distinguish configured, retrieved, selected, assembled, and actually sent materials. Produce a final observable-request manifest rather than just a requested-file list.
+- [x] **K04-B.04** Retain required/optional coverage and explicit missing/truncated information. Required missing evidence cannot become a complete clean verdict.
+- [x] **K04-B.05** Build episode-relative Git evidence without changing the real index, worktree, stash, or broad Git object store. Preserve dirty/staged/untracked baselines within declared bounds.
+- [x] **K04-B.06** Include relevant changes committed during the episode. A later commit must not make those changes disappear from assessment.
+- [x] **K04-B.07** Treat shared-worktree changes as evidence with uncertain authorship when appropriate; do not attribute them solely because they appeared after session start.
+- [x] **K04-B.08** Version the prompt, typed question set, output schema, selected source revisions, and evaluator profile. Do not mix calibration from different prompt generations.
+- [x] **K04-B.09** Implement direct classifier and/or chat assessment through the allowed common model service; keep typed questions distinct from free-form chat instructions.
+- [x] **K04-B.10** Authorize concrete routes and capabilities before dispatch. An absent model or unsupported image/reasoning capability is unavailable, not a reason for silent fallback.
+- [x] **K04-B.11** Create an owned attempt identity at the actual observable request boundary. Preparation or format-repair calls use the same accounting path.
+- [x] **K04-B.12** Validate the assessment operational outcome, coverage, conclusion, findings, and references. A provider error is not a negative score for the code.
+- [x] **K04-B.13** Normalize usage and prices with explicit provenance, precision, missing fields, cache/reasoning semantics, and replacement revisions.
+- [x] **K04-B.14** Keep budgets and unresolved spending outside the rotatable diagnostic file. Concurrent admissions reserve from one shared allowance.
+- [x] **K04-B.15** Preserve capture none for all diagnostic destinations even when the provider legitimately receives source text.
+- [x] **K04-B.16** Leave autonomous feedback and expert escalation disabled until their S3 permissions and receipts are implemented.
 
 ### Pragmatic checkpoint tests 🧪
 
@@ -508,17 +539,17 @@ The table describes tests to execute, not results already obtained. Each row mus
 
 ### Evidence to retain 🔍
 
-- [ ] **K04-E.01** Retain the provider-boundary input observation for a synthetic fixture and the corresponding final manifest. Keep literal synthetic bodies separate from Standard logs.
-- [ ] **K04-E.02** Retain Git before/after hashes and status for the dirty/staged/untracked/commit case.
-- [ ] **K04-E.03** Retain direct request/validation/usage cases with independent literal arithmetic and coverage decisions.
-- [ ] **K04-E.04** Retain denial-path counters, required-source negative controls, and cross-surface sentinel scan.
-- [ ] **K04-E.05** Label whether any real provider route was exercised. Scripted-provider success is not a live-route claim.
+- [x] **K04-E.01** Retain the provider-boundary input observation for a synthetic fixture and the corresponding final manifest. Keep literal synthetic bodies separate from Standard logs.
+- [x] **K04-E.02** Retain Git before/after hashes and status for the dirty/staged/untracked/commit case.
+- [x] **K04-E.03** Retain direct request/validation/usage cases with independent literal arithmetic and coverage decisions.
+- [x] **K04-E.04** Retain denial-path counters, required-source negative controls, and cross-surface sentinel scan.
+- [x] **K04-E.05** Label whether any real provider route was exercised. Scripted-provider success is not a live-route claim.
 
 ### Exit and tag decision ✅
 
-- [ ] **K04-X.01** Original-source fidelity, direct assessment validation, and owned-attempt accounting pass independently.
-- [ ] **K04-X.02** No source-protection, budget, or coverage rule has been weakened to make a fixture pass.
-- [ ] **K04-X.03** Create `v0.2.0` only for the tested direct-assessment scope; paid routes remain opt-in.
+- [x] **K04-X.01** Original-source fidelity, direct assessment validation, and owned-attempt accounting pass independently.
+- [x] **K04-X.02** No source-protection, budget, or coverage rule has been weakened to make a fixture pass.
+- [x] **K04-X.03** Create `v0.2.0` only for the tested direct-assessment scope; paid routes remain opt-in.
 
 **The accepted tag may claim:** Controlled direct model assessment with explicit source coverage and owned-cost accounting on the demonstrated integration path.
 
@@ -1536,8 +1567,8 @@ The row groupings do not waive individual D/O obligations. The candidate manifes
 
 | Stage | Exit version | State | Accepted commit/tag | Evidence manifest | Outstanding blockers |
 |---|---|---|---|---|---|
-| S1 — Observable standalone runtime | 0.1.0 | K01 entry passed; exit not run | K01 `7efe1ff097319b741423c92cd327abb4c9633b6e` / `v0.0.1` | [Local K01 manifest](../verification/K01-reacceptance/manifest.json) | K02–K03 not run |
-| S2 — Real evidence and owned evaluators | 0.3.0 | Not run | — | — | Not assessed |
+| S1 — Observable standalone runtime | 0.1.0 | Bounded exit ACCEPTED; K01–K03 | K03 `035aaa3fe767c62cd16b962cf06012e2bb37f480` / `v0.1.0` | [K03 gate](../verification/K03/reviewer/20261014202738294-p53924-b2973cbe/implementation-gate.json) | No broader platform/usefulness claim |
+| S2 — Real evidence and owned evaluators | 0.3.0 | K04 increment ACCEPTED/local release verified; exit NOT RUN | K04 `28960100016fbe85729159413a1b6e977c2cdac2` / `v0.2.0` | [K04 exact-commit gate](../verification/K04/reviewer/local-release-20261016T014116Z-1c6a6ecb/implementation-gate.json) | K05 clean reviewer/S2 exit not run; three real routes UNVERIFIED |
 | S3 — Bounded feedback and recovery | 0.5.0 | Not run | — | — | Not assessed |
 | S4 — Public extensibility and release validation | 1.0.0 | Not run | — | — | Not assessed |
 

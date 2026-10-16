@@ -37,6 +37,10 @@ Do not activate donor plugins to supply a missing core capability.
 
 Use isolated Pi settings and projects, an environment allowlist and fixture-specific
 output directories. Do not inherit personal skills, providers, extensions or user data.
+Set isolation before importing the SDK; do not inherit NODE_OPTIONS. Deliberately
+non-repository fixtures must not discover an ancestor checkout: place temporary
+state outside it or constrain Git discovery to the owned temporary-root ceiling.
+Do not change production or an assertion to compensate for ambient discovery.
 Bound waits and cleanup; no unowned background processes. Report discovered/executed,
 passed/failed/skipped/TODO tests and limitations, not just a green process exit.
 Reuse unchanged accepted fixtures and SDK facts in iterative repairs; run the named

@@ -16,23 +16,28 @@ remain in [Document 08](../docs/08-development-checkpoints-and-release-checklist
 - **Hermes is a thin upper-level orchestrator.** It assigns coherent medium
   slices, relays bounded handoffs and receives verified outcomes. It does not
   read source, implement, review code or commit.
-- **Pi implementer:** native Pi, `ollama-cloud/deepseek-v4.1-flash`, thinking
-  `max`. One implementer owns the slice's code and tests. It does not commit or
-  maintain acceptance-owned project instructions.
-- **Pi acceptance owner:** native Pi, `openai-codex/gpt-6.1-sol`, thinking
-  `xhigh`. Independently inspect actual bytes, SDK declarations and Git state;
-  run proportionate required checks; own local English commits and necessary
+- **Pi implementer — DeepSeek:** native Pi, `ollama-cloud/deepseek-v4.1-flash`,
+  thinking `xhigh`. The same saved implementer owns code/tests and author evidence;
+  it does not commit or maintain release-owned project instructions.
+- **Pi final independent accepting owner — Astra:** native Pi,
+  `openai-codex/gpt-6-astra`, thinking `xhigh`. Inspect the actual frozen candidate
+  and required evidence; issue a candidate-bound acceptance/rejection and release.
+  A bounded oracle consultation is a separate explicit assignment, not acceptance.
+- **Pi control/docs/local-release owner — Sol:** native Pi,
+  `openai-codex/gpt-6.1-sol`, thinking `high`. Consolidate canonical evidence and,
+  only after actual independent acceptance/release, qualify committed/EOL/artifact
+  agreement and own authorized local English commits/tags and necessary separate
   instruction synchronization under
   [DOCS.commit_messages](DOCS.commit_messages.instructions.md) and
   [DOCS.instructions_style](DOCS.instructions_style.instructions.md).
-- **Pi oracle:** `openai-codex/gpt-6-astra`, thinking `xhigh`, for serious
-  unresolved blockers or architectural dilemmas. Supply original architectural
-  references, concrete doubts, alternatives and actual failing evidence. An
-  ordinary reproducible implementation defect goes back to the implementer,
-  not to an oracle by default.
+  Control/readback is not a second accepting-owner verdict or implementation lane.
+- Ordinary reproducible defects return to the same implementer. A serious unresolved
+  architectural dilemma receives the original references, concrete alternatives
+  and actual failing evidence; consultation does not replace the final gate.
 
-Each Pi worker owns its internal subagents and their completion. Hermes does not
-track or manage those children. Keep one production writer per slice; independent
+These roles do not themselves authorize new workers or internal readers. When
+explicitly authorized, each Pi worker owns its internal children and completion;
+Hermes does not manage those children. Keep one production writer per slice; independent
 review is read-only. Do not replace the specified native Pi route with an external
 CLI or another model without an explicit decision.
 
@@ -56,7 +61,8 @@ CLI or another model without an explicit decision.
    speculative future-proofing or optional abstractions.
 6. Return `NEEDS_CHANGES` with a concise actionable review, `ORACLE_REQUIRED` with
    a concrete oracle brief, or `ACCEPTED` bound to actual required evidence and
-   the exact tested commit/artifact. Do not count skipped or missing gates as passed.
+   the exact tested candidate/artifact. Working-source acceptance alone does not
+   establish committed/EOL/package identity. Do not count skipped or missing gates as passed.
 7. Commit accepted implementation as a logical slice with explicit staged paths.
    Keep authorized instruction maintenance separate from the tested candidate;
    do not move an accepted tag onto later documentation changes. Record only

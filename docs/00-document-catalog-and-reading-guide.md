@@ -33,6 +33,19 @@ The project is specified as a standalone Pi extension for evidence-based assessm
 | Which concrete checklist belongs to the next version or Git tag? | [08 — Development Checkpoints and Release Checklists](08-development-checkpoints-and-release-checklists.md) | Turns the stages into thirteen evidence-driven checkpoints. |
 | How should synthetic agent behavior, real assessors, prompts, and real Pi be tested? | [09 — Testing Philosophy and Behavioral Evidence](09-testing-philosophy-and-behavioral-evidence.md) | Explains what each experiment proves and how to keep it bounded. |
 
+<a id="current-checkpoint"></a>
+
+### Current accepted checkpoint 📍
+
+K01–K03 close bounded S1. **K04 /0.2.0 is independently ACCEPTED and its local
+implementation release is verified** at `28960100016fbe85729159413a1b6e977c2cdac2`,
+annotated local `v0.2.0`. Read the [K04 decision and exact release evidence](08-development-checkpoints-and-release-checklists.md#k04)
+and the [single canonical K04 handoff](../verification/K04-repair17-s5-final-handoff.md).
+The next canonical implementation locator is [K05 — clean Pi reviewers](08-development-checkpoints-and-release-checklists.md#k05),
+not a new deliverable defined here. K05/S2 exit has not been implemented or accepted;
+this documentation update launches nothing. Polza/Jev, OpenRouter/Jev and local
+d3-mini Q8 each remain UNVERIFIED. A local tag is not publication or spending authority.
+
 <a id="first-reading"></a>
 
 ## 1. A useful first reading order 🧭

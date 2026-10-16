@@ -16,20 +16,28 @@ Roles are boundaries, not mandatory classes or folders. Create only exercised mo
   generations, shared check admission/runs, operator control and read-only status.
   `src/registry.ts` owns acknowledged contributions; `src/observation.ts` and
   `src/scheduling.ts` own attributable views and initial observable C1 eligibility.
-  `src/checkpoint.ts` owns bounded protected control metadata and exclusive
-  ownership independently of diagnostic persistence.
-  `src/context.ts` owns canonical assembly, coverage and actual-byte budgets;
+  `src/checkpoint.ts` owns bounded protected control, request-intent and ledger
+  persistence independently of diagnostics. `src/context.ts` owns canonical
+  assembly, coverage and actual-byte budgets; `src/evidence.ts` owns original
+  acquisition/custody and `src/git-evidence.ts` read-only episode-relative Git.
+  `src/models.ts` owns common model preflight, attempts and accounting;
+  `src/adapters/pi-models.ts` supplies the pinned public SDK boundary.
   `src/diagnostics.ts` projects bounded history, and `src/journal.ts` owns the
   bounded append-oriented session journal. `src/builtins/` uses the same path.
-- The accepted S1 subset is the explicitly enabled observation-only deterministic
+- The accepted S1 foundation is the explicitly enabled observation-only deterministic
   loop with bounded lifecycle/admission, protected Stop/authorization control and
   initial metadata journal rotation/retention; `/quality stop` is an operator action.
   Count, periodic, inactivity/no-progress, known-wait, history-evidence and actionable
   completion causes use the common path. Public `core.evidence-change` supports
   only `core.history`; unsupported scopes are rejected before dispatch.
-  Model dispatch/accounting, original source collection, feedback/actions, capture,
-  export and later bindings remain unavailable. Native fixture acceptance is not
-  universal platform, TUI/RPC, ACL or power-loss certification.
+  K04 adds original source/Git evidence, approved direct chat/classifier assessment
+  and protected owned accounting through that same path. Validate represented input
+  capabilities on the selected actual model in common preflight before attempt,
+  reservation, durable intent or transport. No ambient-route fallback is allowed.
+  Clean Pi-session review, feedback/actions, capture/export and later bindings remain
+  unavailable. Scripted mechanical support is not live-route/usefulness proof or
+  universal platform, TUI/RPC, ACL or power-loss certification. Read current scope
+  in [Document 08](../docs/08-development-checkpoints-and-release-checklists.md#k04).
 - Configuration validates before activation; cold invalid configuration remains inactive.
 - The runtime owns each observed session generation, admission and effect authority.
 - Trigger/policy decisions do not perform direct host effects, network calls or hidden timers.

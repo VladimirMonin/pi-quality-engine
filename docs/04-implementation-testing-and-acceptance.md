@@ -8,7 +8,7 @@ observability_baseline: "O1"
 delivery_baseline: "D1"
 configuration_schema_version: 1
 diagnostic_schema_version: 1
-status: "Proposed delivery specification; no implementation, test execution, benchmark, or release acceptance is claimed"
+status: "D1 delivery specification; bounded S1 accepted in 6.7 and K04 local release in 7.7; later stages and live usefulness remain unclaimed"
 source_baseline_date: "2026-10-12"
 language: "en"
 ---
@@ -33,7 +33,7 @@ The central acceptance question is not whether all planned files exist. It is wh
 | [03 — Observability and Data Policy](03-observability-and-data-policy.md) | O1 event payloads, data projection, accounting, checkpoints, journal storage, capture, retention, and diagnostic limitations. |
 | **04 — Implementation, Testing, and Acceptance** | D1 development stages, executable proof obligations, evidence requirements, model-quality evaluation, and acceptance decisions. |
 
-D1 does not introduce a second runtime configuration format, new public component kinds, or competing event names. Development script names and acceptance-report examples in this document are **repository tooling to be implemented**, not commands already provided by Pi or a released Quality Engine. Internal file organization may change without a contract revision; externally observable C1/O1 behavior may not.
+D1 does not introduce a second runtime configuration format, new public component kinds, or competing event names. Development task examples are repository tooling, not commands supplied by Pi; only the implemented commands in [BUILD.toolchain](../Инструкции/BUILD.toolchain.instructions.md) are active. Internal file organization may change without a contract revision; externally observable C1/O1 behavior may not.
 
 “Must” identifies an acceptance requirement. “Should” identifies a default approach with a recorded, evidence-based exception. “May” identifies an optional implementation choice. A test plan is not a test result. A source-inspection observation is not proof that the local integration works.
 
@@ -435,6 +435,25 @@ A completed S2 implementation can be useful in observation-only mode. It must no
 ### 7.6 S2 exit package 📦
 
 Retain permitted evidence for one direct assessment, one multi-request clean reviewer, one missing-source result, and one timeout/late settlement. Include the actual route visibility report and the Git-preservation test. Live traffic, when used, needs a preapproved plan and explicitly reported spend; absence of live authorization remains a blocked route gate, not a disguised pass.
+
+### 7.7 Accepted K04 increment — 2026-10-16 🧾
+
+K04 original-source/Git custody, approved direct assessment and protected owned
+accounting are independently accepted on working candidate57 `d3aca697…` by Astra;
+[the final decision](../verification/K04/reviewer/input-capability-20261016T010630Z-f1689a96/FINAL.md)
+preserves the exact original33/36/56 qualification stack and honest unrun/unknown limits.
+Sol's [exact committed/EOL gate](../verification/K04/reviewer/local-release-20261016T014116Z-1c6a6ecb/implementation-gate.json)
+binds implementation `28960100016fbe85729159413a1b6e977c2cdac2` and annotated local
+`v0.2.0`:115 unit,26 host, routing and installed consumer pass;42 compiled files,
+50 package payloads and the entire tested tarball equal the accepted artifact.
+The initial unit114/115 environment failure remains recorded; only owned Git-discovery
+isolation changed before the corrected unit run. No production/test assertion changed.
+
+This is **not full S2 exit**, clean Pi-reviewer acceptance or live usefulness.
+Polza/Jev, OpenRouter/Jev and local d3-mini Q8 remain individually UNVERIFIED.
+Follow [K04](08-development-checkpoints-and-release-checklists.md#k04) for exact identities
+and [K05](08-development-checkpoints-and-release-checklists.md#k05) for the existing next
+checkpoint. No K05 execution, new live authority, push or publication follows from this note.
 
 <a id="section-8"></a>
 

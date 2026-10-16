@@ -41,10 +41,21 @@ logging choices cannot reset it. Directory pressure is a cleanup target, not a
 quota that permits deleting active/checkpoint data. Native Windows file sync and
 best-effort directory sync do not establish universal or power-loss durability.
 
+Charge complete serialized UTF-8 envelopes including LF. Native queued commands
+and descriptor-prefix bytes are a different domain from contributed starting/ready
+queues. Observe the actual MaybePromise return: synchronous void settles inline;
+a real pending Promise remains outstanding until settlement. Offer, callback, ACK,
+physical write, flush and retirement are not interchangeable. Reconcile exact loss
+membership by session/generation and destination instance, not range width or totals.
+Truthful bounded pressure/retirement loss is not a universal drain-all obligation.
+
 One logical journal belongs to each observed session including owned reviewers.
 Logical retirement is not remote termination; queued is not included; written is
 not power-loss durability. Unknown usage/cost remains null/unknown. Primary/external
 billing is excluded from owned totals. Accounting and Stop live independently of logs.
+Preserve usage/price provenance, replacement revisions, reservations, currency and
+late authoritative charges. Source bytes, selected input, actual SDK message/options,
+engine framing and hidden provider wire remain distinct evidence domains.
 
 Persistent storage must establish a permitted root and writer ownership before first
 write. Tests use fresh disposable state, never operator journals/configuration. Read

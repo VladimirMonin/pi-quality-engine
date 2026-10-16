@@ -31,11 +31,13 @@ Keep public contracts imports separate from the extension entry and inert.
 Active gates are `npm run build`, `npm test`, `npm run evidence:routing`,
 `npm run test:pi`, `npm run test:package` and full aggregate `npm run check`;
 see [README](../README.md). Package/evidence helpers accept `QE_EVIDENCE_DIR`;
-pass a fresh absolute native path before execution. Shared routing uses
-`verification/K03/<role>/<unique-run>` when no explicit destination is supplied;
-that fallback is not permission to write a historical bundle. Exercise automatic
-routing only inside a fresh owned candidate mirror, with real prior-stage byte
-controls. Keep prior results immutable and retain the actual tested tarball.
+pass a fresh absolute native path before execution. Without it, routing uses
+`verification/<QE_CHECKPOINT>/<QE_EVIDENCE_ROLE>/<unique-run>`; the implemented
+fallbacks remain K03/author. Set the actual checkpoint deliberately. A fallback
+is not permission to write a historical bundle. Exercise automatic routing only
+inside a fresh owned candidate mirror, trace nested producers and preserve real
+prior-stage byte controls. Keep prior results immutable and retain the actual
+installed/tested tarball; compare payload bytes, not version strings alone.
 Avoid composing Windows paths from POSIX `$PWD`.
 `node scripts/collect-evidence.mjs` collects identities, not proof of passing gates;
 independently bind all packed payloads/resources to actual commit/build bytes.
