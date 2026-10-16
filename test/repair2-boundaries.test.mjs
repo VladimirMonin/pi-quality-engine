@@ -287,8 +287,8 @@ test("K02-R1 provenance labels are tokenized before every diagnostic destination
       assert.equal(history.includes(canary), false, `history leaked ${canary}`);
       assert.equal(journal.includes(canary), false, `journal leaked ${canary}`);
     }
-    assert.match(String(item?.resourceId), /^(res-\d+|builtin:)/, "URI is an approved reference");
-    assert.match(String(item?.revisionRef), /^(rev-\d+|sha-|obs-)/, "revision is an engine reference");
+    assert.match(String(item?.resourceId), /^(res-[0-9a-f]{24}|builtin:)/, "URI is an approved engine-issued keyed reference");
+    assert.match(String(item?.revisionRef), /^(rev-[0-9a-f]{24}|sha-|obs-)/, "revision is an engine-issued keyed reference");
     assert.match(String(item?.selection?.sectionRefs?.[0]), /^sec-\d+$/, "section labels are opaque references");
   });
 });

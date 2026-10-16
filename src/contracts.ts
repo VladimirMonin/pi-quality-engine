@@ -256,6 +256,8 @@ export interface ModelResponse {
   attemptIds: readonly string[];
   actualModel: { provider: string; id: string; revision: string | null };
   output: Json;
+  manifestId: string;
+  accounting: "complete" | "partial" | "unknown";
 }
 
 export interface EvaluationServices {
@@ -292,6 +294,35 @@ export interface AssessmentResources {
   questions: Readonly<Record<string, DecisionQuestion>> | null;
   resultSchema: JsonSchema;
   criteria: readonly string[];
+  /** Internal provenance: which resources were explicitly configured. */
+  configuredResources?: { questions: boolean; resultSchema: boolean };
+  /** Internal owned resource dictionary joining refs across O1 events. */
+  assets?: ReadonlyArray<{
+    itemId: string;
+    /** Engine-owned safe token for the assembled item identity. */
+    itemToken: string;
+    resourceId: string;
+    kind: string;
+    revisionRef: string;
+    sourceId: string | null;
+    sizes: readonly unknown[];
+    visibility: string;
+    changedDuringRead: boolean;
+    selection: {
+      kind: string;
+      ranges: readonly { start: number; end: number }[];
+      sectionRefs: readonly string[];
+      inputRefs: readonly string[];
+      methodId: string;
+    };
+  }>;
+  /** Internal provenance for each acquired resource; no bodies. */
+  resourceProvenance?: ReadonlyArray<{
+    kind: "instruction" | "questions" | "resultSchema";
+    uri: string;
+    revision: string;
+    changedDuringRead: boolean;
+  }>;
 }
 
 export interface PromptContext extends LifecycleContext {
@@ -402,7 +433,27 @@ export interface PolicyDefinition extends ComponentMeta {
   decide(options: JsonObject, input: PolicyInput): PolicyDecision;
 }
 
+export interface PermittedDiagnosticRecord {
+  schemaVersion: number;
+  eventId: string;
+  sequence: number;
+  event: string;
+  observedSessionId: string;
+  fields: JsonObject;
+}
+
+export interface DiagnosticSinkInstance extends DisposableComponent {
+  write(record: PermittedDiagnosticRecord): MaybePromise<void>;
+  flush?(): Promise<void>;
+}
+
+export interface SinkDefinition extends ComponentMeta {
+  kind: "sink";
+  create(options: JsonObject, ctx: LifecycleContext): MaybePromise<DiagnosticSinkInstance>;
+}
+
 export type RegisteredComponentDefinition =
+  | SinkDefinition
   | TriggerDefinition
   | ContextDefinition
   | PromptDefinition
@@ -489,6 +540,11 @@ export interface RetentionSettings {
 export interface RuntimeSettings {
   maxConcurrentEvaluations: number;
   maxPendingChecks: number;
+  maxRequestsPerSession: number;
+  maxOwnedTokensPerSession: number;
+  unknownCost: "allow-with-token-limits" | "deny";
+  /** Optional shared soft money ceiling; null means no configured money cap. */
+  maxOwnedCost: { currency: string; amount: string } | null;
   maxEvidenceBytes: number;
   defaultRunTimeoutMs: number;
   maxRunTimeoutMs: number;
@@ -499,6 +555,44 @@ export interface RuntimeSettings {
 export interface PermissionSettings {
   modelProfiles: readonly string[];
   actions: readonly string[];
+}
+
+export type SourceRole = "requirement" | "evidence" | "reference";
+
+/** C1 section 3.3: a source points to existing material, never a copied database. */
+export interface SourceDefinition {
+  uris: readonly string[];
+  globs: readonly string[];
+  role: SourceRole;
+  required: boolean;
+  revisionPolicy: "pin-at-episode" | "refresh-at-check";
+  include: "full" | "selected";
+  sections: readonly string[];
+  maxFiles: number;
+  maxBytes: number;
+  exclude: readonly string[];
+}
+
+export interface ModelPrice {
+  currency: string;
+  revision: string;
+  inputPerMillion: string;
+  outputPerMillion: string;
+  cacheReadPerMillion?: string;
+  cacheWritePerMillion?: string;
+}
+
+/** C1 section 13.1: an explicit approved provider/model route. */
+export interface ModelProfileDefinition {
+  provider: string;
+  model: string;
+  reasoning: "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
+  requestTimeoutMs: number;
+  maxAttempts: number;
+  retryDelayMs: number;
+  maxOutputTokens: number;
+  price: "host-catalog" | "unknown" | ModelPrice;
+  requiredInputs: readonly ("text" | "image")[];
 }
 
 export interface PromptBinding {
@@ -523,6 +617,7 @@ export interface ContextPlan {
 
 export interface EvaluatorProfile {
   use: string;
+  modelProfile?: string;
   options: JsonObject;
 }
 
@@ -558,12 +653,20 @@ export interface CheckDefinition {
 
 export type DetailProfile = "minimal" | "standard" | "debug" | "trace";
 
+export interface SinkBinding {
+  /** Registered contributed sink component id receiving projected records. */
+  id: string;
+  options?: JsonObject;
+}
+
 export interface ObservabilityConfiguration {
   detail: DetailProfile;
   capture: CapturePermissions;
   recentHistory: RecentHistoryLimits;
   journal: JournalSettings;
   retention: RetentionSettings;
+  /** Explicitly configured additional named sink destinations. */
+  sinks: readonly SinkBinding[];
 }
 
 export interface EngineConfiguration {
@@ -572,6 +675,8 @@ export interface EngineConfiguration {
   mode: "observe";
   runtime: RuntimeSettings;
   permissions: PermissionSettings;
+  sources: Readonly<Record<string, SourceDefinition>>;
+  modelProfiles: Readonly<Record<string, ModelProfileDefinition>>;
   prompts: Readonly<Record<string, PromptBinding>>;
   contexts: Readonly<Record<string, ContextPlan>>;
   evaluators: Readonly<Record<string, EvaluatorProfile>>;
@@ -584,6 +689,10 @@ export interface ResolvedConfiguration {
   value: EngineConfiguration;
   revision: string;
   origins: readonly ConfigurationOrigin[];
+  /** Configuration file that declared each source id, for declaration-relative resolution. */
+  sourceOrigins: Readonly<Record<string, ConfigurationOrigin>>;
+  /** Internal declaration origin/directory per prompt binding, for local resources. */
+  promptOrigins: Readonly<Record<string, { origin: ConfigurationOrigin; directory: string }>>;
   sources: ConfigurationSourceStatus;
 }
 
@@ -1019,5 +1128,12 @@ export type DiagnosticEventName =
   | "quality.journal.rotation"
   | "quality.retention.sweep"
   | "quality.control.checkpoint"
+  | "quality.model.preflight"
+  | "quality.model.dispatched"
+  | "quality.resource.described"
+  | "quality.model.settled"
+  | "quality.model.usage-updated"
+  | "quality.budget.denied"
+  | "quality.usage.summary"
   | "quality.diagnostic.gap"
   | "quality.sink.health";

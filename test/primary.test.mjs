@@ -152,6 +152,7 @@ test("the real primary stays usable through engine retirement with zero owned di
         "quality.runtime.started",
         "quality.config.applied",
         "quality.runtime.retired",
+        "quality.journal.closed",
       ]);
       const recordsAfterRetirement = retired.diagnostics.recentEvents.length;
 

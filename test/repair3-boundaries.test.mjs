@@ -280,8 +280,8 @@ test("K02-R1A contributed builtin claims are verified at the artifact boundary",
         assert.equal(history.includes(canary), false, `history leaked ${canary}`);
         assert.equal(journal.includes(canary), false, `journal leaked ${canary}`);
       }
-      assert.match(String(itemPart?.revisionRef), /^rev-\d+$/, "an unverified revision becomes an opaque reference");
-      if (forged === "prefix") assert.match(String(itemPart?.resourceId), /^res-\d+$/, "an unverified URI becomes an opaque reference");
+      assert.match(String(itemPart?.revisionRef), /^rev-[0-9a-f]{24}$/, "an unverified revision becomes an engine-issued opaque keyed reference");
+      if (forged === "prefix") assert.match(String(itemPart?.resourceId), /^res-[0-9a-f]{24}$/, "an unverified URI becomes an engine-issued opaque keyed reference");
     });
   }
 });

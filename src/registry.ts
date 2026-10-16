@@ -23,6 +23,7 @@ import type {
   RegistryEndpoint,
   Result,
   Scope,
+  SinkDefinition,
   TriggerDefinition,
 } from "./contracts.js";
 
@@ -31,7 +32,8 @@ export type ResolvedComponent =
   | { kind: "context"; registrationId: string; componentId: string; definition: ContextDefinition; lifecycle(): LifecycleContext }
   | { kind: "prompt"; registrationId: string; componentId: string; definition: PromptDefinition; lifecycle(): LifecycleContext }
   | { kind: "evaluator"; registrationId: string; componentId: string; definition: EvaluatorDefinition; lifecycle(): LifecycleContext }
-  | { kind: "policy"; registrationId: string; componentId: string; definition: PolicyDefinition; lifecycle(): LifecycleContext };
+  | { kind: "policy"; registrationId: string; componentId: string; definition: PolicyDefinition; lifecycle(): LifecycleContext }
+  | { kind: "sink"; registrationId: string; componentId: string; definition: SinkDefinition; lifecycle(): LifecycleContext };
 
 export interface PackageInventoryEntry {
   packageId: string;
@@ -77,7 +79,7 @@ interface RegisteredComponent {
 }
 
 const SUPPORTED_KINDS: ReadonlySet<ResolvedComponent["kind"]> = new Set([
-  "trigger", "context", "prompt", "evaluator", "policy",
+  "trigger", "context", "prompt", "evaluator", "policy", "sink",
 ]);
 
 /** Stable bounded counter vocabulary for component notes (O1 §6.2). */
@@ -269,6 +271,11 @@ function validateComponentShape(component: unknown): { ok: true; kind: ResolvedC
         return { ok: false, error: { code: "core.invalid-component", retryable: false, field: "decide" } };
       }
       break;
+    case "sink":
+      if (!isFunctionProperty(record, "create")) {
+        return { ok: false, error: { code: "core.invalid-component", retryable: false, field: "create" } };
+      }
+      break;
     default:
       return { ok: false, error: { code: "core.component-kind-unavailable", retryable: false } };
   }
@@ -431,6 +438,20 @@ export class ComponentRegistry {
         lifecycle: () => this.#lifecycle(registered.componentId),
       } as ResolvedComponent,
     };
+  }
+
+  /** Ready contributed diagnostic sinks for bounded post-projection delivery. */
+  sinkComponents(): Array<{ componentId: string; definition: SinkDefinition; lifecycle(): LifecycleContext }> {
+    const sinks: Array<{ componentId: string; definition: SinkDefinition; lifecycle(): LifecycleContext }> = [];
+    for (const registered of this.#components.values()) {
+      if (registered.kind !== "sink" || registered.status !== "ready") continue;
+      sinks.push({
+        componentId: registered.componentId,
+        definition: registered.definition as SinkDefinition,
+        lifecycle: () => this.#lifecycle(registered.componentId),
+      });
+    }
+    return sinks;
   }
 
   inventory(): PackageInventoryEntry[] {

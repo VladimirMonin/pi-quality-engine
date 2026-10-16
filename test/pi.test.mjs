@@ -161,7 +161,7 @@ test("the built package loads in real Pi and starts then retires an inert runtim
     const inactive = await readStatus(host);
     assert.equal(inactive.runtime.state, "inactive");
     assert.equal(inactive.runtime.generation, null);
-    assert.equal(inactive.engine.version, "0.1.0");
+    assert.equal(inactive.engine.version, "0.2.0");
     assert.equal(inactive.configuration.enabled, false);
     assert.equal(inactive.configuration.mode, "observe");
     assert.equal(inactive.configuration.rejection, null);
@@ -198,6 +198,7 @@ test("the built package loads in real Pi and starts then retires an inert runtim
       "quality.runtime.started",
       "quality.config.applied",
       "quality.runtime.retired",
+      "quality.journal.closed",
     ]);
     assert.equal(retired.diagnostics.recentEvents[2]?.fields.data.cause, "quit");
 
@@ -233,7 +234,7 @@ test("the built package loads in real Pi and starts then retires an inert runtim
         "No quality.model.dispatched or action event exists in the retained history.",
       ],
     });
-    assert.equal(journalText.trim().split(/\r?\n/u).length, 3);
+    assert.equal(journalText.trim().split(/\r?\n/u).length, 4);
   } finally {
     await rm(root, { recursive: true, force: true });
   }

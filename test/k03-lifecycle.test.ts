@@ -6,6 +6,7 @@ import test from "node:test";
 import type { AssessmentResult, ContextDefinition, EvaluatorDefinition, PackageDefinition, TriggerDefinition } from "../src/contracts.js";
 import type { EngineSessionInput } from "../src/runtime.js";
 import { EngineSession } from "../src/runtime.js";
+import { ControlCheckpoint } from "../src/checkpoint.js";
 import type { EngineClock } from "../src/scheduling.js";
 
 const RESOURCES_DIR = join(process.cwd(), "resources");
@@ -525,5 +526,22 @@ test("K03-T09b a failed control checkpoint suspends dependent admission only", a
   } finally {
     await retire(fixture);
     await rm(fixture.root, { recursive: true, force: true });
+  }
+});
+
+test("K04-R8j material-receipt uncertainty survives protected restore", async () => {
+  const root = await mkdtemp(join(tmpdir(), "qe-k04-uncertain-"));
+  const clock = { nowUtc: () => new Date().toISOString() };
+  try {
+    const opened = await ControlCheckpoint.open({ agentDir: root, observedSessionId: "unit-r8j", ownerGeneration: "gen-1", configurationRevision: "rev-1", clock });
+    assert.equal(opened.financialUncertain, false);
+    opened.checkpoint.setLocalState({ operatorStopped: false, observerPaused: false, financialUncertain: true });
+    assert.equal((await opened.checkpoint.commit()).ok, true);
+    await opened.checkpoint.close();
+    const reopened = await ControlCheckpoint.open({ agentDir: root, observedSessionId: "unit-r8j", ownerGeneration: "gen-2", configurationRevision: "rev-1", clock });
+    assert.equal(reopened.financialUncertain, true, "a generation change is not financial reauthorization");
+    await reopened.checkpoint.close();
+  } finally {
+    await rm(root, { recursive: true, force: true });
   }
 });

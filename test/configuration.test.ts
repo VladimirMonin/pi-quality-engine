@@ -176,6 +176,8 @@ test("present configuration requires schema version 1 and typed implemented valu
     [{ schemaVersion: 1, observability: { capture: { documents: "all" } } }, "config.invalid-value"],
     [{ schemaVersion: 1, observability: { capture: { telepathy: "none" } } }, "config.unknown-key"],
     [{ schemaVersion: 1, permissions: { unknownGrant: true } }, "config.unknown-key"],
+    [{ schemaVersion: 1, sources: { docs: {} } }, "config.invalid-value"],
+    [{ schemaVersion: 1, modelProfiles: { local: {} } }, "config.invalid-value"],
   ];
   for (const [input, expected] of cases) {
     const parsed = validateConfiguration(JSON.parse(JSON.stringify(input)));
@@ -190,10 +192,7 @@ test("valid C1 values outside the implemented slice are reported unavailable, no
     [{ schemaVersion: 1, mode: "advise" }, "$.mode"],
     [{ schemaVersion: 1, observability: { capture: { prompts: "excerpt" } } }, "$.observability.capture.prompts"],
     [{ schemaVersion: 1, observability: { presentation: "diagnostic" } }, "$.observability.presentation"],
-    [{ schemaVersion: 1, permissions: { modelProfiles: ["local"] } }, "$.permissions.modelProfiles"],
     [{ schemaVersion: 1, permissions: { allowIdleContinuation: true } }, "$.permissions.allowIdleContinuation"],
-    [{ schemaVersion: 1, modelProfiles: { local: {} } }, "$.modelProfiles"],
-    [{ schemaVersion: 1, sources: { docs: {} } }, "$.sources"],
     [{ schemaVersion: 1, runtime: { maxFeedbackPerEpisode: 1 } }, "$.runtime.maxFeedbackPerEpisode"],
   ];
   for (const [input, expectedField] of unavailable) {
@@ -471,4 +470,22 @@ test("JSON text uses the same restricted data model as YAML", () => {
   assert.equal(parsed.ok, true);
   if (!parsed.ok) return;
   assert.deepEqual(parsed.value, { schemaVersion: 1, mode: "observe" });
+});
+
+test("K04-R11 validation accepts declared local prompt resources", () => {
+  const accepted = validateConfiguration({
+    schemaVersion: 1,
+    prompts: { p: { use: "core.prompt-files", options: { instructions: ["builtin:repetition-v1.md", "file:C:/project/owner-prompt.md", "owner-notes.md"] } } },
+  } as never);
+  assert.equal(accepted.ok, true);
+  const unknownScheme = validateConfiguration({
+    schemaVersion: 1,
+    prompts: { p: { use: "core.prompt-files", options: { instructions: ["package:missing.md"] } } },
+  } as never);
+  assert.equal(unknownScheme.ok, false);
+  const unknownBuiltin = validateConfiguration({
+    schemaVersion: 1,
+    prompts: { p: { use: "core.prompt-files", options: { instructions: ["builtin:missing.md"] } } },
+  } as never);
+  assert.equal(unknownBuiltin.ok, false);
 });

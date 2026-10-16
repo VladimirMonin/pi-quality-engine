@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": ["operational", "coverage", "conclusion", "findings", "scores", "additionalEvidence", "dependencies", "usageAttemptIds"],
+  "additionalProperties": true,
+  "properties": {
+    "operational": { "type": "string" },
+    "coverage": { "type": "object" },
+    "conclusion": { "type": "string" },
+    "findings": { "type": "array" },
+    "scores": { "type": "array" },
+    "additionalEvidence": { "type": "array" },
+    "dependencies": { "type": "array" },
+    "usageAttemptIds": { "type": "array" }
+  }
+}

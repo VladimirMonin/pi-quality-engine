@@ -22,7 +22,7 @@ env.QE_EVIDENCE_DIR = allocateEvidenceDir();
 console.log(`QE_EVIDENCE_DIR=${env.QE_EVIDENCE_DIR}`);
 if (process.argv[2]) env.QE_PACKAGE_ROOT = process.argv[2];
 const defaultFiles = [
-  "test/pi.test.mjs", "test/primary.test.mjs", "test/loop-host.test.mjs",
+  "test/pi.test.mjs", "test/primary.test.mjs", "test/loop-host.test.mjs", "test/k04-host.test.mjs",
   "test/repair-boundaries.test.mjs", "test/repair2-boundaries.test.mjs", "test/repair3-boundaries.test.mjs",
 ];
 const files = process.env.QE_TEST_FILES

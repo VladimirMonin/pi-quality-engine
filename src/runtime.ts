@@ -8,8 +8,8 @@
 
 import { createHash, randomBytes } from "node:crypto";
 import { readFileSync, statSync } from "node:fs";
-import { join } from "node:path";
-import { admitContextItem, assembleContext, type AssembledContext } from "./context.js";
+import { dirname, join } from "node:path";
+import { admitContextItem, assembleContext, ITEM_ASSET, PROVENANCE_ASSETS, ReferenceTokens, type AssembledContext, type ItemAssetEntry } from "./context.js";
 import { DEFAULT_MAX_RECORD_BYTES, DiagnosticHistory } from "./diagnostics.js";
 import { loadEffectiveConfiguration } from "./configuration.js";
 import type { ConfigurationRejection } from "./configuration.js";
@@ -31,9 +31,13 @@ import {
   periodicTrigger,
   waitDeadlineTrigger,
 } from "./builtins/triggers.js";
-import { historyProvider, taskProvider, waitsProvider } from "./builtins/contexts.js";
+import { createChangesProvider, filesProvider, historyProvider, taskProvider, waitsProvider } from "./builtins/contexts.js";
+import { SourceEvidence, type AcquisitionObservation, type AcquiredRefs, type AcquisitionObserver, type AcquisitionFact, type ReadObservationContext } from "./evidence.js";
+import { GitEpisodeEvidence } from "./git-evidence.js";
+import { ModelService, renderChatInput, renderClassifierState, finalizeRenderedInput } from "./models.js";
+import type { ModelRegistryPort, ModelUsageSummary } from "./models.js";
 import { createPromptFilesProvider } from "./builtins/prompts.js";
-import { repeatedToolsEvaluator } from "./builtins/evaluators.js";
+import { chatEvaluator, classifierEvaluator, repeatedToolsEvaluator } from "./builtins/evaluators.js";
 import { recordOnlyPolicy } from "./builtins/policies.js";
 import type {
   AssessmentFindingMetadata,
@@ -67,10 +71,13 @@ import type {
   Scope,
   TriggerReason,
   WorkState,
+  SinkDefinition,
+  DiagnosticSinkInstance,
+  PermittedDiagnosticRecord,
 } from "./contracts.js";
 
 export const ENGINE_NAME = "pi-quality-engine";
-export const ENGINE_VERSION = "0.1.0";
+export const ENGINE_VERSION = "0.2.0";
 export const ENGINE_BUILD_REF = `${ENGINE_NAME}@${ENGINE_VERSION}`;
 export const DATA_POLICY_REVISION = "o1-1";
 
@@ -101,6 +108,10 @@ export interface EngineSessionInput {
   resourcesDir: string;
   /** Clock boundary; tests may supply a controlled clock. */
   clock?: EngineClock;
+  /** Project root used for declaration-relative evidence and read-only Git collection. */
+  projectRoot?: string;
+  /** Model registry port used for approved engine-owned direct requests. */
+  modelRegistry?: ModelRegistryPort;
   /** Registry availability notification sink used by the composition root. */
   publishRegistryEndpoint?: (endpoint: ComponentRegistry["endpoint"]) => void;
   /** Same-session control state; the composition root preserves it across reload. */
@@ -117,6 +128,13 @@ export interface EngineSessionInput {
 export interface SessionControlState {
   operatorStopped: boolean;
   observerPaused?: boolean;
+  /**
+   * Constant-size same-session tokenization state. It is created lazily by the
+   * first runtime generation of an observed session and preserved across
+   * same-session reload by the composition root. It is private metadata: never
+   * logged, exported, persisted as a public value or treated as authority.
+   */
+  referenceKey?: string;
 }
 export type PrimaryHostEvent =
   | { type: "operator-input"; text: string; source: string; occurredAt: string }
@@ -221,6 +239,7 @@ export interface EngineStatus {
   };
   registry: { packages: PackageInventoryEntry[] };
   journal: JournalStatus | null;
+  accounting: ModelUsageSummary | null;
   diagnostics: {
     detail: DetailProfile;
     capture: "none";
@@ -288,6 +307,7 @@ interface StatusParts {
   observation: EngineStatus["observation"];
   registry: PackageInventoryEntry[];
   journal: JournalStatus | null;
+  accounting: ModelUsageSummary | null;
 }
 
 function buildStatus(parts: StatusParts): EngineStatus {
@@ -339,6 +359,7 @@ function buildStatus(parts: StatusParts): EngineStatus {
     observation: parts.observation,
     registry: { packages: parts.registry },
     journal: parts.journal,
+    accounting: parts.accounting,
     diagnostics: {
       detail: parts.detailProfile,
       capture: "none",
@@ -366,6 +387,97 @@ interface PendingIntent {
   evidenceCursor: number | null;
 }
 
+/** Join the exact admitted object's own selection projection, never a raw ID. */
+function itemAssetOf(item: object): ItemAssetEntry | undefined {
+  return (item as { [ITEM_ASSET]?: ItemAssetEntry })[ITEM_ASSET];
+}
+
+interface RunResourceDescriptorData {
+  resourceId: string;
+  kind: string;
+  revisionRef: string;
+  sourceId: string | null;
+  displayPath: null;
+  sizes: Array<{ boundary: string; utf8Bytes: number; unicodeScalars: null; lines: null; estimatedTokens: null; complete: boolean }>;
+  visibility: string;
+  repeated: boolean;
+}
+
+interface RunResourceDescriptor extends RunResourceDescriptorData {
+  emitted: boolean;
+}
+
+/**
+ * Bounded run-owned custody: the ONE issuer shared by acquisition, assembly and
+ * preparation, plus the safe descriptors for resources actually acquired
+ * before selection or failure can discard them. Raw resource/version values
+ * stay private to keyed issuance; only opaque references leave this owner.
+ */
+class RunCustody {
+  readonly tokens: ReferenceTokens;
+  readonly #descriptors = new Map<string, RunResourceDescriptor>();
+
+  constructor(tokens: ReferenceTokens) {
+    this.tokens = tokens;
+  }
+
+  get observer(): AcquisitionObserver {
+    return { observe: (event: AcquisitionObservation): AcquiredRefs | null => this.#observe(event) };
+  }
+
+  #observe(event: AcquisitionObservation): AcquiredRefs | null {
+    const resourceId = this.tokens.resource(event.ownerId, event.resource);
+    const revisionRef = this.tokens.revision(event.ownerId, event.resource, event.revision);
+    const key = `${resourceId}\u0000${revisionRef}`;
+    const existing = this.#descriptors.get(key);
+    if (existing !== undefined) {
+      existing.repeated = true;
+      return { resourceRef: resourceId, revisionRef };
+    }
+    this.#descriptors.set(key, {
+      resourceId,
+      kind: event.purpose === "instruction" ? "prompt" : event.purpose === "questions" ? "questions" : event.purpose === "resultSchema" ? "result-schema" : "document",
+      revisionRef,
+      sourceId: event.ownerId,
+      displayPath: null,
+      sizes: [{ boundary: "source", utf8Bytes: event.bytes, unicodeScalars: null, lines: null, estimatedTokens: null, complete: true }],
+      visibility: event.changedDuringRead ? "partial" : "complete",
+      repeated: false,
+      emitted: false,
+    });
+    return { resourceRef: resourceId, revisionRef };
+  }
+
+  /** Safe descriptors not yet offered to history/sinks/journal. */
+  drainNewDescriptors(): RunResourceDescriptorData[] {
+    const drained: RunResourceDescriptorData[] = [];
+    for (const descriptor of this.#descriptors.values()) {
+      if (descriptor.emitted) continue;
+      descriptor.emitted = true;
+      drained.push({
+        resourceId: descriptor.resourceId,
+        kind: descriptor.kind,
+        revisionRef: descriptor.revisionRef,
+        sourceId: descriptor.sourceId,
+        displayPath: null,
+        sizes: descriptor.sizes,
+        visibility: descriptor.visibility,
+        repeated: descriptor.repeated,
+      });
+    }
+    return drained;
+  }
+
+  /**
+   * True when this run already offered a safe descriptor for this exact
+   * resource/version pair. Different original versions of one resource stay
+   * separately described instead of overwriting each other.
+   */
+  alreadyDescribed(resourceId: string, revisionRef: string): boolean {
+    return this.#descriptors.has(`${resourceId}\u0000${revisionRef}`);
+  }
+}
+
 interface ActiveRun {
   runId: string;
   checkId: string;
@@ -377,6 +489,8 @@ interface ActiveRun {
   configRevision: string;
   configuredTimeoutMs: number;
   timedOut: boolean;
+  /** The one run-owned acquisition/issuance custody record. */
+  custody: RunCustody;
 }
 
 interface SettledAssessment {
@@ -438,7 +552,9 @@ function boundedId(value: unknown, fallback: string): string {
 function invalidAssessmentResult(reasonCode: string): AssessmentResult {
   return {
     operational: "failed",
-    coverage: { state: "insufficient", scopeDescription: "Evaluator result rejected at the validation boundary.", issues: [{ sourceId: "core.runtime", reason: reasonCode, required: true, evidenceIds: [] }] },
+    coverage: { state: "insufficient", scopeDescription: reasonCode === "core.context-incomplete"
+      ? "Declared required context could not be completely assembled; evaluation was not started."
+      : "Evaluator result rejected at the validation boundary.", issues: [{ sourceId: "core.runtime", reason: reasonCode, required: true, evidenceIds: [] }] },
     conclusion: "undetermined",
     findings: [],
     scores: [],
@@ -518,9 +634,31 @@ export class EngineSession {
   readonly #registry: ComponentRegistry;
   #journal: SessionJournal | null = null;
   #journalFailure: { reasonCode: string } | null = null;
+  readonly #sourceEvidence: SourceEvidence;
+  readonly #gitEvidence: GitEpisodeEvidence;
+  readonly #modelService: ModelService | null;
+  readonly #sinks = new Map<string, {
+    componentId: string;
+    options: JsonObject;
+    definition: SinkDefinition | null;
+    instance: DiagnosticSinkInstance | null;
+    queue: DiagnosticRecordV1[];
+    queuedBytes: number;
+    outstanding: number;
+    outstandingBytes: number;
+    starting: boolean;
+    disabled: boolean;
+    dropped: number;
+    failed: number;
+    firstLostSequence: number | null;
+    lastLostSequence: number | null;
+    byEventFamily: Record<string, number>;
+    disposed: boolean;
+  }>();
   #control: ControlCheckpoint | null = null;
   #controlRestored = false;
   #controlDegraded = false;
+  #receiptPersistenceUncertain = false;
   #controlErrorCode: string | null = null;
   #controlRevision = 0;
   #controlOwned = true;
@@ -547,6 +685,9 @@ export class EngineSession {
   /** Owned model-attempt identities; empty until a model service issues them. */
   readonly #issuedAttemptIds = new Set<string>();
   readonly #builtinRevisionCache = new Map<string, string | null>();
+  /** Constant-size session tokenization key; never logged or exported. */
+  readonly #referenceKey: string;
+  #descriptorRegistry = new Map<string, JsonObject>();
 
   private constructor(
     input: EngineSessionInput,
@@ -555,7 +696,54 @@ export class EngineSession {
     rejection: ConfigurationRejection | null,
   ) {
     this.#input = { ...input };
+    // Same-session tokenization state is created once and preserved across
+    // supported reload through the shared control owner; it is not derived
+    // from or written into any public diagnostic surface.
+    const control = this.#input.controlState;
+    if (control?.referenceKey !== undefined && control.referenceKey.length >= 32) {
+      this.#referenceKey = control.referenceKey;
+    } else {
+      this.#referenceKey = randomBytes(24).toString("hex");
+      if (control !== undefined) control.referenceKey = this.#referenceKey;
+    }
     this.#hostIdleAtStart = hostIdleAtStart;
+    const projectRoot = input.projectRoot ?? dirname(input.projectConfigDir);
+    const agentQualityDir = join(input.agentDir, "quality");
+    this.#sourceEvidence = new SourceEvidence(
+      Object.entries(configuration.value.sources).map(([id, definition]) => {
+        const origin = configuration.sourceOrigins[id] ?? "user";
+        return {
+          id,
+          definition,
+          origin,
+          // Declaration-relative: the directory of the configuration file that
+          // declared the source. Explicit project:/agent: URIs select another root.
+          baseDir: origin === "project" ? input.projectConfigDir : join(input.agentDir, "quality"),
+        };
+      }),
+      { projectRoot, agentDir: input.agentDir, agentQualityDir },
+    );
+    this.#gitEvidence = new GitEpisodeEvidence(projectRoot);
+    this.#modelService = input.modelRegistry === undefined
+      ? null
+      : new ModelService({
+        profiles: configuration.value.modelProfiles,
+        approved: configuration.value.permissions.modelProfiles,
+        registry: input.modelRegistry,
+        budget: {
+          maxRequestsPerSession: configuration.value.runtime.maxRequestsPerSession,
+          maxOwnedTokensPerSession: configuration.value.runtime.maxOwnedTokensPerSession,
+          unknownCost: configuration.value.runtime.unknownCost,
+          maxOwnedCost: configuration.value.runtime.maxOwnedCost,
+        },
+        // Generations of one observed session share late session-wide receipts.
+        scope: input.observedSessionId,
+        // A material late receipt must persist through the CURRENT owner; the
+        // retired generation can no longer safely write protected state.
+        onReceipt: () => {
+          this.#persistReceipt();
+        },
+      });
     this.#configuration = configuration;
     this.#rejection = rejection;
     this.#clock = input.clock ?? systemClock();
@@ -646,6 +834,9 @@ export class EngineSession {
       clock: this.#clock,
     });
     this.#control = opened.checkpoint;
+    // Material-receipt uncertainty is sticky across generations: a restart is
+    // not a financial reauthorization.
+    this.#receiptPersistenceUncertain = opened.financialUncertain;
     this.#controlOwned = opened.owned;
     this.#controlRestored = opened.restored;
     this.#controlDegraded = opened.degraded;
@@ -662,6 +853,7 @@ export class EngineSession {
       authorizationRevision: this.#store.view().scope.authorizationRevision,
     });
     this.#controlRevision = opened.checkpoint.revision;
+    this.#modelService?.restore(opened.financial);
     if (opened.degraded) {
       this.#emit({
         event: "quality.control.checkpoint",
@@ -878,6 +1070,7 @@ export class EngineSession {
   async #activate(): Promise<void> {
     await this.#openCheckpoint();
     await this.#openJournal();
+    this.#gitEvidence.captureBaseline();
     this.#emitStartupRecords();
     if (!this.#configuration.value.enabled) {
       this.#emit({
@@ -912,11 +1105,26 @@ export class EngineSession {
         taskProvider,
         historyProvider,
         waitsProvider,
+        filesProvider,
+        createChangesProvider(options => this.#gitEvidence.collectChanges({
+          paths: Array.isArray(options["paths"]) ? (options["paths"] as string[]) : ["**"],
+          includeUntracked: options["includeUntracked"] !== false,
+          maxFiles: typeof options["maxFiles"] === "number" ? options["maxFiles"] : 32,
+          maxBytes: typeof options["maxBytes"] === "number" ? options["maxBytes"] : 65_536,
+        })),
         createPromptFilesProvider(this.#input.resourcesDir),
         repeatedToolsEvaluator,
+        chatEvaluator,
+        classifierEvaluator,
         recordOnlyPolicy,
       ],
-      resources: { "builtin:repetition-v1.md": { uri: "builtin:repetition-v1.md" } },
+      resources: {
+        "builtin:repetition-v1.md": { uri: "builtin:repetition-v1.md" },
+        "builtin:progress-v1.md": { uri: "builtin:progress-v1.md" },
+        "builtin:progress-v1.questions.json": { uri: "builtin:progress-v1.questions.json" },
+        "builtin:engineering-v1.md": { uri: "builtin:engineering-v1.md" },
+        "builtin:evaluation-v1.schema.json": { uri: "builtin:evaluation-v1.schema.json" },
+      },
     };
     const registered = this.#registry.register(builtins);
     if (registered.ok) await registered.value.ready;
@@ -1356,6 +1564,8 @@ export class EngineSession {
       observerPaused: this.#store.view().observerPaused,
       authorizationRevision: this.#store.view().scope.authorizationRevision,
       configurationRevision: this.#configuration.revision,
+      financial: this.#modelService?.financialSnapshot() ?? null,
+      financialUncertain: this.#receiptPersistenceUncertain,
     });
     const outcome = await this.#control.commit();
     this.#controlRevision = outcome.revision;
@@ -1541,6 +1751,14 @@ export class EngineSession {
       this.#pendingIntents.delete(checkId);
       return;
     }
+    if (this.#receiptPersistenceUncertain) {
+      // A material late receipt whose protected persistence is uncertain keeps
+      // dependent autonomy suspended even after the filesystem is writable.
+      this.#noteSuppressed("core.receipt-persistence-uncertain");
+      this.#admit(checkId, "denied", ["core.receipt-persistence-uncertain"], pending);
+      this.#pendingIntents.delete(checkId);
+      return;
+    }
     if (this.#controlDegraded) {
       // A failed control checkpoint suspends dependent autonomous admission;
       // diagnostics, status and the primary session stay independent.
@@ -1641,6 +1859,11 @@ export class EngineSession {
       configRevision: this.#configuration.revision,
       configuredTimeoutMs: check.timeoutMs ?? this.#configuration.value.runtime.defaultRunTimeoutMs,
       timedOut: false,
+      custody: new RunCustody(new ReferenceTokens({
+        acceptsReasonCode: (componentId, code) => this.#registry.acceptsDiagnosticCode(componentId, code),
+        isAcceptedIdentity: value => this.#acceptsReference(value),
+        expectedBuiltinRevision: uri => this.#expectedBuiltinRevision(uri),
+      }, this.#referenceKey)),
     };
     this.#physicalState.reserve(this);
     const timeoutCancel = this.#clock.setTimer(run.configuredTimeoutMs, () => this.#timeoutRun(run.runId));
@@ -1692,6 +1915,30 @@ export class EngineSession {
         this.#acceptIdentity(instruction.provenance.uri);
       }
     }
+    for (const binding of this.#configuration.value.contexts[this.#configuration.value.checks[run.checkId]?.context ?? ""]?.providers ?? []) {
+      const configuredIds = Array.isArray(binding.options["sourceIds"]) ? binding.options["sourceIds"] : [];
+      for (const sourceId of configuredIds) {
+        if (typeof sourceId !== "string") continue;
+        const definition = this.#configuration.value.sources[sourceId];
+        this.#emit({
+          event: "quality.context.source",
+          level: "info",
+          reasonCodes: [],
+          data: {
+            manifestId: assembled.manifest.manifestId,
+            sourceId,
+            stage: "configured",
+            resourceRefs: [],
+            required: definition?.required ?? false,
+            selectionState: "included",
+            sizes: [],
+            omittedCount: 0,
+            reasonCode: null,
+          },
+          correlation: { runId: run.runId },
+        });
+      }
+    }
     for (const source of assembled.providerSummaries) {
       for (const ref of source.resourceRefs) this.#acceptIdentity(ref);
       this.#emit({
@@ -1726,12 +1973,47 @@ export class EngineSession {
       data: assembled.manifestPart as unknown as JsonObject,
       correlation: { runId: run.runId },
     });
+    for (const part of assembled.manifestParts.slice(1)) {
+      this.#emit({
+        event: "quality.context.manifest-part",
+        level: "info",
+        reasonCodes: [],
+        data: part as unknown as JsonObject,
+        correlation: { runId: run.runId },
+      });
+    }
     const settled = await this.#evaluate(run, check, assembled);
     if (this.#state !== "active") {
       this.#physicalState.release(this);
       return;
     }
     this.#settleRun(run, settled);
+    if (this.#modelService !== null && this.#modelService.attempts.length > 0) {
+      this.#emit({
+        event: "quality.usage.summary",
+        level: "info",
+        reasonCodes: [],
+        data: (() => {
+          const summary = this.#modelService?.summary();
+          if (summary === undefined) return {} as JsonObject;
+          return {
+            scopeKind: summary.scopeKind,
+            ledgerRevision: summary.ledgerRevision,
+            ownedRequestCount: summary.ownedRequestCount,
+            attemptVisibility: summary.attemptVisibility,
+            settledCount: summary.settledCount,
+            unresolvedCount: summary.unresolvedCount,
+            cancelledCount: summary.cancelledCount,
+            usageKnownCount: summary.usageKnownCount,
+            usagePartialCount: summary.usagePartialCount,
+            usageUnknownCount: summary.usageUnknownCount,
+            normalizedTotalTokens: summary.normalizedTokens.total,
+            normalizedCoverage: summary.normalizedTokens.coverage,
+            historyCoverage: summary.historyCoverage,
+          } as unknown as JsonObject;
+        })(),
+      });
+    }
   }
 
   async #assemble(run: ActiveRun, check: CheckDefinition): Promise<Result<AssembledContext>> {
@@ -1740,15 +2022,46 @@ export class EngineSession {
     if (plan === undefined || promptBinding === undefined) {
       return { ok: false, error: { code: "core.waiting-for-component", retryable: false } };
     }
-    return assembleContext({
+    const observedEvidence = this.#evidenceAccess();
+    const assembled = await assembleContext({
       run: run.runRef,
       plan,
       promptBinding,
       criterionIds: run.criterionIds,
       maxEvidenceBytes: this.#configuration.value.runtime.maxEvidenceBytes,
       view: this.#store.view(),
-      evidence: this.#evidenceAccess(),
-      models: this.#modelsFacet(),
+      evidence: observedEvidence,
+      tokens: run.custody.tokens,
+      bindEvidence: (ownerId, bindingId, base) => ({
+        // A declared-source read always goes through the run-owned observation
+        // context; permitted prompt files keep their declaring-base behavior.
+        readSource: (sourceId: string, signal: AbortSignal) => this.#sourceEvidence.readSource(sourceId, signal, {
+          observer: run.custody.observer,
+          ownerId,
+          bindingId,
+          scope: run.runId,
+        }),
+        readPermittedFile: (path: string, signal: AbortSignal, purpose?: "instruction" | "questions" | "resultSchema") => (base.readPermittedFile as (p: string, s: AbortSignal, o?: ReadObservationContext) => ReturnType<SourceEvidence["readPermittedFileFrom"]>)(path, signal, {
+          observer: run.custody.observer,
+          ownerId,
+          bindingId,
+          scope: run.runId,
+          ...(purpose === undefined ? {} : { purpose }),
+        }),
+        recentObservations: (limit: number) => base.recentObservations(limit),
+      }),
+      promptEvidence: (() => {
+        const origin = this.#configuration.promptOrigins[check.prompt];
+        if (origin === undefined) return undefined;
+        // Declaration-relative prompt resources resolve from the declaring
+        // configuration directory; permission ceilings stay unchanged.
+        return {
+          readSource: (sourceId: string, signal: AbortSignal) => this.#sourceEvidence.readSource(sourceId, signal),
+          readPermittedFile: (path: string, signal: AbortSignal, observation?: Parameters<SourceEvidence["readPermittedFileFrom"]>[3]) => this.#sourceEvidence.readPermittedFileFrom(path, signal, origin.directory, observation),
+          recentObservations: (limit: number) => this.#store.recentObservations(limit),
+        };
+      })(),
+      models: this.#modelsFacet(run),
       hooks: {
         acceptsReasonCode: (componentId, code) => this.#registry.acceptsDiagnosticCode(componentId, code),
         isAcceptedIdentity: value => this.#acceptsReference(value),
@@ -1756,6 +2069,41 @@ export class EngineSession {
       },
       resolve: (use, options) => this.#registry.resolve(use, options),
     });
+    // Safe descriptors are offered BEFORE the acquired source facts on every
+    // return path, including a refused/overflowed assembly with no dispatch.
+    for (const descriptor of run.custody.drainNewDescriptors()) {
+      this.#rememberDescriptor(descriptor as unknown as JsonObject);
+      this.#emit({
+        event: "quality.resource.described",
+        level: "info",
+        reasonCodes: [],
+        data: descriptor as unknown as JsonObject,
+        correlation: { runId: run.runId },
+      });
+    }
+    for (const record of this.#sourceEvidence.drainAcquisitions(run.runId)) {
+      this.#emit({
+        event: "quality.context.source",
+        level: record.outcome === "acquired" ? "info" : "warn",
+        reasonCodes: record.reasonCode === null ? [] : [record.reasonCode],
+        data: {
+          manifestId: assembled.ok ? assembled.value.manifest.manifestId : `manifest-${run.runId}`,
+          sourceId: record.sourceId,
+          stage: "retrieved",
+          resourceRefs: record.resourceRefs,
+          required: record.required,
+          selectionState: record.outcome === "acquired" ? "included" : "omitted",
+          sizes: [
+            { boundary: "source", utf8Bytes: record.rawBytes, unicodeScalars: null, lines: null, estimatedTokens: null, complete: true },
+            { boundary: "selected", utf8Bytes: record.selectedBytes, unicodeScalars: null, lines: null, estimatedTokens: null, complete: true },
+          ],
+          omittedCount: record.outcome === "acquired" ? 0 : 1,
+          reasonCode: record.reasonCode,
+        },
+        correlation: { runId: run.runId },
+      });
+    }
+    return assembled;
   }
 
   async #evaluate(run: ActiveRun, check: CheckDefinition, assembled: AssembledContext): Promise<SettledAssessment> {
@@ -1787,12 +2135,12 @@ export class EngineSession {
         run: run.runRef,
         context: assembled.snapshot,
         assessment: assembled.resources,
-        modelProfileId: null,
+        modelProfileId: profile.modelProfile ?? null,
       };
       raw = await resolvedEvaluator.value.definition.evaluate(profile.options, evaluatorInput, {
         ...resolvedEvaluator.value.lifecycle(),
         run: run.runRef,
-        services: { request: this.#modelsFacet().request },
+        services: { request: this.#modelsFacet(run).request },
       });
     } catch {
       return {
@@ -2206,35 +2554,700 @@ export class EngineSession {
   }
 
   #evidenceAccess(): EvidenceAccess {
-    const unavailable = async () => ({
-      ok: false as const,
-      error: { code: "core.capability-unavailable", retryable: false },
-    });
     return {
-      readSource: unavailable,
-      readPermittedFile: unavailable,
+      readSource: (sourceId, signal) => this.#sourceEvidence.readSource(sourceId, signal),
+      readPermittedFile: (path: string, signal: AbortSignal, observation?: ReadObservationContext) => this.#sourceEvidence.readPermittedFile(path, signal, observation),
       recentObservations: limit => this.#store.recentObservations(limit),
     };
   }
 
-  #modelsFacet(): Pick<EvaluationServices, "request"> {
+  #modelsFacet(run: ActiveRun): Pick<EvaluationServices, "request"> {
     return {
-      request: async () => ({ ok: false, error: { code: "core.capability-unavailable", retryable: false } }),
+      request: async (input, signal) => {
+        const service = this.#modelService;
+        if (service === null) {
+          return { ok: false, error: { code: "core.capability-unavailable", retryable: false } };
+        }
+        const rendered = input.kind === "chat"
+          ? renderChatInput(input.context, input.assessment)
+          : { messages: [], estimatedInputTokens: 0, inputManifestRef: "", inputSerializedDigest: "", finalInputBytes: 0, finalInputDigest: "", manifestBase: {} };
+        const priorAttempts = service.attempts.filter(candidate => candidate.runId === run.runId).length;
+        if (input.kind === "chat" && priorAttempts > 0 && rendered.messages.length > 0) {
+          // A same-profile repair attempt is a new billed attempt; it cannot add
+          // evidence or switch routes.
+          rendered.messages[0] = {
+            role: rendered.messages[0]?.role ?? "system",
+            content: `${rendered.messages[0]?.content ?? ""}
+
+Your previous response was not valid structured output. Return only valid JSON matching the configured schema without additional prose.`,
+          };
+          // The measured estimate, digest and manifest identity cover the
+          // final representation that is actually dispatched, suffix included.
+          finalizeRenderedInput(rendered);
+        }
+        // Admit from the complete named observable serialized representation,
+        // framing/escaping and the authorized suffix included.
+        const estimatedInputTokens = rendered.estimatedInputTokens;
+        const attemptsBefore = service.attempts.length;
+        const startedMono = this.#clock.nowMonoMs();
+        const questions = input.assessment.questions;
+        const result = await service.dispatch({
+          runId: run.runId,
+          profileId: input.profileId,
+          kind: input.kind,
+          purpose: priorAttempts === 0 ? "direct" : "repair",
+          ...(input.kind === "chat" ? { messages: rendered.messages } : {}),
+          ...(input.kind === "classifier" && questions !== null
+            ? { classifierState: renderClassifierState(input.context), classifierQuestions: questions as unknown as Record<string, unknown> }
+            : {}),
+          maxOutputTokens: input.maxOutputTokens,
+          estimatedInputTokens,
+          profileRevision: this.#configuration.revision,
+          ...(rendered.inputManifestRef === "" ? {} : { inputManifestRef: rendered.inputManifestRef, inputSerializedDigest: rendered.inputSerializedDigest }),
+          onDispatched: attempt => {
+            this.#emit({
+              event: "quality.model.dispatched",
+              level: "info",
+              reasonCodes: [],
+              data: {
+                attemptId: attempt.attemptId,
+                requestGroupId: `group-${run.runId}`,
+                ordinal: priorAttempts + 1,
+                purpose: attempt.purpose === "direct" ? "assessment" : attempt.purpose === "repair" ? "format-repair" : attempt.purpose,
+                profileId: attempt.profileId,
+                profileRevision: attempt.profileRevision,
+                requestedRoute: attempt.requestedRoute === null ? null : { ...attempt.requestedRoute, revision: null },
+                actualRoute: attempt.actualRoute,
+                destinationRef: attempt.destinationRef,
+                manifestId: `sdk-input-${attempt.attemptId}`,
+                requestBoundary: "sdk-call",
+                retryVisibility: attempt.retryVisibility,
+                priceBasisRef: attempt.priceBasisRef,
+                reservationRef: `attempt:${attempt.attemptId}`,
+                requestTimeoutMs: attempt.requestTimeoutMs,
+                maxOutputTokens: attempt.effectiveMaxOutputTokens,
+                reasoningSetting: attempt.reasoningSetting,
+                accountingOwner: "engine",
+              },
+              correlation: { runId: run.runId },
+            });
+            const manifestId = `sdk-input-${attempt.attemptId}`;
+            const instructionItems = input.assessment.instructions;
+            const contextItems = input.context.items;
+            const requiredContext = contextItems.filter(item => item.required).length;
+            const optionalContext = contextItems.length - requiredContext;
+            const provenanceAssets = (input.assessment as unknown as { [PROVENANCE_ASSETS]?: ItemAssetEntry[] })[PROVENANCE_ASSETS] ?? [];
+            // The measured request describes the items actually submitted: an
+            // evaluator may reorder or subselect admitted objects, and each
+            // descriptor follows its own object, not the original asset order.
+            const submittedAssets: ItemAssetEntry[] = [];
+            for (const item of [...instructionItems, ...contextItems]) {
+              const asset = itemAssetOf(item);
+              if (asset !== undefined) submittedAssets.push(asset);
+            }
+            submittedAssets.push(...provenanceAssets);
+            const descriptors = new Map<string, RunResourceDescriptorData>();
+            const addDescriptor = (entry: { resourceId: string; kind: string; revisionRef: string; sourceId: string | null; bytes: number | null; visibility: string }): void => {
+              const key = `${entry.resourceId}\u0000${entry.revisionRef}`;
+              const existing = descriptors.get(key);
+              if (existing !== undefined) {
+                existing.repeated = true;
+                return;
+              }
+              descriptors.set(key, {
+                resourceId: entry.resourceId, kind: entry.kind, revisionRef: entry.revisionRef,
+                sourceId: entry.sourceId, displayPath: null,
+                sizes: entry.bytes === null ? [] : [{ boundary: "selected", utf8Bytes: entry.bytes, unicodeScalars: null, lines: null, estimatedTokens: null, complete: true }],
+                visibility: entry.visibility,
+                // An acquisition-time descriptor keeps its earlier safe
+                // association; preparation does not re-offer or re-key it.
+                repeated: run.custody.alreadyDescribed(entry.resourceId, entry.revisionRef),
+              });
+            };
+            for (const asset of submittedAssets) {
+              const firstSize = asset.sizes[0] as { utf8Bytes?: number } | undefined;
+              addDescriptor({
+                resourceId: asset.resourceId, kind: asset.kind, revisionRef: asset.revisionRef, sourceId: asset.sourceId,
+                bytes: typeof firstSize?.utf8Bytes === "number" ? firstSize.utf8Bytes : null,
+                visibility: asset.visibility,
+              });
+            }
+            for (const descriptor of descriptors.values()) {
+              this.#rememberDescriptor(descriptor as unknown as JsonObject);
+              if (run.custody.alreadyDescribed(descriptor.resourceId, descriptor.revisionRef)) continue;
+              this.#emit({
+                event: "quality.resource.described",
+                level: "info",
+                reasonCodes: [],
+                data: descriptor as unknown as JsonObject,
+                correlation: { runId: run.runId },
+              });
+            }
+            const resourceRefs = [...new Set([...descriptors.values()].map(entry => entry.resourceId))];
+            const sizeEstimate = { count: estimatedInputTokens, methodId: "utf8-bytes-div-4", revision: "engine-1" };
+            const itemCount = contextItems.length + instructionItems.length;
+            const itemList = [
+              ...[...instructionItems, ...contextItems].map(item => {
+                // Join the actual admitted occurrence, not a raw ID bucket or
+                // its position; unowned input stays an explicit limitation.
+                const asset = itemAssetOf(item);
+                return {
+                  itemId: asset?.itemToken ?? "item-unavailable",
+                  resourceId: asset?.resourceId ?? "resource-unavailable",
+                  sourceId: item.provenance.sourceId,
+                  role: item.role,
+                  required: item.required,
+                  revisionRef: asset?.revisionRef ?? "revision-unavailable",
+                  selection: asset?.selection ?? { kind: "full" as const, ranges: [], sectionRefs: [], inputRefs: [], methodId: "unavailable" },
+                  disposition: "included",
+                  changedDuringRead: asset?.changedDuringRead ?? item.provenance.changedDuringRead,
+                  sizes: asset?.sizes ?? [{ boundary: "selected", utf8Bytes: item.bytes, unicodeScalars: null, lines: null, estimatedTokens: null, complete: true }],
+                  captureRefs: [],
+                };
+              }),
+            ];
+            // Pack by actual approved serialized projected size as well as the
+            // 64-item count so a legal part is never silently dropped at the
+            // fixed record cap.
+            const partBudget = DEFAULT_MAX_RECORD_BYTES - 512;
+            const itemChunks: Array<typeof itemList> = [];
+            let currentChunk: typeof itemList = [];
+            let currentBytes = 0;
+            for (const item of itemList) {
+              const itemBytes = Buffer.byteLength(JSON.stringify(item), "utf8");
+              if (currentChunk.length > 0 && (currentChunk.length >= 64 || currentBytes + itemBytes > partBudget)) {
+                itemChunks.push(currentChunk);
+                currentChunk = [];
+                currentBytes = 0;
+              }
+              currentChunk.push(item);
+              currentBytes += itemBytes;
+            }
+            if (currentChunk.length > 0 || itemChunks.length === 0) itemChunks.push(currentChunk);
+            this.#emit({
+              event: "quality.context.manifest",
+              level: "info",
+              reasonCodes: [],
+              data: {
+                manifestId,
+                snapshotId: `snapshot-${run.runId}`,
+                boundary: "sdk-input",
+                attemptId: attempt.attemptId,
+                profileId: attempt.profileId,
+                parentManifestId: `manifest-${run.runId}`,
+                coverage: input.context.coverage.state,
+                inputVisibility: "complete",
+                requiredItems: requiredContext + instructionItems.length,
+                includedRequiredItems: requiredContext + instructionItems.length,
+                optionalItems: optionalContext,
+                includedOptionalItems: optionalContext,
+                omittedItems: 0,
+                contentTruncated: false,
+                manifestTruncated: itemList.length > 0 && itemChunks.every(chunk => chunk.length === 0),
+                itemCount,
+                partCount: itemChunks.length,
+                resourceRefs,
+                issueCodes: [...input.context.coverage.issues].map(issue => issue.reason).slice(0, 16),
+                sizes: [{
+                  boundary: "sdk-input",
+                  utf8Bytes: rendered.finalInputBytes,
+                  unicodeScalars: null,
+                  lines: null,
+                  estimatedTokens: sizeEstimate,
+                  complete: true,
+                }],
+              },
+              correlation: { runId: run.runId },
+            });
+
+            for (const [partIndex, chunk] of itemChunks.entries()) {
+              this.#emit({
+                event: "quality.context.manifest-part",
+                level: "info",
+                reasonCodes: [],
+                data: { manifestId, partIndex, itemCount: chunk.length, items: chunk as unknown as never },
+                correlation: { runId: run.runId },
+              });
+            }
+          },
+          signal,
+          // The protected intent commit happens before any transport arrival;
+          // an unsafe commit suspends this dependent request.
+          onIntent: async () => this.#commitControl(),
+          // Accepted revocation must be revalidated after the awaited intent
+          // and immediately before transport arrival.
+          revoked: () => this.#store.operatorStopped || this.#state !== "active" || signal.aborted,
+        });
+        // The protected financial intent/receipt is committed outside the
+        // rotatable diagnostic journal so observer restart cannot refund it.
+        void this.#commitControl();
+        if (!result.ok && result.error.code.startsWith("core.budget-")) {
+          const summary = service.summary();
+          const cap = this.#configuration.value.runtime.maxOwnedCost;
+          let limitKind = "tokens";
+          let limitValue: number | string = this.#configuration.value.runtime.maxOwnedTokensPerSession;
+          let knownValue: number | string = summary.normalizedTokens.total ?? 0;
+          let reservedValue: number | string = 0;
+          if (result.error.code === "core.budget-requests-exhausted") {
+            limitKind = "requests";
+            limitValue = this.#configuration.value.runtime.maxRequestsPerSession;
+            knownValue = summary.ownedRequestCount;
+          } else if (result.error.code === "core.budget-cost-exceeded" && cap !== null) {
+            // Exact decimal strings in the applicable cap currency; reserved
+            // cost is reported once, never added into knownValue.
+            const entry = summary.costByCurrency.find(candidate => candidate.currency === cap.currency);
+            limitKind = "cost";
+            limitValue = cap.amount;
+            knownValue = entry?.knownAmount ?? "0";
+            reservedValue = entry?.reservedAmount ?? "0";
+          } else if (result.error.code === "core.budget-unknown-cost-denied") {
+            limitKind = "unknown-cost";
+            limitValue = 0;
+            knownValue = summary.ownedRequestCount;
+          }
+          this.#emit({
+            event: "quality.budget.denied",
+            level: "warn",
+            reasonCodes: [result.error.code],
+            data: {
+              operationRef: run.runId,
+              limitKind,
+              limitValue,
+              knownValue,
+              reservedValue,
+              unknownCoverage: "exact",
+              reasonCode: result.error.code,
+            },
+            correlation: { runId: run.runId },
+          });
+          return result;
+        }
+        if (result.ok) {
+          for (const attemptId of result.value.attemptIds) this.#issuedAttemptIds.add(attemptId);
+        }
+        const newAttempt = service.attempts.length > attemptsBefore;
+        const attempt = result.ok
+          ? service.attempt(result.value.attemptIds[0] ?? "")
+          : (newAttempt ? (service.attempts.at(-1) ?? null) : null);
+        if (!result.ok && !newAttempt) {
+          // A preflight denial created no attempt: retain the real reason
+          // instead of a fictitious success settlement.
+          this.#emit({
+            event: "quality.model.preflight",
+            level: "warn",
+            reasonCodes: [result.error.code],
+            data: {
+              profileId: input.profileId,
+              outcome: "denied",
+              capabilityRefs: [],
+              manifestId: "unavailable",
+              estimatedInputTokens,
+              reservedOutputTokens: 0,
+              errorCode: result.error.code,
+            },
+            correlation: { runId: run.runId },
+          });
+          return result;
+        }
+        const usage = attempt?.usage == null ? null : {
+          ...attempt.usage,
+          // Strongest concrete available provenance: the pinned SDK usage
+          // shape for sdk-normalized observations, or the provider observation
+          // shape, plus the actual engine normalization mapping revision.
+          sourceSchemaId: attempt.usage.observationSource === "provider" ? "pi-provider-usage-v1" : "pi-sdk-usage-v1",
+          adapterRevision: `pi-usage-normalizer-v${attempt.usage.revision}`,
+        };
+        this.#emit({
+          event: "quality.model.settled",
+          level: attempt?.errorCode == null ? "info" : "warn",
+          reasonCodes: attempt?.errorCode == null ? [] : [attempt.errorCode],
+          data: {
+            attemptId: attempt?.attemptId ?? "unknown",
+            attemptRevision: attempt?.usageRevision ?? 0,
+            outcome: attempt?.errorCode == null ? (attempt === null ? "unknown" : "success") : "failure",
+            stopReasonCode: attempt?.stopReason ?? "unknown",
+            durationMs: Math.max(0, this.#clock.nowMonoMs() - startedMono),
+            responseSizes: [{
+              boundary: "sdk-response",
+              utf8Bytes: attempt?.responseBytes ?? null,
+              unicodeScalars: null,
+              lines: null,
+              estimatedTokens: null,
+              complete: attempt?.responseBytes !== null && attempt?.responseBytes !== undefined,
+            }],
+            usage: usage as unknown as never,
+            cost: (attempt?.cost ?? null) as unknown as never,
+            accountingCoverage: result.ok ? result.value.accounting : "unknown",
+            errorCode: attempt?.errorCode ?? null,
+          },
+          correlation: { runId: run.runId },
+        });
+        return result;
+      },
     };
+  }
+
+  /** Bounded post-projection delivery to ready contributed sinks. */
+  /** Explicitly configured named sink destinations only; registration is not a grant. */
+  #configuredSinkOptions(): Map<string, JsonObject> {
+    const configured = new Map<string, JsonObject>();
+    for (const binding of this.#configuration.value.observability.sinks) {
+      configured.set(binding.id, binding.options ?? {});
+    }
+    return configured;
+  }
+
+  #deliverRecord(record: DiagnosticRecordV1): void {
+    const configured = this.#configuredSinkOptions();
+    if (configured.size === 0) return;
+    let registered: Array<{ componentId: string; definition: SinkDefinition; lifecycle(): LifecycleContext }>;
+    try {
+      registered = this.#registry.sinkComponents();
+    } catch {
+      registered = [];
+    }
+    const byId = new Map(registered.map(sink => [sink.componentId, sink]));
+    const bytes = Buffer.byteLength(`${JSON.stringify(record)}\n`, "utf8");
+    for (const [componentId, options] of configured) {
+      let state = this.#sinks.get(componentId);
+      const sink = byId.get(componentId);
+      if (state === undefined && sink === undefined) continue;
+      if (state === undefined) {
+        state = {
+          componentId, options, definition: sink?.definition ?? null, instance: null, queue: [],
+          queuedBytes: 0, outstanding: 0, outstandingBytes: 0, starting: false, disabled: false,
+          dropped: 0, failed: 0, firstLostSequence: null, lastLostSequence: null, byEventFamily: {}, disposed: false,
+        };
+        this.#sinks.set(componentId, state);
+      }
+      if (state.disabled) continue;
+      if (state.instance === null) {
+        const aggregateBytes = [...this.#sinks.values()].reduce((total, entry) => total + entry.queuedBytes + entry.outstandingBytes, 0);
+        if (state.queue.length >= 256 || state.queuedBytes + bytes > 1_048_576 || aggregateBytes + bytes > 8_388_608) {
+          const firstDenial = state.dropped === 0;
+          this.#noteDrop(state, record);
+          if (firstDenial) {
+            // Ordinary health reports the accepted starting-queue occupancy at the
+            // first denial; the closed seven-key shape is unchanged.
+            this.#retainDiagnostic({
+              event: "quality.sink.health",
+              level: "warn",
+              reasonCodes: [],
+              data: {
+                sinkId: componentId,
+                previousState: "ready",
+                state: "degraded",
+                queuedRecords: state.queue.length,
+                queuedBytes: state.queuedBytes,
+                lostRecords: state.dropped,
+                reasonCode: "core.sink-loss",
+              },
+            });
+          }
+          continue;
+        }
+        state.queue.push(record);
+        state.queuedBytes += bytes;
+        if (state.starting || state.definition === null) continue;
+        state.starting = true;
+        const definition = state.definition;
+        const lifecycle = sink?.lifecycle ?? (() => this.#fallbackSinkLifecycle());
+        try {
+          const created = definition.create(options, lifecycle());
+          void Promise.resolve(created).then(instance => {
+            state.starting = false;
+            if (this.#state !== "active") {
+              // A late destination cannot start delivery after retirement;
+              // its pending queue is dropped truthfully and disposed once.
+              state.disabled = true;
+              this.#noteQueuedDrops(state);
+              state.disposed = true;
+              try {
+                void Promise.resolve(instance.dispose?.()).catch(() => undefined);
+              } catch {
+                // contained: disposal failure never escapes retirement
+              }
+              return;
+            }
+            state.instance = instance;
+            for (const pending of state.queue.splice(0)) {
+              state.queuedBytes = 0;
+              this.#writeSink(state, pending);
+            }
+          }).catch(() => {
+            state.starting = false;
+            state.failed += 1;
+            state.disabled = true;
+            this.#noteQueuedDrops(state);
+          });
+        } catch {
+          // A synchronous create failure is contained: no delivery exception
+          // escapes the diagnostic path, and the destination is disabled.
+          state.starting = false;
+          state.failed += 1;
+          state.disabled = true;
+          this.#noteQueuedDrops(state);
+        }
+        continue;
+      }
+      this.#writeSink(state, record);
+    }
+  }
+
+  #writeSink(state: { instance: DiagnosticSinkInstance | null; queue: DiagnosticRecordV1[]; queuedBytes: number; outstanding: number; outstandingBytes: number; dropped: number; failed: number; disabled: boolean; firstLostSequence: number | null; lastLostSequence: number | null; byEventFamily: Record<string, number> }, record: DiagnosticRecordV1): void {
+    if (state.instance === null || state.disabled) return;
+    const bytes = Buffer.byteLength(`${JSON.stringify(record)}\n`, "utf8");
+    const aggregateBytes = [...this.#sinks.values()].reduce((total, entry) => total + entry.queuedBytes + entry.outstandingBytes, 0);
+    if (state.outstanding >= 64 || state.outstandingBytes + bytes > 1_048_576
+      || aggregateBytes + bytes > 8_388_608) {
+      this.#noteDrop(state, record);
+      return;
+    }
+    state.outstanding += 1;
+    state.outstandingBytes += bytes;
+    const settle = (): void => {
+      state.outstanding = Math.max(0, state.outstanding - 1);
+      state.outstandingBytes = Math.max(0, state.outstandingBytes - bytes);
+    };
+    const failed = (): void => {
+      settle();
+      state.failed += 1;
+      this.#noteDrop(state, record);
+      if (state.failed >= 3 && !state.disabled) {
+        // Repeated failure disables only this destination; other sinks and
+        // functional accounting continue untouched.
+        state.disabled = true;
+        this.#noteQueuedDrops(state);
+      }
+    };
+    try {
+      const returned = state.instance.write(record as unknown as PermittedDiagnosticRecord);
+      if (returned !== null && typeof returned === "object" && typeof (returned as PromiseLike<unknown>).then === "function") {
+        Promise.resolve(returned).then(settle, failed);
+      } else {
+        // C1 MaybePromise<void>: a synchronous acknowledgement completes at its
+        // own return boundary, so the outstanding charge is released immediately
+        // instead of lingering until a later microtask.
+        settle();
+      }
+    } catch {
+      failed();
+    }
+  }
+
+  #noteDrop(
+    state: { dropped: number; firstLostSequence: number | null; lastLostSequence: number | null; byEventFamily: Record<string, number> },
+    record: DiagnosticRecordV1,
+  ): void {
+    state.dropped += 1;
+    if (state.firstLostSequence === null || record.sequence < state.firstLostSequence) state.firstLostSequence = record.sequence;
+    if (state.lastLostSequence === null || record.sequence > state.lastLostSequence) state.lastLostSequence = record.sequence;
+    state.byEventFamily[record.event] = (state.byEventFamily[record.event] ?? 0) + 1;
+  }
+
+  #noteQueuedDrops(
+    state: { dropped: number; firstLostSequence: number | null; lastLostSequence: number | null; byEventFamily: Record<string, number>; queue: DiagnosticRecordV1[]; queuedBytes: number },
+  ): void {
+    for (const pending of state.queue) this.#noteDrop(state, pending);
+    state.queue = [];
+    state.queuedBytes = 0;
+  }
+
+  #fallbackSinkLifecycle(): LifecycleContext {
+    const controller = new AbortController();
+    return {
+      scope: this.#scope,
+      signal: controller.signal,
+      clock: () => ({ utc: this.#clock.nowUtc(), monoMs: this.#clock.nowMonoMs() }),
+      diagnostics: { note: () => undefined },
+    };
+  }
+
+  async #boundedWait(promise: Promise<unknown>, timeoutMs: number): Promise<boolean> {
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    try {
+      return await Promise.race([
+        promise.then(() => true, () => false),
+        new Promise<boolean>(resolve => {
+          timer = setTimeout(() => resolve(false), timeoutMs);
+        }),
+      ]);
+    } finally {
+      if (timer !== null) clearTimeout(timer);
+    }
+  }
+
+  /** Retains a close-time diagnostic in history and the physical journal only. */
+  #retainDiagnostic(input: Parameters<DiagnosticHistory["append"]>[0]): void {
+    const record = this.#history.append(input);
+    if (record !== undefined && this.#journal !== null) this.#journal.write(record);
+  }
+
+  async #drainSinks(): Promise<void> {
+    const deadline = Date.now() + 1_000;
+    const remaining = (): number => Math.max(0, deadline - Date.now());
+    for (const state of this.#sinks.values()) {
+      while (state.starting && Date.now() < deadline) await new Promise(resolve => setTimeout(resolve, 5));
+      while ((state.outstanding > 0 || state.queue.length > 0) && Date.now() < deadline) {
+        for (const pending of state.queue.splice(0)) {
+          state.queuedBytes = 0;
+          this.#writeSink(state, pending);
+        }
+        await new Promise(resolve => setTimeout(resolve, 5));
+      }
+      if (state.queue.length > 0) this.#noteQueuedDrops(state);
+      if (state.instance !== null && !state.disposed) {
+        state.disposed = true;
+        if (state.instance.flush !== undefined && !state.disabled) {
+          let flushed: Promise<unknown> | null = null;
+          try {
+            flushed = Promise.resolve(state.instance.flush());
+          } catch {
+            state.failed += 1;
+          }
+          if (flushed !== null && !await this.#boundedWait(flushed, remaining())) state.failed += 1;
+        }
+        if (state.instance.dispose !== undefined) {
+          let disposed: Promise<unknown> | null = null;
+          try {
+            disposed = Promise.resolve(state.instance.dispose());
+          } catch {
+            state.failed += 1;
+          }
+          if (disposed !== null && !await this.#boundedWait(disposed, remaining())) state.failed += 1;
+        }
+      }
+      if (state.dropped > 0 || state.failed > 0) {
+        // Canonical seven-key health plus the approved diagnostic gap shape for
+        // range/family/exactness; no locally expanded contract.
+        this.#retainDiagnostic({
+          event: "quality.sink.health",
+          level: state.failed > 0 ? "warn" : "info",
+          reasonCodes: [],
+          data: {
+            sinkId: state.componentId,
+            previousState: state.disabled ? "failed" : "ready",
+            state: state.disabled ? "failed" : "degraded",
+            queuedRecords: 0,
+            queuedBytes: 0,
+            lostRecords: state.dropped,
+            reasonCode: state.failed > 0 ? "core.sink-write-failed" : "core.sink-loss",
+          },
+        });
+        this.#retainDiagnostic({
+          event: "quality.diagnostic.gap",
+          level: "warn",
+          reasonCodes: [],
+          data: {
+            sinkId: state.componentId,
+            firstLostSequence: state.firstLostSequence,
+            lastLostSequence: state.lastLostSequence,
+            lostCount: state.dropped,
+            byEventFamily: { ...state.byEventFamily },
+            cause: state.failed > 0 ? "core.sink-write-failed" : "core.sink-loss",
+            exact: true,
+          },
+        });
+      }
+    }
+  }
+
+  #usageSummary(): ModelUsageSummary | null {
+    return this.#modelService === null ? null : this.#modelService.summary();
   }
 
   // -------------------------------------------------------------------------
   // Diagnostics
   // -------------------------------------------------------------------------
 
+  #rememberDescriptor(data: JsonObject): void {
+    const resourceId = typeof data["resourceId"] === "string" ? data["resourceId"] : null;
+    const revisionRef = typeof data["revisionRef"] === "string" ? data["revisionRef"] : null;
+    if (resourceId === null || revisionRef === null) return;
+    const key = `${resourceId}\u0000${revisionRef}`;
+    this.#descriptorRegistry.delete(key);
+    this.#descriptorRegistry.set(key, data);
+    while (this.#descriptorRegistry.size > 512) {
+      const oldest = this.#descriptorRegistry.keys().next();
+      if (oldest.done) break;
+      this.#descriptorRegistry.delete(oldest.value);
+    }
+  }
+
+  #descriptorKeyOf(data: JsonObject): string | null {
+    const resourceId = typeof data["resourceId"] === "string" ? data["resourceId"] : null;
+    const revisionRef = typeof data["revisionRef"] === "string" ? data["revisionRef"] : null;
+    return resourceId === null || revisionRef === null ? null : `${resourceId}\u0000${revisionRef}`;
+  }
+
+  /**
+   * Reference-local descriptor preparation for one record: only the immutable
+   * resource/version descriptors actually referenced by this record, as real
+   * diagnostic records whose lines the journal writes BEFORE the referencing
+   * record in the chosen physical segment. No source reread, no second logger,
+   * no whole-cache replay on lifecycle or segment change.
+   */
+  #descriptorPreparation(input: Parameters<DiagnosticHistory["append"]>[0]): { prefix: Array<{ key: string; line: string; bytes: number }>; descriptorKeys: string[] } {
+    const event = input.event;
+    const data = input.data as unknown as JsonObject | undefined;
+    if (data === undefined) return { prefix: [], descriptorKeys: [] };
+    if (event === "quality.resource.described") {
+      const key = this.#descriptorKeyOf(data);
+      return { prefix: [], descriptorKeys: key === null ? [] : [key] };
+    }
+    const pairs: Array<{ resourceId: string; revisionRef: string }> = [];
+    const handles: string[] = [];
+    if (event === "quality.context.manifest-part") {
+      const items = data["items"];
+      if (Array.isArray(items)) {
+        for (const item of items) {
+          if (!isPlainRecord(item)) continue;
+          const resourceId = item["resourceId"];
+          const revisionRef = item["revisionRef"];
+          if (typeof resourceId === "string" && typeof revisionRef === "string") pairs.push({ resourceId, revisionRef });
+        }
+      }
+    } else if (event === "quality.context.manifest" || event === "quality.context.source") {
+      const refs = data["resourceRefs"];
+      if (Array.isArray(refs)) {
+        for (const ref of refs) if (typeof ref === "string") handles.push(ref);
+      }
+    } else {
+      return { prefix: [], descriptorKeys: [] };
+    }
+    const prefix: Array<{ key: string; line: string; bytes: number }> = [];
+    for (const [key, descriptor] of this.#descriptorRegistry) {
+      const resourceId = descriptor["resourceId"];
+      const revisionRef = descriptor["revisionRef"];
+      if (typeof resourceId !== "string" || typeof revisionRef !== "string") continue;
+      const referenced = handles.includes(resourceId)
+        || pairs.some(pair => pair.resourceId === resourceId && pair.revisionRef === revisionRef);
+      if (!referenced) continue;
+      const record = this.#history.append({
+        event: "quality.resource.described",
+        level: "info",
+        reasonCodes: [],
+        data: { ...descriptor, repeated: true },
+      });
+      if (record === undefined) continue;
+      const line = `${JSON.stringify(record)}\n`;
+      prefix.push({ key, line, bytes: Buffer.byteLength(line, "utf8") });
+    }
+    return { prefix, descriptorKeys: [] };
+  }
+
   #emit(input: Parameters<DiagnosticHistory["append"]>[0], historyOnly = false, lifecycle = false): DiagnosticRecordV1 | undefined {
     const record = this.#history.append(input);
+    if (record !== undefined) this.#deliverRecord(record);
     if (record === undefined || this.#journal === null || historyOnly) return record;
     // The journal owns its bounded queue and reports health/loss through
     // JournalEvent, so emission here never recurses or throws. Lifecycle
     // records are bounded evidence and never a rotation cause themselves.
     if (lifecycle) this.#journal.writeLifecycle(record);
-    else this.#journal.write(record);
+    else {
+      const prepared = this.#descriptorPreparation(input);
+      this.#journal.write(record, prepared.prefix, prepared.descriptorKeys);
+    }
     return record;
   }
 
@@ -2245,6 +3258,8 @@ export class EngineSession {
   /** Idempotent logical retirement: revokes admission first, then disposes. */
   async retire(cause: string): Promise<void> {
     if (this.#state === "retired") return;
+    this.#modelService?.cancelUnsettled();
+    this.#modelService?.disposeFeed();
     this.#state = "retired";
     this.#retiredAt = nowIso(this.#clock);
     this.#physicalState.clearCurrent(this);
@@ -2271,10 +3286,13 @@ export class EngineSession {
         journalFlushState,
       },
     });
+    // Drain sinks while the journal is still open so bounded loss/degradation
+    // is truthful in the physical record.
+    await this.#drainSinks();
     if (this.#journal !== null) {
       const journal = this.#journal;
       const closed = await journal.close(normalizeRetireCause(cause));
-      this.#history.append({
+      const closedRecord = this.#history.append({
         event: "quality.journal.closed",
         level: closed.flushState === "written" ? "info" : "warn",
         reasonCodes: [],
@@ -2288,11 +3306,51 @@ export class EngineSession {
           historyCoverage: closed.historyCoverage,
         },
       });
+      if (closedRecord !== undefined) this.#deliverRecord(closedRecord);
       // The closed journal stays inspectable; it accepts no further records.
+    } else {
+      // A disabled or failed journal still records an explicit close boundary
+      // so contributed sinks receive the same lifecycle end as file sinks.
+      this.#emit({
+        event: "quality.journal.closed",
+        level: this.#journalFailure === null ? "info" : "warn",
+        reasonCodes: this.#journalFailure === null ? [] : [this.#journalFailure.reasonCode],
+        data: {
+          logicalJournalId: "journal",
+          segmentOrdinal: 0,
+          closeReason: normalizeRetireCause(cause),
+          recordCount: 0,
+          serializedBytes: 0,
+          flushState: this.#journalFailure === null ? "disabled" : "failed",
+          historyCoverage: "complete",
+        },
+      });
     }
     await this.#commitControl();
     if (this.#control !== null) await this.#control.close();
     await registryDisposal;
+  }
+
+  /** Persists late receipts from a retired generation through this owner. */
+  async syncOwnedReceipts(): Promise<number> {
+    const pending = this.#modelService?.syncReceipts() ?? 0;
+    if (pending > 0 && !await this.#commitControl() && !this.#receiptPersistenceUncertain) {
+      this.#receiptPersistenceUncertain = true;
+      void this.#commitControl();
+    }
+    return pending;
+  }
+
+  #persistReceipt(): void {
+    void this.#commitControl().then(ok => {
+      // Uncertain material receipt persistence stays sticky for the observed
+      // session, across restarts: a later writable filesystem or generation
+      // change does not silently re-authorize dependent autonomy.
+      if (!ok && !this.#receiptPersistenceUncertain) {
+        this.#receiptPersistenceUncertain = true;
+        void this.#commitControl();
+      }
+    });
   }
 
   status(hostIdle: boolean): EngineStatus {
@@ -2354,6 +3412,7 @@ export class EngineSession {
       },
       registry: this.#registry.inventory(),
       journal: this.#journal?.status ?? this.#failedJournalStatus(),
+      accounting: this.#usageSummary(),
     });
   }
 
@@ -2431,6 +3490,7 @@ export async function inspectInactiveSession(input: EngineSessionInput, hostIdle
     },
     registry: [],
     journal: null,
+    accounting: null,
   });
 }
 

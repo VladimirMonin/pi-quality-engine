@@ -92,3 +92,175 @@ export const repeatedToolsEvaluator: EvaluatorDefinition = {
     };
   },
 };
+
+// ---------------------------------------------------------------------------
+// Direct model evaluators: structured chat and typed classifier assessment.
+// Both dispatch only through the owned model service; no hidden route.
+// ---------------------------------------------------------------------------
+
+import type { AssessmentResult as DirectResult, EvaluationInput, JsonObject } from "../contracts.js";
+
+function failedDirectResult(reasonCode: string): DirectResult {
+  return {
+    operational: "failed",
+    coverage: { state: "insufficient", scopeDescription: "Direct model assessment did not produce a validated result.", issues: [{ sourceId: "core.runtime", reason: reasonCode, required: true, evidenceIds: [] }] },
+    conclusion: "undetermined",
+    findings: [],
+    scores: [],
+    additionalEvidence: [],
+    dependencies: [],
+    usageAttemptIds: [],
+  };
+}
+
+function unavailableDirectResult(reasonCode: string): DirectResult {
+  return { ...failedDirectResult(reasonCode), operational: "unavailable" };
+}
+
+export const chatEvaluator: EvaluatorDefinition = {
+  id: "core.chat",
+  apiMajor: 1,
+  kind: "evaluator",
+  mechanism: "direct-model",
+  accepts: ["text", "json"],
+  optionsSchema: {
+    type: "object",
+    properties: {
+      maxOutputTokens: { type: "integer", minimum: 1 },
+      repairAttempts: { type: "integer", minimum: 0, maximum: 1 },
+    },
+    additionalProperties: false,
+  },
+  requiredCapabilities: [],
+  diagnosticCodes: ["core.invalid-evaluation-result", "core.model-profile-required"],
+  async evaluate(options, input, ctx): Promise<DirectResult> {
+    if (input.modelProfileId === null) return unavailableDirectResult("core.model-profile-required");
+    const maxOutputTokens = typeof options["maxOutputTokens"] === "number" ? options["maxOutputTokens"] : 4096;
+    const repairAttempts = options["repairAttempts"] === 1 ? 1 : 0;
+    let response = await ctx.services.request({
+      runId: input.run.runId,
+      profileId: input.modelProfileId,
+      kind: "chat",
+      context: input.context,
+      assessment: input.assessment,
+      maxOutputTokens,
+    }, ctx.signal);
+    if (!response.ok) return failedDirectResult(response.error.code);
+    let output = response.value.output;
+    if ((typeof output !== "object" || output === null || Array.isArray(output)) && repairAttempts === 1) {
+      // One explicitly configured, separately billed repair attempt through the
+      // same approved profile; it cannot add evidence or switch routes.
+      response = await ctx.services.request({
+        runId: input.run.runId,
+        profileId: input.modelProfileId,
+        kind: "chat",
+        context: input.context,
+        assessment: input.assessment,
+        maxOutputTokens,
+      }, ctx.signal);
+      if (!response.ok) return failedDirectResult(response.error.code);
+      output = response.value.output;
+    }
+    if (typeof output !== "object" || output === null || Array.isArray(output)) {
+      return failedDirectResult("core.invalid-evaluation-result");
+    }
+    const result = output as unknown as DirectResult;
+    // The runtime remains the validating boundary; attach the owned attempts
+    // exactly as the model service issued them.
+    return { ...result, usageAttemptIds: [...response.value.attemptIds] };
+  },
+};
+
+export const classifierEvaluator: EvaluatorDefinition = {
+  id: "core.classifier",
+  apiMajor: 1,
+  kind: "evaluator",
+  mechanism: "direct-model",
+  accepts: ["json"],
+  optionsSchema: {
+    type: "object",
+    properties: {
+      maxOutputTokens: { type: "integer", minimum: 1 },
+      repairAttempts: { type: "integer", minimum: 0, maximum: 1 },
+    },
+    additionalProperties: false,
+  },
+  requiredCapabilities: [],
+  diagnosticCodes: ["core.classifier-questions-required", "core.invalid-evaluation-result"],
+  async evaluate(options, input, ctx): Promise<DirectResult> {
+    if (input.modelProfileId === null) return unavailableDirectResult("core.model-profile-required");
+    if (input.assessment.questions === null) return failedDirectResult("core.classifier-questions-required");
+    const response = await ctx.services.request({
+      runId: input.run.runId,
+      profileId: input.modelProfileId,
+      kind: "classifier",
+      context: input.context,
+      assessment: input.assessment,
+      maxOutputTokens: typeof options["maxOutputTokens"] === "number" ? options["maxOutputTokens"] : 1024,
+    }, ctx.signal);
+    if (!response.ok) return failedDirectResult(response.error.code);
+    return mapProgressAnswers(response.value.output, input, response.value.attemptIds);
+  },
+};
+
+/** progress-v1 mapping from C1 section 11.4; never manufactures evidence. */
+function mapProgressAnswers(output: unknown, input: EvaluationInput, attemptIds: readonly string[]): DirectResult {
+  if (typeof output !== "object" || output === null || Array.isArray(output)) {
+    return failedDirectResult("core.invalid-evaluation-result");
+  }
+  const answers = output as Record<string, unknown>;
+  const progress = answers["progress"] as Record<string, unknown> | undefined;
+  const choice = progress !== undefined && typeof progress["choice"] === "string" ? progress["choice"] : null;
+  const baseCoverage = input.context.coverage;
+  if (choice === "repeating") {
+    const evidenceIds = input.context.items.filter(item => item.provenance.sourceId === "core.history").map(item => item.id).slice(0, 8);
+    const result: DirectResult = {
+      operational: "completed",
+      coverage: baseCoverage,
+      conclusion: "findings",
+      findings: [{
+        id: "progress-repeating",
+        criterion: input.assessment.criteria[0] ?? "efficiency.progress",
+        status: "suspected",
+        severity: "concern",
+        requirementRefs: [],
+        evidenceIds,
+        affectedItems: [],
+        defectCode: "efficiency.progress",
+        explanation: "The typed progress classification reports substantially repeated ineffective activity without new evidence.",
+        proposedCorrection: null,
+        limitations: ["Classifier mapping is a suspicion, not a confirmed defect."],
+      }],
+      scores: [],
+      additionalEvidence: [],
+      dependencies: [],
+      usageAttemptIds: [...attemptIds],
+    };
+    return result;
+  }
+  if (choice === "unclear") {
+    return {
+      operational: "completed",
+      coverage: { ...baseCoverage, state: baseCoverage.state === "complete" ? "partial" : baseCoverage.state },
+      conclusion: "undetermined",
+      findings: [],
+      scores: [],
+      additionalEvidence: [],
+      dependencies: [],
+      usageAttemptIds: [...attemptIds],
+    };
+  }
+  // progressing, waiting, or unresolved classification: no supported finding.
+  return {
+    operational: "completed",
+    coverage: baseCoverage,
+    conclusion: "no-supported-finding",
+    findings: [],
+    scores: [],
+    additionalEvidence: [],
+    dependencies: [],
+    usageAttemptIds: [...attemptIds],
+  };
+}
+
+void (0 as unknown as JsonObject);

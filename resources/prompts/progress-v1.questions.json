@@ -1,0 +1,20 @@
+{
+  "progress": {
+    "type": "choice",
+    "instructions": "What is supported by the recent work and the authorized task?",
+    "criteria": {
+      "progressing": "Relevant new evidence or implementation progress is visible.",
+      "repeating": "Substantially the same ineffective action repeats without new evidence.",
+      "waiting": "A concrete active operation or dependency explains the lack of new results.",
+      "unclear": "The supplied evidence is insufficient to classify progress."
+    }
+  },
+  "unfinished": {
+    "type": "bool",
+    "instructions": "Does the supplied task evidence establish unfinished authorized work?",
+    "criteria": {
+      "true": "A concrete authorized requirement remains outstanding.",
+      "false": "Outstanding work is not established by the supplied evidence."
+    }
+  }
+}

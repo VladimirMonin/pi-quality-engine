@@ -520,13 +520,63 @@ await run("R5-context-byte-ceiling", (() => {
   const result = state.diagnostics.recentEvents.find(record => record.event === "quality.assessment.result")?.fields.data;
   observed.manifest = { coverage: manifest?.coverage, omittedItems: manifest?.omittedItems, sizes: manifest?.sizes };
   observed.result = result;
+  const settledRecord = state.diagnostics.recentEvents.find(record => record.event === "quality.check.settled")?.fields.data;
+  // Accepted required-coverage correction: an oversized REQUIRED item under the
+  // default complete plan refuses before the evaluator is admitted, so the
+  // payload cannot reach evaluator input at all (stronger than an omission).
+  assert.equal(observed.omittedPayloadStillPresent, undefined, "content excluded by the evidence ceiling cannot remain in evaluator input");
+  assert.equal(settledRecord?.terminalReason, "core.context-incomplete", "required byte omission keeps its actual refusal cause");
+  assert.equal(result, undefined, "a refused incomplete run produces no assessment result");
+});
+
+await run("R5-context-byte-ceiling-partial-plan-omission", (() => {
+  const budget = config([{ id: "large", use: "qa.large" }]);
+  budget.contexts.recent.maxBytes = 8_192;
+  budget.contexts.recent.requiredCoverage = "partial";
+  budget.runtime = { maxEvidenceBytes: 65_536 };
+  budget.evaluators.repetition = { use: "qa.capture" };
+  return budget;
+})(), async (host, observed) => {
+  const body = "QE_FUNCTIONAL_BUDGET_CANARY_" + "x".repeat(131_072);
+  await register(host, [{
+    ...meta("qa.large", "context"),
+    produces: ["json"],
+    async collect() {
+      return {
+        ok: true,
+        value: {
+          items: [jsonItem("large-item", "qa.large", { body }, { required: true })],
+          coverage: { state: "complete", scopeDescription: "oversized fixture source", issues: [] },
+          dependencies: [],
+        },
+      };
+    },
+  }, {
+    ...meta("qa.capture", "evaluator"),
+    mechanism: "deterministic",
+    accepts: ["json"],
+    async evaluate(_options, input) {
+      observed.evaluatorInputBytes = Buffer.byteLength(JSON.stringify(input.context.items), "utf8");
+      observed.omittedPayloadStillPresent = input.context.items.some(item =>
+        item.content.some(block => block.type === "json" && block.value?.body === body));
+      observed.contextCoverage = input.context.coverage.state;
+      return canonicalResult({
+        coverage: input.context.coverage,
+        conclusion: "no-supported-finding",
+      });
+    },
+  }]);
+  await operatorInput(host, "bounded operator task");
+  for (let index = 0; index < 5; index += 1) await tool(host, `p${index}`);
+  const state = await settled(host);
+  const manifest = state.diagnostics.recentEvents.find(record => record.event === "quality.context.manifest")?.fields.data;
+  observed.manifest = { coverage: manifest?.coverage, omittedItems: manifest?.omittedItems, sizes: manifest?.sizes };
   assert.equal(observed.omittedPayloadStillPresent, false, "content excluded by the evidence ceiling cannot remain in evaluator input");
   assert.ok((observed.evaluatorInputBytes ?? Number.MAX_SAFE_INTEGER) <= 8_192, "the evaluator input respects the plan byte ceiling");
-  assert.equal(observed.contextCoverage, "insufficient");
-  assert.notEqual(result?.conclusion, "no-supported-finding", "insufficient required coverage cannot become a clean result");
-  assert.equal(result?.coverage, "insufficient");
+  assert.notEqual(observed.contextCoverage, "complete", "required byte omission cannot present as complete coverage");
   assert.ok((manifest?.omittedItems ?? 0) >= 1, "positive control: omission metadata remains visible");
 });
+
 
 await run("R5-prompt-resource-budget", (() => {
   const budget = config();

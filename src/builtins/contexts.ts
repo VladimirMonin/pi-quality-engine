@@ -9,6 +9,7 @@ import type {
   ContextBatch,
   ContextDefinition,
   ContextItem,
+  CoverageIssue,
   EvidenceDependency,
   Json,
   JsonObject,
@@ -216,4 +217,90 @@ export function contentValue(block: ContentBlock): Json {
   if (block.type === "text") return block.text;
   if (block.type === "json") return block.value;
   return { artifactId: block.artifactId, mimeType: block.mimeType, width: block.width, height: block.height };
+}
+
+export const filesProvider: ContextDefinition = {
+  id: "core.files",
+  apiMajor: 1,
+  kind: "context",
+  produces: ["text", "json"],
+  optionsSchema: {
+    type: "object",
+    properties: {
+      sourceIds: { type: "array", items: { type: "string", minLength: 1, maxLength: 128 }, minLength: 1, maxLength: 16 },
+    },
+    required: ["sourceIds"],
+    additionalProperties: false,
+  },
+  requiredCapabilities: [],
+  diagnosticCodes: ["core.source-missing", "core.source-denied", "core.source-truncated", "core.source-changed-during-read"],
+  async collect(options, ctx): Promise<Result<ContextBatch>> {
+    const sourceIds = options["sourceIds"];
+    if (!Array.isArray(sourceIds) || sourceIds.length === 0) {
+      return { ok: false, error: { code: "core.context-batch-invalid", retryable: false } };
+    }
+    const items: ContextItem[] = [];
+    const issues: CoverageIssue[] = [];
+    const dependencies: EvidenceDependency[] = [];
+    let requiredMissing = false;
+    let partial = false;
+    for (const sourceId of sourceIds) {
+      if (typeof sourceId !== "string") continue;
+      const batch = await ctx.evidence.readSource(sourceId, ctx.signal);
+      if (!batch.ok) {
+        partial = true;
+        requiredMissing = true;
+        issues.push({ sourceId, reason: batch.error.code, required: true, evidenceIds: [] });
+        continue;
+      }
+      for (const item of batch.value.items) items.push(item);
+      for (const dependency of batch.value.dependencies) dependencies.push(dependency);
+      for (const issue of batch.value.coverage.issues) {
+        issues.push(issue);
+        if (issue.required) requiredMissing = true;
+        else partial = true;
+      }
+      if (batch.value.coverage.state !== "complete") partial = true;
+    }
+    return {
+      ok: true,
+      value: {
+        items,
+        coverage: {
+          state: requiredMissing ? "insufficient" : partial ? "partial" : "complete",
+          scopeDescription: `Declared original sources: ${sourceIds.join(", ")}.`,
+          issues: issues.slice(0, 16),
+        },
+        dependencies,
+      },
+    };
+  },
+};
+
+export function createChangesProvider(collect: (options: JsonObject) => Result<ContextBatch>): ContextDefinition {
+  return {
+    id: "core.changes",
+    apiMajor: 1,
+    kind: "context",
+    produces: ["text", "json"],
+    optionsSchema: {
+      type: "object",
+      properties: {
+        paths: { type: "array", items: { type: "string", minLength: 1, maxLength: 256 }, minLength: 0, maxLength: 32 },
+        includeUntracked: { type: "boolean" },
+        maxFiles: { type: "integer", minimum: 1 },
+        maxBytes: { type: "integer", minimum: 1 },
+      },
+      additionalProperties: false,
+    },
+    requiredCapabilities: [],
+    diagnosticCodes: ["core.git-unavailable", "core.git-baseline-partial", "core.git-shared-worktree-attribution-uncertain"],
+    async collect(options, _ctx): Promise<Result<ContextBatch>> {
+      const paths = Array.isArray(options["paths"]) ? (options["paths"] as string[]) : ["**"];
+      const includeUntracked = options["includeUntracked"] !== false;
+      const maxFiles = typeof options["maxFiles"] === "number" ? Math.min(options["maxFiles"], 32) : 32;
+      const maxBytes = typeof options["maxBytes"] === "number" ? Math.min(options["maxBytes"], 262_144) : 65_536;
+      return collect({ paths, includeUntracked, maxFiles, maxBytes });
+    },
+  };
 }

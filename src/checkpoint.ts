@@ -27,6 +27,57 @@ export interface CheckpointClock {
   nowUtc(): string;
 }
 
+/**
+ * Session-wide receipt aggregates, independent of bounded receipt details.
+ */
+export interface FinancialAggregate {
+  knownTokens: number;
+  tokensMissing: number;
+  usageKnownCount: number;
+  usagePartialCount: number;
+  usageUnknownCount: number;
+  settledCount: number;
+  unresolvedCount: number;
+  cancelledCount: number;
+  byPurpose: Record<string, number>;
+}
+
+/** Immutable captured tariff for one owned attempt. */
+export interface SnapshotPrice {
+  currency: string;
+  revision: string;
+  inputPerMillion: string;
+  outputPerMillion: string;
+  cacheReadPerMillion?: string;
+  cacheWritePerMillion?: string;
+}
+
+/** Bounded protected financial state; restored values may only constrain. */
+export interface FinancialSnapshot {
+  ledgerRevision: number;
+  ownedRequestCount: number;
+  reservedTokens: number;
+  knownCostByCurrency: Record<string, string>;
+  reservedCostByCurrency: Record<string, string>;
+  unresolvedCount: number;
+  aggregate?: FinancialAggregate;
+  attempts: Array<{
+    attemptId: string;
+    state: string;
+    purpose: string;
+    profileId?: string;
+    price?: "host-catalog" | "unknown" | SnapshotPrice | null;
+    usageRevision: number;
+    totalTokens: number | null;
+    usageCoverage: string;
+    costAmount: string | null;
+    costCurrency: string | null;
+    reservedTokens?: number;
+    reservedCostAmount?: string | null;
+    reservedCostCurrency?: string | null;
+  }>;
+}
+
 export interface ControlCheckpointState {
   schemaVersion: 1;
   observedSessionId: string;
@@ -35,6 +86,9 @@ export interface ControlCheckpointState {
   observerPaused: boolean;
   authorizationRevision: string;
   configurationRevision: string;
+  financial: FinancialSnapshot | null;
+  /** Sticky material-receipt persistence uncertainty; never implicitly cleared. */
+  financialUncertain: boolean;
   revision: number;
   updatedAt: string;
 }
@@ -54,6 +108,8 @@ export interface ControlCheckpointOpen {
   operatorStopped: boolean;
   observerPaused: boolean;
   authorizationRevision: string | null;
+  financial: FinancialSnapshot | null;
+  financialUncertain: boolean;
   degraded: boolean;
   errorCode: string | null;
 }
@@ -66,6 +122,107 @@ function sessionKey(observedSessionId: string): string {
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function stringMap(value: unknown): Record<string, string> {
+  if (!isPlainObject(value)) return {};
+  const map: Record<string, string> = {};
+  for (const [key, entry] of Object.entries(value)) {
+    if (typeof entry === "string" && /^[0-9]+(?:\.[0-9]+)?$/u.test(entry)) map[key] = entry;
+  }
+  return map;
+}
+
+/** Restores only bounded, typed financial facts; anything else stays unset. */
+export function parseFinancialSnapshot(value: unknown): FinancialSnapshot | null {
+  if (!isPlainObject(value)) return null;
+  const ledgerRevision = value["ledgerRevision"];
+  const ownedRequestCount = value["ownedRequestCount"];
+  const reservedTokens = value["reservedTokens"];
+  const unresolvedCount = value["unresolvedCount"];
+  if (typeof ledgerRevision !== "number" || typeof ownedRequestCount !== "number"
+    || typeof reservedTokens !== "number" || typeof unresolvedCount !== "number") {
+    return null;
+  }
+  const aggregateInput = isPlainObject(value["aggregate"]) ? value["aggregate"] : null;
+  const numberField = (source: Record<string, unknown>, key: string): number => {
+    const entry = source[key];
+    return typeof entry === "number" && Number.isFinite(entry) && entry >= 0 ? Math.floor(entry) : 0;
+  };
+  const countMap = (source: unknown): Record<string, number> => {
+    if (!isPlainObject(source)) return {};
+    const map: Record<string, number> = {};
+    for (const [key, entry] of Object.entries(source)) {
+      if (typeof entry === "number" && Number.isFinite(entry) && entry >= 0) map[key] = Math.floor(entry);
+    }
+    return map;
+  };
+  const aggregate: FinancialAggregate | undefined = aggregateInput === null ? undefined : {
+    knownTokens: numberField(aggregateInput, "knownTokens"),
+    tokensMissing: numberField(aggregateInput, "tokensMissing"),
+    usageKnownCount: numberField(aggregateInput, "usageKnownCount"),
+    usagePartialCount: numberField(aggregateInput, "usagePartialCount"),
+    usageUnknownCount: numberField(aggregateInput, "usageUnknownCount"),
+    settledCount: numberField(aggregateInput, "settledCount"),
+    unresolvedCount: numberField(aggregateInput, "unresolvedCount"),
+    cancelledCount: numberField(aggregateInput, "cancelledCount"),
+    byPurpose: countMap(aggregateInput["byPurpose"]),
+  };
+  const attemptsInput = Array.isArray(value["attempts"]) ? value["attempts"] : [];
+  const snapshotPrice = (value: unknown): "host-catalog" | "unknown" | SnapshotPrice | null => {
+    if (value === "host-catalog" || value === "unknown") return value;
+    if (!isPlainObject(value)) return null;
+    const currency = value["currency"];
+    const revision = value["revision"];
+    const input = value["inputPerMillion"];
+    const output = value["outputPerMillion"];
+    const decimal = (entry: unknown): string | undefined =>
+      typeof entry === "string" && /^[0-9]+(?:\.[0-9]+)?$/u.test(entry) ? entry : undefined;
+    if (typeof currency !== "string" || typeof revision !== "string") return null;
+    const inputRate = decimal(input);
+    const outputRate = decimal(output);
+    if (inputRate === undefined || outputRate === undefined) return null;
+    const cacheRead = decimal(value["cacheReadPerMillion"]);
+    const cacheWrite = decimal(value["cacheWritePerMillion"]);
+    return {
+      currency,
+      revision,
+      inputPerMillion: inputRate,
+      outputPerMillion: outputRate,
+      ...(cacheRead === undefined ? {} : { cacheReadPerMillion: cacheRead }),
+      ...(cacheWrite === undefined ? {} : { cacheWritePerMillion: cacheWrite }),
+    };
+  };
+  const parsedAttempts = attemptsInput.flatMap(entry => {
+    if (!isPlainObject(entry) || typeof entry["attemptId"] !== "string" || typeof entry["state"] !== "string") return [];
+    return [{
+      attemptId: entry["attemptId"],
+      state: entry["state"],
+      purpose: typeof entry["purpose"] === "string" ? entry["purpose"] : "direct",
+      ...(typeof entry["profileId"] === "string" ? { profileId: entry["profileId"] } : {}),
+      price: snapshotPrice(entry["price"]),
+      usageRevision: typeof entry["usageRevision"] === "number" ? entry["usageRevision"] : 0,
+      totalTokens: typeof entry["totalTokens"] === "number" ? entry["totalTokens"] : null,
+      usageCoverage: typeof entry["usageCoverage"] === "string" ? entry["usageCoverage"] : "unknown",
+      costAmount: typeof entry["costAmount"] === "string" ? entry["costAmount"] : null,
+      costCurrency: typeof entry["costCurrency"] === "string" ? entry["costCurrency"] : null,
+      ...(typeof entry["reservedTokens"] === "number" ? { reservedTokens: entry["reservedTokens"] } : {}),
+      reservedCostAmount: typeof entry["reservedCostAmount"] === "string" ? entry["reservedCostAmount"] : null,
+      reservedCostCurrency: typeof entry["reservedCostCurrency"] === "string" ? entry["reservedCostCurrency"] : null,
+    }];
+  });
+  const finalizedState = (state: string): boolean => state === "settled" || state === "cancelled" || state === "released";
+  const attempts = [...parsedAttempts.filter(row => !finalizedState(row.state)), ...parsedAttempts.filter(row => finalizedState(row.state)).slice(-32)];
+  return {
+    ledgerRevision,
+    ownedRequestCount,
+    reservedTokens,
+    knownCostByCurrency: stringMap(value["knownCostByCurrency"]),
+    reservedCostByCurrency: stringMap(value["reservedCostByCurrency"]),
+    unresolvedCount,
+    ...(aggregate === undefined ? {} : { aggregate }),
+    attempts,
+  };
 }
 
 /** Any owned evidence that this logical session existed before this generation. */
@@ -105,6 +262,8 @@ export class ControlCheckpoint {
     let operatorStopped = false;
     let observerPaused = false;
     let authorizationRevision: string | null = null;
+    let financial: FinancialSnapshot | null = null;
+    let financialUncertain = false;
     let degraded = false;
     let errorCode: string | null = null;
     let revision = 0;
@@ -121,6 +280,8 @@ export class ControlCheckpoint {
         observerPaused = parsed["observerPaused"];
         revision = parsed["revision"];
         authorizationRevision = typeof parsed["authorizationRevision"] === "string" ? parsed["authorizationRevision"] : null;
+        financial = parseFinancialSnapshot(parsed["financial"]);
+        financialUncertain = parsed["financialUncertain"] === true;
       } else {
         // Unreadable control state must not silently resume; keep the
         // conservative stop and surface the corruption.
@@ -166,12 +327,14 @@ export class ControlCheckpoint {
       }
     }
     return {
-      checkpoint: new ControlCheckpoint(path, directory, lockPath, key, options, revision, owned, authorizationRevision),
+      checkpoint: new ControlCheckpoint(path, directory, lockPath, key, options, revision, owned, authorizationRevision, financial, financialUncertain),
       owned,
       restored,
       operatorStopped,
       observerPaused,
       authorizationRevision,
+      financial,
+      financialUncertain,
       degraded,
       errorCode,
     };
@@ -187,6 +350,8 @@ export class ControlCheckpoint {
   #stop = false;
   #paused = false;
   #authorizationRevision = "auth-0";
+  #financial: FinancialSnapshot | null = null;
+  #financialUncertain = false;
   #degraded = false;
   #errorCode: string | null = null;
   #counter = 0;
@@ -202,7 +367,11 @@ export class ControlCheckpoint {
     revision: number,
     ownsLock: boolean,
     authorizationRevision: string | null,
+    financial: FinancialSnapshot | null,
+    financialUncertain: boolean,
   ) {
+    this.#financial = financial;
+    this.#financialUncertain = financialUncertain;
     this.#ownsLock = ownsLock;
     if (authorizationRevision !== null) this.#authorizationRevision = authorizationRevision;
     this.#path = path;
@@ -246,7 +415,11 @@ export class ControlCheckpoint {
     observerPaused: boolean;
     authorizationRevision?: string;
     configurationRevision?: string;
+    financial?: FinancialSnapshot | null;
+    financialUncertain?: boolean;
   }): void {
+    if (state.financial !== undefined) this.#financial = state.financial;
+    if (state.financialUncertain !== undefined) this.#financialUncertain = state.financialUncertain;
     this.#stop = state.operatorStopped;
     this.#paused = state.observerPaused;
     if (state.authorizationRevision !== undefined) this.#authorizationRevision = state.authorizationRevision;
@@ -287,6 +460,8 @@ export class ControlCheckpoint {
       observerPaused: this.#paused,
       authorizationRevision: this.#authorizationRevision,
       configurationRevision: this.#options.configurationRevision,
+      financial: this.#financial,
+      financialUncertain: this.#financialUncertain,
       revision: this.#revision,
       updatedAt: this.#options.clock.nowUtc(),
     };

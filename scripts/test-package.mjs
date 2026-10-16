@@ -106,9 +106,9 @@ try {
   const packResult = runNpm(["pack", "--json", "--pack-destination", packDir], { cwd: packageRoot });
   const packInfo = JSON.parse(packResult.stdout)[0];
   assert.equal(packInfo.name, "pi-quality-engine");
-  assert.equal(packInfo.version, "0.1.0");
+  assert.equal(packInfo.version, "0.2.0");
   const paths = packInfo.files.map(file => file.path);
-  for (const required of ["package.json", "README.md", "THIRD_PARTY_NOTICES.md", "dist/index.js", "dist/contracts.js", "resources/prompts/repetition-v1.md"]) {
+  for (const required of ["package.json", "README.md", "THIRD_PARTY_NOTICES.md", "dist/index.js", "dist/contracts.js", "resources/prompts/repetition-v1.md", "resources/prompts/progress-v1.md", "resources/prompts/progress-v1.questions.json", "resources/prompts/engineering-v1.md", "resources/prompts/evaluation-v1.schema.json"]) {
     assert.ok(paths.includes(required), `packed artifact is missing ${required}`);
   }
   for (const path of paths) {
@@ -148,7 +148,7 @@ try {
   assert.ok(markerLine, `consumer report missing from stdout:\n${consumerResult.stdout}\n${consumerResult.stderr}`);
   const report = JSON.parse(markerLine.slice("QE_CONSUMER_REPORT=".length));
   assert.equal(report.ok, true);
-  assert.equal(report.packageVersion, "0.1.0");
+  assert.equal(report.packageVersion, "0.2.0");
   assert.equal(report.hostVersion, "1.1.0");
   assert.equal(report.peerRange, "*");
   assert.deepEqual(report.loadErrors, []);
@@ -160,7 +160,7 @@ try {
   assert.equal(report.toolCount, 0);
   assert.deepEqual(report.statuses, { inactive: "inactive", active: "active", retired: "retired" });
   assert.deepEqual(report.eventNames, [
-    "quality.runtime.started", "quality.config.applied", "quality.runtime.retired",
+    "quality.runtime.started", "quality.config.applied", "quality.runtime.retired", "quality.journal.closed",
   ]);
   assert.deepEqual(report.effectCounts, { sendMessage: 0, sendUserMessage: 0, appendEntry: 0, abort: 0 });
   assert.ok(report.fixtureFilesCreated.every(entry => /^agent[\\/]quality([\\/]state.*)?$/u.test(entry)),

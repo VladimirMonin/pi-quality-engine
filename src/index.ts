@@ -15,6 +15,7 @@ import type { RegistryQuery } from "./contracts.js";
 import { EngineSession, SessionPhysicalState, inspectInactiveSession } from "./runtime.js";
 import type { EngineSessionInput, EngineStatus, PrimaryHostEvent, SessionControlState } from "./runtime.js";
 import { mapPiEvent } from "./adapters/pi-host.js";
+import { piModelRegistryPort } from "./adapters/pi-models.js";
 import type { PiHostEventContext } from "./adapters/pi-host.js";
 
 function packageResourcesDir(): string {
@@ -29,6 +30,8 @@ function sessionInput(ctx: ExtensionContext): EngineSessionInput {
     agentDir: getAgentDir(),
     projectConfigDir: join(ctx.cwd, CONFIG_DIR_NAME),
     projectTrusted: ctx.isProjectTrusted(),
+    projectRoot: ctx.cwd,
+    modelRegistry: piModelRegistryPort(ctx.modelRegistry),
     hostVersion: VERSION,
     hostMode: ctx.mode,
     resourcesDir: packageResourcesDir(),
@@ -172,6 +175,7 @@ export default function qualityEngine(pi: ExtensionAPI): void {
       }
       let status: EngineStatus;
       if (session !== undefined) {
+        await session.syncOwnedReceipts();
         status = session.status(ctx.isIdle());
       } else {
         status = await inspectInactiveSession(sessionInput(ctx), ctx.isIdle());

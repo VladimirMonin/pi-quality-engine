@@ -71,6 +71,11 @@ type ValueSpec =
   | { t: "counts" }
   | { t: "selection" }
   | { t: "manifestItems" }
+  | { t: "normalizedUsage" }
+  | { t: "costObservation" }
+  | { t: "route" }
+  | { t: "decimalOrInteger" }
+  | { t: "nullableBoolean" }
   | { t: "assessmentFindings" }
   | { t: "assessmentScores" }
   | { t: "countMap" };
@@ -147,6 +152,11 @@ const EVENT_SCHEMAS: Record<DiagnosticEventName, EventSchema> = {
     resourceRefs: { t: "stringArray" }, required: { t: "boolean" }, selectionState: { t: "string" },
     sizes: { t: "sizes" }, omittedCount: { t: "integer" }, reasonCode: { t: "nullableString" },
   },
+  "quality.resource.described": {
+    resourceId: { t: "string" }, kind: { t: "string" }, revisionRef: { t: "string" },
+    sourceId: { t: "nullableString" }, displayPath: { t: "nullableString" },
+    sizes: { t: "sizes" }, visibility: { t: "string" }, repeated: { t: "boolean" },
+  },
   "quality.context.manifest": {
     manifestId: { t: "string" }, snapshotId: { t: "string" }, boundary: { t: "string" },
     attemptId: { t: "nullableString" }, profileId: { t: "nullableString" },
@@ -187,6 +197,43 @@ const EVENT_SCHEMAS: Record<DiagnosticEventName, EventSchema> = {
   "quality.trigger.deadline": {
     checkId: { t: "string" }, bindingId: { t: "string" }, phase: { t: "string" },
     dueMonoMs: { t: "nullableInteger" }, delayMs: { t: "nullableInteger" }, reasonCode: { t: "string" },
+  },
+  "quality.model.preflight": {
+    profileId: { t: "string" }, outcome: { t: "string" }, capabilityRefs: { t: "stringArray" },
+    manifestId: { t: "string" }, estimatedInputTokens: { t: "integer" }, reservedOutputTokens: { t: "integer" },
+    errorCode: { t: "nullableString" },
+  },
+  "quality.model.dispatched": {
+    attemptId: { t: "string" }, requestGroupId: { t: "string" }, ordinal: { t: "integer" },
+    purpose: { t: "string" }, profileId: { t: "string" }, profileRevision: { t: "nullableString" },
+    requestedRoute: { t: "route" }, actualRoute: { t: "route" }, destinationRef: { t: "nullableString" },
+    manifestId: { t: "string" }, requestBoundary: { t: "string" }, retryVisibility: { t: "string" },
+    priceBasisRef: { t: "nullableString" }, reservationRef: { t: "nullableString" },
+    requestTimeoutMs: { t: "integer" }, maxOutputTokens: { t: "integer" },
+    reasoningSetting: { t: "nullableString" }, accountingOwner: { t: "string" },
+  },
+  "quality.model.settled": {
+    attemptId: { t: "string" }, attemptRevision: { t: "integer" }, outcome: { t: "string" },
+    stopReasonCode: { t: "string" }, durationMs: { t: "number" }, responseSizes: { t: "sizes" },
+    usage: { t: "normalizedUsage" }, cost: { t: "costObservation" },
+    accountingCoverage: { t: "string" }, errorCode: { t: "nullableString" },
+  },
+  "quality.model.usage-updated": {
+    attemptId: { t: "string" }, attemptRevision: { t: "integer" }, replacesRevision: { t: "nullableInteger" },
+    usage: { t: "normalizedUsage" }, cost: { t: "costObservation" },
+    accountingCoverage: { t: "string" }, late: { t: "boolean" }, source: { t: "string" },
+  },
+  "quality.budget.denied": {
+    operationRef: { t: "string" }, limitKind: { t: "string" }, limitValue: { t: "decimalOrInteger" },
+    knownValue: { t: "decimalOrInteger" }, reservedValue: { t: "decimalOrInteger" },
+    unknownCoverage: { t: "string" }, reasonCode: { t: "string" },
+  },
+  "quality.usage.summary": {
+    scopeKind: { t: "string" }, ledgerRevision: { t: "integer" }, ownedRequestCount: { t: "integer" },
+    attemptVisibility: { t: "string" }, settledCount: { t: "integer" }, unresolvedCount: { t: "integer" },
+    cancelledCount: { t: "integer" }, usageKnownCount: { t: "integer" }, usagePartialCount: { t: "integer" },
+    usageUnknownCount: { t: "integer" }, normalizedTotalTokens: { t: "nullableInteger" },
+    normalizedCoverage: { t: "string" }, historyCoverage: { t: "string" },
   },
   "quality.journal.rotation": {
     fromSegment: { t: "integer" }, toSegment: { t: "integer" }, reason: { t: "string" },
@@ -285,6 +332,71 @@ function closeScalar(spec: ValueSpec, value: unknown): { ok: true; value: Json }
         });
       }
       return { ok: true, value: closed };
+    }
+    case "nullableBoolean":
+      return value === null || typeof value === "boolean" ? { ok: true, value: value as Json } : { ok: false };
+    case "decimalOrInteger":
+      if (typeof value === "number" && Number.isSafeInteger(value) && value >= 0) return { ok: true, value };
+      if (typeof value === "string" && /^[0-9]+(?:\.[0-9]+)?$/u.test(value)) return { ok: true, value };
+      return { ok: false };
+    case "route": {
+      if (!isJsonObject(value)) return { ok: false };
+      const provider = closeScalar({ t: "nullableString" }, value["provider"]);
+      const model = closeScalar({ t: "nullableString" }, value["model"]);
+      const revision = closeScalar({ t: "nullableString" }, value["revision"]);
+      if (!provider.ok || !model.ok || !revision.ok) return { ok: false };
+      return { ok: true, value: { provider: provider.value, model: model.value, revision: revision.value } };
+    }
+    case "normalizedUsage": {
+      if (value === null || value === undefined) return { ok: true, value: null };
+      if (!isJsonObject(value)) return { ok: false };
+      const closed: JsonObject = {};
+      for (const [key, spec] of Object.entries({
+        revision: { t: "integer" }, observationSource: { t: "string" }, sourceSchemaId: { t: "nullableString" },
+        adapterRevision: { t: "nullableString" }, inputTokens: { t: "nullableInteger" },
+        uncachedInputTokens: { t: "nullableInteger" }, cacheReadTokens: { t: "nullableInteger" },
+        cacheWriteTokens: { t: "nullableInteger" }, outputTokens: { t: "nullableInteger" },
+        reasoningTokens: { t: "nullableInteger" }, totalTokens: { t: "nullableInteger" },
+        inputPartition: { t: "string" }, outputIncludesReasoning: { t: "nullableBoolean" },
+        totalBasis: { t: "string" }, coverage: { t: "string" }, finality: { t: "string" },
+      } as Record<string, ValueSpec>)) {
+        const entry = closeScalar(spec, value[key]);
+        if (!entry.ok) return { ok: false };
+        closed[key] = entry.value;
+      }
+      return { ok: true, value: closed };
+    }
+    case "costObservation": {
+      if (value === null || value === undefined) return { ok: true, value: null };
+      if (!isJsonObject(value)) return { ok: false };
+      const amount = closeScalar({ t: "nullableString" }, value["amount"]);
+      const currency = closeScalar({ t: "nullableString" }, value["currency"]);
+      const basis = closeScalar({ t: "string" }, value["basis"]);
+      const coverage = closeScalar({ t: "string" }, value["coverage"]);
+      const priceBasisRef = closeScalar({ t: "nullableString" }, value["priceBasisRef"]);
+      const usageRevision = closeScalar({ t: "integer" }, value["usageRevision"]);
+      const source = closeScalar({ t: "string" }, value["source"]);
+      const unknownComponentCount = closeScalar({ t: "integer" }, value["unknownComponentCount"]);
+      const rawComponents = value["knownComponents"];
+      if (!amount.ok || !currency.ok || !basis.ok || !coverage.ok || !priceBasisRef.ok
+        || !usageRevision.ok || !source.ok || !unknownComponentCount.ok
+        || !Array.isArray(rawComponents) || rawComponents.length > 16) return { ok: false };
+      const components: Json[] = [];
+      for (const entry of rawComponents) {
+        if (!isJsonObject(entry)) return { ok: false };
+        const category = closeScalar({ t: "string" }, entry["category"]);
+        const componentAmount = closeScalar({ t: "string" }, entry["amount"]);
+        if (!category.ok || !componentAmount.ok) return { ok: false };
+        components.push({ category: category.value, amount: componentAmount.value });
+      }
+      return {
+        ok: true,
+        value: {
+          amount: amount.value, currency: currency.value, basis: basis.value, coverage: coverage.value,
+          priceBasisRef: priceBasisRef.value, usageRevision: usageRevision.value, source: source.value,
+          knownComponents: components, unknownComponentCount: unknownComponentCount.value,
+        },
+      };
     }
     case "findings": {
       if (!Array.isArray(value) || value.length > 64) return { ok: false };

@@ -1,3 +1,4 @@
+import { createHash, createHmac, randomBytes } from "node:crypto";
 // Canonical C1 context assembly, provenance metadata and derived coverage.
 //
 // Providers are invoked through the public ContextDefinition.collect contract.
@@ -62,6 +63,7 @@ export interface AssembledContext {
   providerSummaries: ContextProviderSummary[];
   manifest: ContextManifestData;
   manifestPart: ContextManifestPartData;
+  manifestParts: ContextManifestPartData[];
   omittedItems: number;
   selectedBytes: number;
   issueCodes: string[];
@@ -78,7 +80,24 @@ export interface ContextAssemblyHooks {
   expectedBuiltinRevision: (uri: string) => string | null;
 }
 
+/**
+ * Private engine-owned association from an admitted item occurrence to its
+ * selected asset projection. It is attached non-enumerably to the exact
+ * admitted object, so repeated admissions of equal raw input still keep
+ * distinct occurrences and preparation joins the object, not a raw ID.
+ */
+export const ITEM_ASSET: unique symbol = Symbol("qe.context-item-asset");
+export type ItemAssetEntry = NonNullable<AssessmentResources["assets"]>[number];
+
+/**
+ * Private engine-owned list of resource-provenance assets that belong to the
+ * measurement boundary rather than to one admitted item occurrence.
+ */
+export const PROVENANCE_ASSETS: unique symbol = Symbol("qe.context-provenance-assets");
+
 export interface ContextAssemblyInput {
+  /** Prompt-scoped evidence facade bound to the declaring configuration. */
+  promptEvidence?: EvidenceAccess | undefined;
   run: RunRef;
   plan: ContextPlan;
   promptBinding: { use: string; options: JsonObject };
@@ -86,6 +105,17 @@ export interface ContextAssemblyInput {
   maxEvidenceBytes: number;
   view: RuntimeView;
   evidence: EvidenceAccess;
+  /**
+   * Run-owned issuer created before any acquisition and shared by assembly and
+   * preparation. Direct callers without a run owner get a private issuer.
+   */
+  tokens?: ReferenceTokens | undefined;
+  /**
+   * Binds the run-owned evidence facade to the resolved component/binding for
+   * private acquisition capture; it carries the read owner without a mutable
+   * current-run pointer.
+   */
+  bindEvidence?: ((componentId: string, bindingId: string | null, evidence: EvidenceAccess) => EvidenceAccess) | undefined;
   models: Pick<EvaluationServices, "request">;
   hooks: ContextAssemblyHooks;
   resolve: (use: string, options: JsonObject) => Result<ResolvedComponent>;
@@ -295,17 +325,18 @@ function admitEvidenceDependency(raw: unknown): EvidenceDependency | null {
 // Engine-issued opaque reference tokens (O1 §5.3 / §7.7 / §15.3-15.4)
 // ---------------------------------------------------------------------------
 
-class ReferenceTokens {
+export class ReferenceTokens {
   readonly #hooks: ContextAssemblyHooks;
-  readonly #resourceRefs = new Map<string, string>();
-  readonly #revisionRefs = new Map<string, string>();
+  /** Constant-size session tokenization key; never logged, exported or authorized. */
+  readonly #key: string;
   readonly #sectionRefs = new Map<string, string>();
   readonly #inputRefs = new Map<string, string>();
   readonly #methodRefs = new Map<string, string>();
   #sequence = 0;
 
-  constructor(hooks: ContextAssemblyHooks) {
+  constructor(hooks: ContextAssemblyHooks, key?: string) {
     this.#hooks = hooks;
+    this.#key = key ?? randomBytes(16).toString("hex");
   }
 
   #next(prefix: string): string {
@@ -313,26 +344,30 @@ class ReferenceTokens {
     return `${prefix}-${this.#sequence}`;
   }
 
+  /**
+   * Domain-separated keyed issuance over the trusted resource/version
+   * identity: equal resource+version yields the same opaque reference across
+   * runs of one observed session without retaining a raw catalogue, and a new
+   * version yields a new reference instead of overwriting a descriptor.
+   */
+  #token(prefix: string, domain: string, parts: readonly string[]): string {
+    const digest = createHmac("sha256", this.#key)
+      .update(`${domain}\u0000${parts.join("\u0000")}`, "utf8")
+      .digest("hex")
+      .slice(0, 24);
+    return `${prefix}-${digest}`;
+  }
+
   resource(sourceId: string, uri: string): string {
     // A literal identity is allowed only for a verified shipped artifact.
     if (this.#hooks.expectedBuiltinRevision(uri) !== null) return uri;
-    const key = `${sourceId}\u0000${uri}`;
-    const existing = this.#resourceRefs.get(key);
-    if (existing !== undefined) return existing;
-    const token = this.#next("res");
-    this.#resourceRefs.set(key, token);
-    return token;
+    return this.#token("res", "qe-resource", [sourceId, uri]);
   }
 
   revision(sourceId: string, uri: string, revision: string): string {
     if (this.#hooks.expectedBuiltinRevision(uri) === revision) return revision;
     if (this.#hooks.isAcceptedIdentity(revision)) return revision;
-    const key = `${sourceId}\u0000${revision}`;
-    const existing = this.#revisionRefs.get(key);
-    if (existing !== undefined) return existing;
-    const token = this.#next("rev");
-    this.#revisionRefs.set(key, token);
-    return token;
+    return this.#token("rev", "qe-revision", [sourceId, uri, revision]);
   }
 
   section(sourceId: string, heading: string): string {
@@ -365,7 +400,9 @@ class ReferenceTokens {
   }
 }
 
-function manifestItem(item: ContextItem, tokens: ReferenceTokens): ManifestItemMetadata {
+type DerivedInputResolver = (sourceId: string, inputId: string) => string | null;
+
+function manifestItem(item: ContextItem, tokens: ReferenceTokens, resolveInput: DerivedInputResolver): ManifestItemMetadata {
   const selection = item.provenance.selection;
   return {
     itemId: tokens.input(item.provenance.sourceId, item.id),
@@ -381,9 +418,12 @@ function manifestItem(item: ContextItem, tokens: ReferenceTokens): ManifestItemM
         ? selection.headings.map(heading => tokens.section(item.provenance.sourceId, heading))
         : [],
       inputRefs: selection.kind === "derived"
-        ? selection.inputIds.map(inputId => tokens.input(item.provenance.sourceId, inputId))
+        ? selection.inputIds.flatMap(inputId => {
+          const resolved = resolveInput(item.provenance.sourceId, inputId);
+          return resolved === null ? [] : [resolved];
+        })
         : [],
-      methodId: selection.kind === "derived" ? tokens.method(item.provenance.sourceId, selection.method) : null,
+      methodId: selection.kind === "derived" ? tokens.method(item.provenance.sourceId, selection.method) : "full",
     },
     disposition: "included",
     changedDuringRead: item.provenance.changedDuringRead,
@@ -414,7 +454,7 @@ function measureAssessmentResources(resources: AssessmentResources): { ok: true;
 export async function assembleContext(input: ContextAssemblyInput): Promise<Result<AssembledContext>> {
   const manifestId = `manifest-${input.run.runId}`;
   const snapshotId = `snapshot-${input.run.runId}`;
-  const tokens = new ReferenceTokens(input.hooks);
+  const tokens = input.tokens ?? new ReferenceTokens(input.hooks);
   const items: ContextItem[] = [];
   const providerSummaries: ContextProviderSummary[] = [];
   const issueCodes = new Set<string>();
@@ -448,12 +488,23 @@ export async function assembleContext(input: ContextAssemblyInput): Promise<Resu
   const promptComponentId = promptResolved.value.componentId;
   const promptDefinition = promptResolved.value.definition;
   let resources: AssessmentResources;
+  let promptChangedDuringRead = false;
+  let promptInstructionRefs: string[] = [];
+  let promptInstructions: ContextItem[] = [];
+  let promptResourceProvenance: Array<{ kind: "instruction" | "questions" | "resultSchema"; uri: string; revision: string; changedDuringRead: boolean }> = [];
+  let promptResourceProvenanceChanged = false;
   try {
+    // Acquired prompt resources are captured through the same run-owned
+    // boundary as context sources, before parsing or normalization can fail.
+    const promptFacade = input.promptEvidence ?? input.evidence;
+    const boundPromptEvidence = input.bindEvidence === undefined
+      ? promptFacade
+      : input.bindEvidence(promptComponentId, null, promptFacade);
     const built = await promptDefinition.build(input.promptBinding.options, {
       ...promptResolved.value.lifecycle(),
       run: input.run,
       view: input.view,
-      evidence: input.evidence,
+      evidence: boundPromptEvidence,
       models: input.models,
     });
     if (!isPlainRecord(built) || dataAt(built, "ok").value !== true) {
@@ -475,6 +526,8 @@ export async function assembleContext(input: ContextAssemblyInput): Promise<Resu
       if (!admitted.ok) return { ok: false, error: { code: "core.prompt-resource-invalid", retryable: false } };
       instructions.push(admitted.item);
     }
+    promptChangedDuringRead = instructions.some(instruction => instruction.provenance.changedDuringRead);
+    promptInstructionRefs = instructions.map(instruction => tokens.resource(promptComponentId, instruction.provenance.uri));
     const copiedSchema = copyPlainJson(dataAt(builtValue, "resultSchema").value, 0);
     if (!copiedSchema.ok) {
       return { ok: false, error: { code: "core.prompt-resource-invalid", retryable: false } };
@@ -487,11 +540,34 @@ export async function assembleContext(input: ContextAssemblyInput): Promise<Resu
       }
       normalizedQuestions = copiedQuestions.value as unknown as AssessmentResources["questions"];
     }
+    const rawProvenance = dataArray(dataAt(builtValue, "resourceProvenance").value, 16);
+    const resourceProvenance: Array<{ kind: "instruction" | "questions" | "resultSchema"; uri: string; revision: string; changedDuringRead: boolean }> = [];
+    if (rawProvenance !== null) {
+      for (const rawEntry of rawProvenance) {
+        if (!isPlainRecord(rawEntry)) continue;
+        const kind = dataAt(rawEntry, "kind").value;
+        const uri = dataAt(rawEntry, "uri").value;
+        const revision = dataAt(rawEntry, "revision").value;
+        const changed = dataAt(rawEntry, "changedDuringRead").value;
+        if ((kind === "instruction" || kind === "questions" || kind === "resultSchema")
+          && typeof uri === "string" && typeof revision === "string" && typeof changed === "boolean") {
+          resourceProvenance.push({ kind, uri: uri.slice(0, 2048), revision: revision.slice(0, 512), changedDuringRead: changed });
+        }
+      }
+    }
+    promptResourceProvenanceChanged = resourceProvenance.some(entry => entry.changedDuringRead);
+    promptInstructions = instructions;
+    promptResourceProvenance = resourceProvenance;
+    const configuredResources = dataAt(builtValue, "configuredResources").value;
+    const configuredQuestions = isPlainRecord(configuredResources) && dataAt(configuredResources, "questions").value === true;
+    const configuredSchema = isPlainRecord(configuredResources) && dataAt(configuredResources, "resultSchema").value === true;
     resources = {
       resourceRevision: resourcesRevision,
       instructions,
       questions: normalizedQuestions,
       resultSchema: copiedSchema.value as AssessmentResources["resultSchema"],
+      configuredResources: { questions: configuredQuestions, resultSchema: configuredSchema },
+      resourceProvenance,
       // The check owns the recognized criterion set; bind it before measuring so
       // the measured object is exactly what the evaluator receives.
       criteria: [...input.criterionIds],
@@ -510,18 +586,50 @@ export async function assembleContext(input: ContextAssemblyInput): Promise<Resu
     return { ok: false, error: { code: "core.context-overflow", retryable: false, field: "prompt" } };
   }
   selectedBytes += assessment.value.totalBytes;
+  const unstablePromptResource = promptChangedDuringRead || promptResourceProvenanceChanged;
+  if (unstablePromptResource) {
+    issueCodes.add("core.prompt-resource-changed");
+    // An unstable required resource must never present as clean complete
+    // coverage, whatever its kind.
+    anyProviderPartial = true;
+  }
   providerSummaries.push({
     sourceId: promptComponentId,
     required: true,
     selectionState: "included",
-    resourceRefs: assessment.value.instructionRefs
-      .map(uri => tokens.resource(promptComponentId, uri))
-      .slice(0, 16),
+    resourceRefs: promptInstructionRefs.slice(0, 16),
     sizes: [sizeMeasurement("selected", assessment.value.totalBytes)],
     omittedCount: 0,
-    reasonCode: null,
+    reasonCode: unstablePromptResource ? "core.prompt-resource-changed" : null,
   });
 
+  // Only actual known unambiguous owned items or accepted external identities
+  // may back a derived input ref; unknown labels stay a truthful bounded
+  // limitation instead of a freshly minted dangling reference.
+  const ownedInputTokens = new Map<string, string>();
+  const resolveInputRef: DerivedInputResolver = (sourceKey: string, inputId: string): string | null => {
+    const owned = ownedInputTokens.get(inputId);
+    if (owned !== undefined) return owned;
+    if (input.hooks.isAcceptedIdentity(inputId)) return inputId;
+    unresolvedDerivedInputs += 1;
+    return null;
+  };
+  let unresolvedDerivedInputs = 0;
+  const selectionTokens = (sourceKey: string, selection: ContextItem["provenance"]["selection"], change: boolean, bytes: number): Omit<NonNullable<AssessmentResources["assets"]>[number], "itemId" | "itemToken" | "resourceId" | "kind" | "revisionRef" | "sourceId"> => ({
+    selection: {
+      kind: selection.kind,
+      ranges: selection.kind === "lines" ? [{ start: selection.start, end: selection.end }] : [],
+      sectionRefs: selection.kind === "sections" ? selection.headings.map(heading => tokens.section(sourceKey, heading)) : [],
+      inputRefs: selection.kind === "derived" ? selection.inputIds.flatMap(inputId => {
+        const resolved = resolveInputRef(sourceKey, inputId);
+        return resolved === null ? [] : [resolved];
+      }) : [],
+      methodId: selection.kind === "derived" ? tokens.method(sourceKey, selection.method) : selection.kind,
+    },
+    sizes: [{ boundary: "selected", utf8Bytes: bytes, unicodeScalars: null as null, lines: null as null, estimatedTokens: null as null, complete: true }],
+    visibility: change ? "partial" : "complete",
+    changedDuringRead: change,
+  });
   for (const binding of input.plan.providers) {
     const resolved = input.resolve(binding.use, binding.options);
     if (!resolved.ok || resolved.value.kind !== "context") {
@@ -532,6 +640,12 @@ export async function assembleContext(input: ContextAssemblyInput): Promise<Resu
     }
     const definition: ContextDefinition = resolved.value.definition;
     const componentId = resolved.value.componentId;
+    // The evidence facade is bound to this actual component and binding, so
+    // acquisitions are attributed to the call that produced them.
+    const boundEvidence = input.bindEvidence === undefined
+      ? input.evidence
+      : input.bindEvidence(componentId, binding.id, input.evidence);
+    const bindingItems: ContextItem[] = [];
     const providerField = `context.${binding.id}`;
     let rawBatch: Record<string, unknown>;
     try {
@@ -539,7 +653,7 @@ export async function assembleContext(input: ContextAssemblyInput): Promise<Resu
         ...resolved.value.lifecycle(),
         run: input.run,
         view: input.view,
-        evidence: input.evidence,
+        evidence: boundEvidence,
         models: input.models,
       });
       if (!isPlainRecord(collected) || dataAt(collected, "ok").value !== true) {
@@ -625,6 +739,7 @@ export async function assembleContext(input: ContextAssemblyInput): Promise<Resu
       if (item.required) includedRequiredItems += 1;
       else includedOptionalItems += 1;
       items.push(item);
+      bindingItems.push(item);
     }
     for (const rawDependency of rawDependencies) {
       const dependency = admitEvidenceDependency(rawDependency);
@@ -657,46 +772,147 @@ export async function assembleContext(input: ContextAssemblyInput): Promise<Resu
         issueCodes.add(reason);
       }
     }
-    if (providerPartial) anyProviderPartial = true;
+    // Only a partial provider that omits REQUIRED material degrades required
+    // completeness; an optional omission stays recorded as metadata.
+    if (providerPartial && requiredMissing) anyProviderPartial = true;
+    const bindingRefs = bindingItems.map(item => tokens.resource(item.provenance.sourceId, item.provenance.uri));
+    const refOmissions = Math.max(0, bindingRefs.length - 16);
     providerSummaries.push({
       sourceId: componentId,
       required: input.plan.requiredCoverage === "complete",
-      selectionState: providerOmitted > 0 || providerPartial ? "omitted" : "included",
-      resourceRefs: items
-        .filter(item => item.provenance.sourceId === componentId)
-        .map(item => tokens.resource(item.provenance.sourceId, item.provenance.uri))
-        .slice(0, 16),
+      selectionState: providerOmitted > 0 || providerPartial || refOmissions > 0 ? "omitted" : "included",
+      resourceRefs: bindingRefs.slice(0, 16),
       sizes: [sizeMeasurement("selected", providerBytes)],
-      omittedCount: providerOmitted,
-      reasonCode: providerPartial ? "core.context-partial" : null,
+      omittedCount: providerOmitted + refOmissions,
+      reasonCode: providerPartial || refOmissions > 0 ? "core.context-partial" : null,
     });
   }
+
+  for (const item of items) ownedInputTokens.set(item.id, tokens.input(item.provenance.sourceId, item.id));
+  for (const instruction of promptInstructions) ownedInputTokens.set(instruction.id, tokens.input(promptComponentId, instruction.id));
+  const assetEntries: Array<NonNullable<AssessmentResources["assets"]>[number]> = [];
+  const provenanceAssets: ItemAssetEntry[] = [];
+  for (const instruction of promptInstructions) {
+    const entry: ItemAssetEntry = {
+      itemId: instruction.id,
+      itemToken: tokens.input(promptComponentId, instruction.id),
+      resourceId: tokens.resource(promptComponentId, instruction.provenance.uri),
+      kind: "prompt",
+      revisionRef: tokens.revision(promptComponentId, instruction.provenance.uri, instruction.provenance.revision),
+      sourceId: instruction.provenance.sourceId,
+      ...selectionTokens(promptComponentId, instruction.provenance.selection, instruction.provenance.changedDuringRead, instruction.bytes),
+    };
+    assetEntries.push(entry);
+    // The exact admitted occurrence carries its own projection to preparation.
+    Object.defineProperty(instruction, ITEM_ASSET, { value: entry, enumerable: false, configurable: true });
+  }
+  for (const item of items) {
+    const entry: ItemAssetEntry = {
+      itemId: item.id,
+      itemToken: tokens.input(item.provenance.sourceId, item.id),
+      resourceId: tokens.resource(item.provenance.sourceId, item.provenance.uri),
+      kind: "document",
+      revisionRef: tokens.revision(item.provenance.sourceId, item.provenance.uri, item.provenance.revision),
+      sourceId: item.provenance.sourceId,
+      ...selectionTokens(item.provenance.sourceId, item.provenance.selection, item.provenance.changedDuringRead, item.bytes),
+    };
+    assetEntries.push(entry);
+    Object.defineProperty(item, ITEM_ASSET, { value: entry, enumerable: false, configurable: true });
+  }
+  for (const entry of promptResourceProvenance) {
+    const asset: ItemAssetEntry = {
+      itemId: `prompt-resource:${entry.kind}`,
+      itemToken: tokens.input(promptComponentId, `prompt-resource:${entry.kind}`),
+      resourceId: tokens.resource(promptComponentId, entry.uri),
+      kind: entry.kind === "resultSchema" ? "result-schema" : entry.kind === "questions" ? "questions" : "prompt",
+      revisionRef: tokens.revision(promptComponentId, entry.uri, entry.revision),
+      sourceId: "core.prompt-files",
+      selection: { kind: "full", ranges: [], sectionRefs: [], inputRefs: [], methodId: "full" },
+      sizes: [],
+      visibility: entry.changedDuringRead ? "partial" : "complete",
+      changedDuringRead: entry.changedDuringRead,
+    };
+    assetEntries.push(asset);
+    provenanceAssets.push(asset);
+  }
+  if (unresolvedDerivedInputs > 0) {
+    // A derived input that resolves to no actual owned/accepted identity is an
+    // explicit bounded limitation, never a fabricated complete association.
+    anyProviderPartial = true;
+    issueCodes.add("core.context-derived-input-unresolved");
+    issues.push({ sourceId: "core.context", reason: "core.context-derived-input-unresolved", required: false, evidenceIds: [] });
+  }
+  Object.defineProperty(resources, "assets", { value: assetEntries, enumerable: false, writable: true, configurable: true });
+  Object.defineProperty(resources, PROVENANCE_ASSETS, { value: provenanceAssets, enumerable: false, writable: false, configurable: true });
 
   const coverageState: Coverage["state"] = requiredMissing && input.plan.requiredCoverage === "complete"
     ? "insufficient"
     : (requiredMissing || anyProviderPartial)
       ? "partial"
       : "complete";
+  if (requiredMissing && input.plan.requiredCoverage === "complete") {
+    // C1 3.4: a complete plan refuses before evaluation when declared required
+    // input is missing; per-source causes stay distinct in the acquisition facts.
+    return { ok: false, error: { code: "core.context-incomplete", retryable: false, field: "context.requiredCoverage" } };
+  }
   const coverage: Coverage = {
     state: coverageState,
     scopeDescription: `Assembled evidence from ${input.plan.providers.length} context provider(s) for check ${input.run.checkId}.`,
     issues: issues.slice(0, 32),
   };
-  const resourceRefs = [
+  // Complete assembled resource-level dictionary: instruction/document items
+  // plus the actual prompt resource-provenance entries (questions/schema) that
+  // the manifest parts reference. Deduplicated by the issued resource ref.
+  const resourceRefs = [...new Set([
     ...resources.instructions.map(instruction => tokens.resource(promptComponentId, instruction.provenance.uri)),
     ...items.map(item => tokens.resource(item.provenance.sourceId, item.provenance.uri)),
-  ].slice(0, 64);
+    ...promptResourceProvenance.map(entry => tokens.resource(promptComponentId, entry.uri)),
+  ])];
   const snapshot: ContextSnapshot = {
     items,
     coverage,
-    dependencies: dependencies.slice(0, 64),
+    dependencies: dependencies,
     snapshotId,
     run: input.run,
     assembledAt: new Date().toISOString(),
     manifestId,
   };
   const manifestSizes = [sizeMeasurement("selected", selectedBytes, { complete: !requiredMissing })];
-  const itemMetadataList = items.map(item => manifestItem(item, tokens));
+  const itemMetadataList: ManifestItemMetadata[] = [
+    ...items.map(item => manifestItem(item, tokens, resolveInputRef)),
+    ...promptInstructions.map(instruction => manifestItem(instruction, tokens, resolveInputRef)),
+    ...promptResourceProvenance.map(entry => ({
+      itemId: tokens.input(promptComponentId, `prompt-resource:${entry.kind}`),
+      resourceId: tokens.resource(promptComponentId, entry.uri),
+      sourceId: "core.prompt-files",
+      role: "reference",
+      required: true,
+      revisionRef: tokens.revision(promptComponentId, entry.uri, entry.revision),
+      selection: { kind: "full", ranges: [], sectionRefs: [], inputRefs: [], methodId: "full" },
+      disposition: "included",
+      changedDuringRead: entry.changedDuringRead,
+      sizes: [],
+      captureRefs: [],
+    })) as unknown as ManifestItemMetadata[],
+  ];
+  const assembledPartBudget = Math.min(65_536 - 1_024, 60_000);
+  const manifestParts: ContextManifestPartData[] = [];
+  let partItems: ManifestItemMetadata[] = [];
+  let partBytes = 0;
+  for (const metadata of itemMetadataList) {
+    const bytes = Buffer.byteLength(JSON.stringify(metadata), "utf8") + 1;
+    if (partItems.length > 0 && (partItems.length >= 64 || partBytes + bytes > assembledPartBudget)) {
+      manifestParts.push({ manifestId, partIndex: manifestParts.length, itemCount: partItems.length, items: partItems });
+      partItems = [];
+      partBytes = 0;
+    }
+    partItems.push(metadata);
+    partBytes += bytes;
+  }
+  if (partItems.length > 0 || manifestParts.length === 0) {
+    manifestParts.push({ manifestId, partIndex: manifestParts.length, itemCount: partItems.length, items: partItems });
+  }
+  const manifestPart: ContextManifestPartData = manifestParts[0]!;
   const manifest: ContextManifestData = {
     manifestId,
     snapshotId,
@@ -714,16 +930,10 @@ export async function assembleContext(input: ContextAssemblyInput): Promise<Resu
     contentTruncated: omittedItems > 0,
     manifestTruncated: false,
     itemCount: itemMetadataList.length,
-    partCount: 1,
+    partCount: manifestParts.length,
     resourceRefs,
     issueCodes: [...issueCodes].slice(0, 16),
     sizes: manifestSizes,
-  };
-  const manifestPart: ContextManifestPartData = {
-    manifestId,
-    partIndex: 0,
-    itemCount: itemMetadataList.length,
-    items: itemMetadataList,
   };
   return {
     ok: true,
@@ -733,6 +943,7 @@ export async function assembleContext(input: ContextAssemblyInput): Promise<Resu
       providerSummaries,
       manifest,
       manifestPart,
+      manifestParts,
       omittedItems,
       selectedBytes,
       issueCodes: manifest.issueCodes,

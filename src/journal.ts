@@ -105,7 +105,7 @@ interface JournalIndex {
 }
 
 type JournalCommand =
-  | { kind: "record"; line: string; bytes: number; lifecycle: boolean }
+  | { kind: "record"; line: string; bytes: number; lifecycle: boolean; prefix: ReadonlyArray<{ key: string; line: string; bytes: number }>; descriptorKeys: ReadonlyArray<string>; accountedBytes: number }
   | { kind: "rotate"; reason: "size" | "elapsed" }
   | { kind: "sweep" }
   | { kind: "close"; resolve: (result: CloseResult) => void };
@@ -166,6 +166,7 @@ export class SessionJournal {
   #segmentOpenedMonoMs = 0;
   #totalRecords = 0;
   #totalBytes = 0;
+  readonly #segmentDescriptorKeys = new Set<string>();
   #pendingRecords = 0;
   #pendingBytes = 0;
   #lostRecords = 0;
@@ -223,8 +224,14 @@ export class SessionJournal {
   }
 
   /** Enqueues one already-projected record; the bounded pump never blocks callers. */
-  write(record: DiagnosticRecordV1): void {
-    this.#enqueue(record, false);
+  /**
+   * Ordinary write. `prefix` carries approved safe descriptor records that must
+   * physically precede this record in the same segment; the serialized write
+   * path decides rotation and membership, so ordering is not an enqueue-time
+   * guess. `descriptorKeys` registers descriptor identities for this segment.
+   */
+  write(record: DiagnosticRecordV1, prefix: ReadonlyArray<{ key: string; line: string; bytes: number }> = [], descriptorKeys: ReadonlyArray<string> = []): void {
+    this.#enqueue(record, false, prefix, descriptorKeys);
   }
 
   /**
@@ -233,25 +240,26 @@ export class SessionJournal {
    * output. They are bounded metadata and never become a rotation cause.
    */
   writeLifecycle(record: DiagnosticRecordV1): void {
-    this.#enqueue(record, true);
+    this.#enqueue(record, true, [], []);
   }
 
-  #enqueue(record: DiagnosticRecordV1, lifecycle: boolean): void {
+  #enqueue(record: DiagnosticRecordV1, lifecycle: boolean, prefix: ReadonlyArray<{ key: string; line: string; bytes: number }>, descriptorKeys: ReadonlyArray<string>): void {
     if (this.#state === "closed" || this.#state === "failed") {
       this.#lostRecords += 1;
       return;
     }
     const line = `${JSON.stringify(record)}\n`;
     const bytes = Buffer.byteLength(line, "utf8");
+    const accountedBytes = bytes + prefix.reduce((n, entry) => n + entry.bytes, 0);
     if (this.#pendingRecords + 1 > this.#options.maxPendingRecords
-      || (this.#pendingBytes + bytes > this.#options.maxPendingBytes && this.#pendingRecords > 0)) {
+      || (this.#pendingBytes + accountedBytes > this.#options.maxPendingBytes && this.#pendingRecords > 0)) {
       this.#lostRecords += 1;
       this.#degrade("queue-overflow");
       return;
     }
-    this.#queue.push({ kind: "record", line, bytes, lifecycle });
+    this.#queue.push({ kind: "record", line, bytes, lifecycle, prefix, descriptorKeys, accountedBytes });
     this.#pendingRecords += 1;
-    this.#pendingBytes += bytes;
+    this.#pendingBytes += accountedBytes;
     void this.#pump();
   }
 
@@ -400,6 +408,7 @@ export class SessionJournal {
         this.#lastRotation = { reason: "tail-repair", at: this.#options.clock.nowUtc() };
       }
     }
+    this.#segmentDescriptorKeys.clear();
     this.#activeOrdinal = this.#allocateOrdinal();
     try {
       this.#activeHandle = await open(activePath, "a", 0o600);
@@ -598,8 +607,8 @@ export class SessionJournal {
         }
         if (command.kind === "record") {
           this.#pendingRecords -= 1;
-          this.#pendingBytes -= command.bytes;
-          await this.#writeRecord(command.line, command.bytes, command.lifecycle);
+          this.#pendingBytes -= command.accountedBytes;
+          await this.#writeRecord(command.line, command.bytes, command.lifecycle, command.prefix, command.descriptorKeys);
         } else if (command.kind === "rotate") {
           await this.#rotate(command.reason);
         } else if (command.kind === "sweep") {
@@ -625,22 +634,11 @@ export class SessionJournal {
     }
   }
 
-  async #writeRecord(line: string, bytes: number, lifecycle = false): Promise<void> {
-    if (this.#state === "failed" || this.#activeHandle === null) {
-      this.#lostRecords += 1;
-      return;
-    }
-    // A segment becomes due when accepted bytes meet or exceed the threshold;
-    // one record is never divided between files, so the record that would
-    // exceed the threshold starts the next segment instead of overshooting by
-    // an unbounded queued burst. Lifecycle metadata is exempt: it is required
-    // evidence but never the cause of another rotation.
-    if (!lifecycle && this.#activeBytes > 0 && this.#activeBytes + bytes > this.#options.maxFileBytes) {
-      await this.#rotate("size");
-    }
+  /** Writes one encoded record to completion; false means it was lost. */
+  async #appendEncoded(line: string, bytes: number): Promise<boolean> {
     if (this.#activeHandle === null) {
       this.#lostRecords += 1;
-      return;
+      return false;
     }
     try {
       // A short FileHandle acknowledgement is not a completed record: write
@@ -659,10 +657,48 @@ export class SessionJournal {
       this.#activeRecords += 1;
       this.#totalRecords += 1;
       this.#totalBytes += bytes;
+      return true;
     } catch {
       this.#lostRecords += 1;
       this.#degrade("write-failed");
+      return false;
+    }
+  }
+
+  async #writeRecord(line: string, bytes: number, lifecycle = false, prefix: ReadonlyArray<{ key: string; line: string; bytes: number }> = [], descriptorKeys: ReadonlyArray<string> = []): Promise<void> {
+    if (this.#state === "failed" || this.#activeHandle === null) {
+      this.#lostRecords += 1;
       return;
+    }
+    // Reference-local preparation: only descriptors actually referenced by this
+    // record are required, and they must physically precede it in the SAME
+    // segment. The rotation decision comes FIRST and includes the prefix bytes;
+    // membership is then resolved against the segment that will actually
+    // receive the group, so a record can never land in a fresh segment without
+    // the descriptors it references.
+    if (!lifecycle) {
+      const candidates = prefix.filter(entry => !this.#segmentDescriptorKeys.has(entry.key));
+      const candidateBytes = candidates.reduce((n, entry) => n + entry.bytes, 0);
+      if (this.#activeBytes > 0 && this.#activeBytes + candidateBytes + bytes > this.#options.maxFileBytes) {
+        await this.#rotate("size");
+      }
+      if (this.#activeHandle === null) {
+        this.#lostRecords += 1;
+        return;
+      }
+      const needed = prefix.filter(entry => !this.#segmentDescriptorKeys.has(entry.key));
+      for (const entry of needed) {
+        if (!await this.#appendEncoded(entry.line, entry.bytes)) return;
+        this.#segmentDescriptorKeys.add(entry.key);
+      }
+      if (!await this.#appendEncoded(line, bytes)) return;
+      for (const key of descriptorKeys) this.#segmentDescriptorKeys.add(key);
+    } else {
+      if (this.#activeHandle === null) {
+        this.#lostRecords += 1;
+        return;
+      }
+      if (!await this.#appendEncoded(line, bytes)) return;
     }
     if (lifecycle || this.#rotationPending) return;
     // Storage pressure is detected from the last known directory occupancy
@@ -757,6 +793,7 @@ export class SessionJournal {
       this.#degrade("rotation-failed");
       await this.#saveIndex();
     }
+    this.#segmentDescriptorKeys.clear();
     this.#activeOrdinal = this.#allocateOrdinal();
     this.#activeBytes = 0;
     this.#activeRecords = 0;

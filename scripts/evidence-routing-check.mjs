@@ -23,7 +23,7 @@ const before = digest(readFileSync(controlPath));
 
 const env = {};
 for (const name of ["PATH", "Path", "SystemRoot", "SYSTEMROOT", "WINDIR", "COMSPEC",
-  "PATHEXT", "SYSTEMDRIVE", "TMPDIR", "TEMP", "TMP"]) {
+  "PATHEXT", "SYSTEMDRIVE", "TMPDIR", "TEMP", "TMP", "QE_CHECKPOINT"]) {
   if (process.env[name] !== undefined) env[name] = process.env[name];
 }
 delete env.QE_EVIDENCE_DIR;
@@ -44,7 +44,7 @@ assert.equal(after, before, "a later producer run changed prior-stage control by
 assert.notEqual(producerDir, controlDir, "every execution must allocate a new directory");
 assert.ok(existsSync(producerDir), "the producer evidence directory must exist");
 assert.ok(
-  relative(join(process.cwd(), "verification", "K03", "author"), producerDir).split(/[\\/]/u).length === 1,
+  relative(join(process.cwd(), "verification", process.env.QE_CHECKPOINT ?? "K03", "author"), producerDir).split(/[\\/]/u).length === 1,
   `the fresh run directory must be an author run below verification/K03/author (${producerDir})`,
 );
 const evidenceFiles = readdirSync(producerDir).sort();

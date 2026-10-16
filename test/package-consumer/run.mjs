@@ -131,6 +131,7 @@ assert.deepEqual(retired.diagnostics.recentEvents.map(record => record.event), [
   "quality.runtime.started",
   "quality.config.applied",
   "quality.runtime.retired",
+  "quality.journal.closed",
 ]);
 const afterInertStart = (await listOrEmpty(fixtureRoot)).filter(entry => !fixtureBefore.includes(entry));
 assert.ok(

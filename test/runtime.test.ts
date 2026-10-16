@@ -88,6 +88,7 @@ test("retirement is idempotent and reports shutdown without unsettled work", asy
       "quality.runtime.started",
       "quality.config.applied",
       "quality.runtime.retired",
+      "quality.journal.closed",
     ]);
     const retired = status.diagnostics.recentEvents[2];
     assert.equal(retired?.fields.data["cause"], "quit");

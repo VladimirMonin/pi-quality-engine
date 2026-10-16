@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { mkdtemp, mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { gunzipSync } from "node:zlib";
+import { readFileSync, readdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import test from "node:test";
@@ -125,14 +126,50 @@ function workInput(fixture: LoopFixture, text = "assess repetition"): void {
   send(fixture, { type: "operator-input", text, source: "interactive" });
 }
 
+interface LoopRecord {
+  eventId: string;
+  event: string;
+  fields: { data: Record<string, unknown> };
+}
+
+/**
+ * Full retained diagnostic stream: the bounded status suffix plus every
+ * physical journal record not already present, deduplicated by eventId. The
+ * 16-record status view is a presentation suffix, not a complete record set.
+ */
+function mergedRecords(fixture: LoopFixture): LoopRecord[] {
+  const byId = new Map<string, LoopRecord>();
+  for (const record of fixture.session.status(true).diagnostics.recentEvents) {
+    byId.set(record.eventId, record as unknown as LoopRecord);
+  }
+  const logs = join(fixture.agentDir, "quality", "logs");
+  try {
+    for (const name of readdirSync(logs)) {
+      if (!name.endsWith(".jsonl")) continue;
+      for (const line of readFileSync(join(logs, name), "utf8").split("\n")) {
+        if (line.trim() === "") continue;
+        try {
+          const record = JSON.parse(line) as LoopRecord;
+          if (!byId.has(record.eventId)) byId.set(record.eventId, record);
+        } catch {
+          // A torn tail line is not a record.
+        }
+      }
+    }
+  } catch {
+    // No physical journal in this fixture; the status suffix stands alone.
+  }
+  return [...byId.values()];
+}
+
 function eventNames(fixture: LoopFixture): string[] {
-  return fixture.session.status(true).diagnostics.recentEvents.map(record => record.event);
+  return mergedRecords(fixture).map(record => record.event);
 }
 
 function eventData(fixture: LoopFixture, event: string): Array<Record<string, unknown>> {
-  return fixture.session.status(true).diagnostics.recentEvents
+  return mergedRecords(fixture)
     .filter(record => record.event === event)
-    .map(record => record.fields.data as Record<string, unknown>);
+    .map(record => record.fields.data);
 }
 
 const countCheck = (count: number, extra: object = {}): object => ({
@@ -440,7 +477,14 @@ test("K02-T07 Standard history and journal exclude task and tool sentinels", asy
     const journalPath = join(fixture.agentDir, "quality", "logs");
     const journalFiles = (await readdir(journalPath)).filter(name => name.endsWith(".jsonl"));
     assert.equal(journalFiles.length, 1, "the active O1 segment is the only data file before rotation");
-    const journalText = await readFile(join(journalPath, journalFiles[0] as string), "utf8");
+    // The file sink is asynchronous; wait bounded for the projected records
+    // instead of assuming memory status and file bytes are synchronized.
+    let journalText = await readFile(join(journalPath, journalFiles[0] as string), "utf8");
+    const journalDeadline = Date.now() + 1_500;
+    while ((!journalText.includes("\"quality.check.settled\"") || !journalText.includes("quality.trigger.due")) && Date.now() < journalDeadline) {
+      await new Promise(resolvePromise => setTimeout(resolvePromise, 25));
+      journalText = await readFile(join(journalPath, journalFiles[0] as string), "utf8");
+    }
     for (const sentinel of [taskSentinel, errorSentinel]) {
       assert.equal(historyText.includes(sentinel), false, `history leaked ${sentinel}`);
       assert.equal(journalText.includes(sentinel), false, `journal leaked ${sentinel}`);
