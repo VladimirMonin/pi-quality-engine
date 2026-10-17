@@ -20,7 +20,7 @@ import { ControlCheckpoint } from "./checkpoint.js";
 import { ObservationStore } from "./observation.js";
 import type { ObservationSnapshot, ObservationSource } from "./observation.js";
 import { ComponentRegistry } from "./registry.js";
-import type { PackageInventoryEntry, ResolvedComponent } from "./registry.js";
+import type { ActionComponent, PackageInventoryEntry, ResolvedComponent } from "./registry.js";
 import { Scheduler, systemClock } from "./scheduling.js";
 import type { EngineClock, SchedulerDue, SchedulerHost, TriggerBinding } from "./scheduling.js";
 import {
@@ -39,8 +39,27 @@ import { ModelService, renderChatInput, renderClassifierState, finalizeRenderedI
 import type { ModelRegistryPort, ModelUsageSummary } from "./models.js";
 import { createPromptFilesProvider } from "./builtins/prompts.js";
 import { chatEvaluator, classifierEvaluator, piSessionEvaluator, repeatedToolsEvaluator } from "./builtins/evaluators.js";
-import { recordOnlyPolicy } from "./builtins/policies.js";
+import { engineeringPolicy, recordOnlyPolicy } from "./builtins/policies.js";
+import { feedbackAction } from "./builtins/actions.js";
+import {
+  actionCheckpointRecords,
+  actionRecordProjection,
+  beginEpisode,
+  issueIdentityOf,
+  newSessionFeedbackState,
+  nextActionId,
+  reconcileReceipt,
+  recordAction,
+  renderFeedbackNote,
+  restoreActionRecords,
+  unresolvedActionCount,
+} from "./feedback.js";
+import type { FeedbackActionRecord, SessionFeedbackState } from "./feedback.js";
 import type {
+  ActionContext,
+  ActionDefinition,
+  ActionProposal,
+  AdmittedAction,
   AssessmentFindingMetadata,
   AssessmentResources,
   AssessmentResult,
@@ -56,15 +75,19 @@ import type {
   ContextItem,
   ContextSnapshot,
   DiagnosticRecordV1,
+  EffectReceipt,
   EvaluationServices,
   EvidenceAccess,
   ExecutionState,
   Finding,
+  FeedbackRequest,
+  HostFeedback,
   JsonObject,
   LifecycleContext,
   Observation,
   PackageDefinition,
   PolicyDecision,
+  ReceiptState,
   RegistryQuery,
   ResolvedConfiguration,
   Result,
@@ -80,11 +103,32 @@ import type {
 } from "./contracts.js";
 
 export const ENGINE_NAME = "pi-quality-engine";
-export const ENGINE_VERSION = "0.3.0";
+export const ENGINE_VERSION = "0.4.0";
 export const ENGINE_BUILD_REF = `${ENGINE_NAME}@${ENGINE_VERSION}`;
 export const DATA_POLICY_REVISION = "o1-1";
 
+/** Mutable copy of an action proposal whose options carry the admitted rendered text. */
+type ActionProposalLike = Omit<ActionProposal, "options"> & { options: Record<string, unknown> };
+
+/** Honest fallback when no host feedback binding exists (unit/runtime-only runs). */
+function unavailableFeedbackHost(): HostFeedback {
+  return {
+    capabilities: () => new Set<string>(),
+    deliver: async request => ({
+      actionId: request.actionId,
+      state: "rejected",
+      destinationId: null,
+      evidenceIds: [],
+      error: { code: "core.feedback-unsupported", retryable: false },
+    }),
+    reconcile: async actionId => ({ actionId, state: "unknown", destinationId: null, evidenceIds: [] }),
+  };
+}
+
 const RUNTIME_OWNER_ID = "core.runtime";
+
+/** K06 durable intent bound: unresolved tombstones are never sliced away. */
+const FEEDBACK_INTENT_BOUND = 8;
 const CHECKPOINT_REVISION = "none";
 const RECENT_EVENTS_IN_STATUS = 16;
 
@@ -124,6 +168,24 @@ export interface EngineSessionInput {
   publishRegistryEndpoint?: (endpoint: ComponentRegistry["endpoint"]) => void;
   /** Same-session control state; the composition root preserves it across reload. */
   controlState?: SessionControlState;
+  /**
+   * K06: host feedback boundary supplied by the composition root. The engine
+   * admits actions and hands bounded requests to this owner; the adapter keeps
+   * the pending drafts until the real Pi boundary consumes them.
+   */
+  feedbackHost?: HostFeedback;
+  /**
+   * K06: the owning host's actual main abort state (the public extension signal).
+   * It is consulted at admission and at the effect facet so an abort that has
+   * already happened cannot be missed because no boundary handler ran yet.
+   */
+  hostAborted?: () => boolean;
+  /**
+   * K06: same-session feedback facts (issued action ids, receipt revisions and
+   * the per-episode message/follow-up allowance) preserved across generation
+   * reload by the composition root.
+   */
+  feedbackState?: SessionFeedbackState;
   /**
    * Same-session physical operation accounting shared across runtime
    * generations. A timed-out but physically unsettled evaluator keeps its
@@ -212,7 +274,7 @@ export interface EngineStatus {
   };
   configuration: {
     enabled: boolean;
-    mode: "observe";
+    mode: "observe" | "advise";
     revision: string;
     origins: readonly ConfigurationOrigin[];
     sources: ConfigurationSourceStatus;
@@ -224,7 +286,7 @@ export interface EngineStatus {
     autonomousModelCalls: "unavailable";
     checkExecution: "available" | "unavailable";
     modelEvaluation: "unavailable";
-    feedbackActions: "unavailable";
+    feedbackActions: "available" | "unavailable";
   };
   capabilities: EngineCapabilities;
   checks: {
@@ -271,7 +333,9 @@ const CAPABILITY_STATES: EngineCapabilities = {
   contextManifests: "available",
   deterministicEvaluation: "available",
   modelEvaluation: "unavailable",
-  feedbackActions: "unavailable",
+  // K06: the bounded feedback action route is implemented; an individual
+  // delivery still requires an explicit per-action grant.
+  feedbackActions: "available",
   sessionConfigurationPatch: "unavailable",
   statusExport: "unavailable",
 };
@@ -310,6 +374,8 @@ interface StatusParts {
   hostMode: string;
   resolved: ResolvedConfiguration;
   rejection: ConfigurationRejection | null;
+  /** K06: an explicit grant for the feedback action path, if one is applied. */
+  feedbackActions?: "available" | "unavailable";
   history: StatusHistoryView | null;
   checks: EngineStatus["checks"];
   observation: EngineStatus["observation"];
@@ -344,7 +410,7 @@ function buildStatus(parts: StatusParts): EngineStatus {
     },
     configuration: {
       enabled: parts.resolved.value.enabled,
-      mode: "observe",
+      mode: parts.resolved.value.mode,
       revision: parts.resolved.revision,
       origins: [...parts.resolved.origins],
       sources: { ...parts.resolved.sources },
@@ -360,7 +426,9 @@ function buildStatus(parts: StatusParts): EngineStatus {
       autonomousModelCalls: "unavailable",
       checkExecution: parts.resolved.value.enabled ? "available" : "unavailable",
       modelEvaluation: "unavailable",
-      feedbackActions: "unavailable",
+      // K06: the feedback action path is real but inert until an explicit grant
+      // admits it; the status never claims more than the applied configuration.
+      feedbackActions: parts.feedbackActions ?? "unavailable",
     },
     capabilities: { ...CAPABILITY_STATES },
     checks: parts.checks,
@@ -536,6 +604,9 @@ interface ActiveRun {
   reviewerSelection: { truncatedItems: number; omittedItems: number };
   /** 201-F4/203: bounded real reviewer tool-operation facts for owner observation. */
   reviewerOps: Array<{ operationId: string; toolRef: string; toolName: string; outcome: string; ordinal: number; bytes?: number; refs?: readonly string[] }>;
+  /** K06 freshness: the store facts captured when this run assembled its context. */
+  assembledEvidenceRevision: number;
+  assembledEpisodeId: string | null;
 }
 
 interface SettledAssessment {
@@ -742,6 +813,11 @@ export class EngineSession {
   #controlOwned = true;
   #paused = false;
   readonly #physicalState: SessionPhysicalState;
+  readonly #feedbackState: SessionFeedbackState;
+  /** Action id -> hash of the effects declaration pinned at registration acceptance. */
+  readonly #actionEffects = new Map<string, string>();
+  /** K06 F1: bytes of the text actually delivered for one action, for the descriptor. */
+  readonly #deliveredBytes = new Map<string, number>();
   readonly #runTimers = new Map<string, () => void>();
   readonly #generation = `gen-${generationSeed}${++generationCounter}`;
   readonly #startedAt: string;
@@ -754,6 +830,18 @@ export class EngineSession {
   readonly #checkStates = new Map<string, CheckRuntimeState>();
   readonly #pendingIntents = new Map<string, PendingIntent>();
   readonly #activeRuns = new Map<string, ActiveRun>();
+  /** K06: durable action intents restored from the protected state, pending reconciliation. */
+  #restoredActions: FeedbackActionRecord[] = [];
+  /**
+   * K06: standing intervention authority. An actual main abort or an operator
+   * Stop revokes it for the whole generation - not only for the queue of the
+   * moment - so no late action, stale courier or old scope can wake the primary.
+   */
+  #interventionRevoked: string | null = null;
+  /** K06: actual owned admission counts of the current/last settled run. */
+  #actionCounters = { admitted: 0, rejected: 0, uncertain: 0 };
+  /** K06 boundary: monotonic count of admitted checks, used to detect late work. */
+  #runSerial = 0;
   readonly #suppressedReasons = new Map<string, number>();
   #runCounter = 0;
   #intentCounter = 0;
@@ -826,6 +914,7 @@ export class EngineSession {
     this.#rejection = rejection;
     this.#clock = input.clock ?? systemClock();
     this.#physicalState = input.physicalState ?? new SessionPhysicalState();
+    this.#feedbackState = input.feedbackState ?? newSessionFeedbackState();
     this.#physicalState.setCurrent(this, () => this.notifyPhysicalCapacityReleased());
     this.#startedAt = nowIso(this.#clock);
     this.#acceptedIdentities.add(configuration.revision);
@@ -903,6 +992,21 @@ export class EngineSession {
   // Activation
   // -------------------------------------------------------------------------
 
+  /**
+   * K06 restart reconciliation: durable intents keep the same action identity
+   * and suppression set. A restart is not proof of delivery, so an unproven
+   * dispatch is reported as an explicit unknown for that same action instead of
+   * resending the note. This runs after the journal is open so the receipt is
+   * durable evidence rather than an in-memory-only record.
+   */
+  #reconcileRestoredActions(): void {
+    for (const restored of this.#restoredActions.splice(0, this.#restoredActions.length)) {
+      if (restored.state === "queued" || restored.state === "dispatched" || restored.state === "unknown") {
+        this.#reconcileActionReceipt({ actionId: restored.actionId, state: "unknown", destinationId: null, evidenceIds: [] }, null);
+      }
+    }
+  }
+
   async #openCheckpoint(): Promise<void> {
     const opened = await ControlCheckpoint.open({
       agentDir: this.#input.agentDir,
@@ -931,6 +1035,7 @@ export class EngineSession {
       authorizationRevision: this.#store.view().scope.authorizationRevision,
     });
     this.#controlRevision = opened.checkpoint.revision;
+    this.#restoredActions = restoreActionRecords(this.#feedbackState, opened.actions);
     this.#modelService?.restore(opened.financial);
     if (opened.degraded) {
       this.#emit({
@@ -1148,6 +1253,7 @@ export class EngineSession {
   async #activate(): Promise<void> {
     await this.#openCheckpoint();
     await this.#openJournal();
+    this.#reconcileRestoredActions();
     this.#gitEvidence.captureBaseline();
     this.#emitStartupRecords();
     if (!this.#configuration.value.enabled) {
@@ -1196,6 +1302,8 @@ export class EngineSession {
         classifierEvaluator,
         piSessionEvaluator,
         recordOnlyPolicy,
+        engineeringPolicy,
+        feedbackAction,
       ],
       resources: {
         "builtin:repetition-v1.md": { uri: "builtin:repetition-v1.md" },
@@ -1203,6 +1311,7 @@ export class EngineSession {
         "builtin:progress-v1.questions.json": { uri: "builtin:progress-v1.questions.json" },
         "builtin:engineering-v1.md": { uri: "builtin:engineering-v1.md" },
         "builtin:evaluation-v1.schema.json": { uri: "builtin:evaluation-v1.schema.json" },
+        "builtin:feedback-v1.md": { uri: "builtin:feedback-v1.md" },
       },
     };
     const registered = this.#registry.register(builtins);
@@ -1222,6 +1331,7 @@ export class EngineSession {
       },
     });
     this.#activateChecks();
+    this.#pinApprovedActions();
     this.#activationReady = true;
     this.#input.publishRegistryEndpoint?.(this.#registry.endpoint);
   }
@@ -1506,9 +1616,71 @@ export class EngineSession {
     this.#scheduler.observe(this.#store.view(), this.#lastAcceptedObservation());
   }
 
+  /** K06: whether standing intervention authority is still live for this generation. */
+  interventionReady(): boolean {
+    if (this.#state !== "active" || this.#interventionRevoked !== null) return false;
+    if (this.#input.hostAborted?.() === true) return false;
+    const view = this.#store.view();
+    return !view.operatorStopped && !view.observerPaused;
+  }
+
+  /** K06: revoke standing intervention authority for the rest of this generation. */
+  revokeIntervention(cause: string): void {
+    if (this.#interventionRevoked !== null) return;
+    this.#interventionRevoked = cause.slice(0, 64);
+    for (const run of this.#activeRuns.values()) run.cancelled = true;
+    void this.#commitControl();
+  }
+
+  /** K06: whether an admitted scope still matches the current observed scope. */
+  scopeCurrent(scope: Scope): boolean {
+    if (!this.interventionReady()) return false;
+    const view = this.#store.view();
+    if (view.scope.episodeId !== scope.episodeId) return false;
+    if (view.scope.authorizationRevision !== scope.authorizationRevision) return false;
+    if (this.#generation !== scope.runtimeGeneration) return false;
+    return true;
+  }
+
+  /** K06: the configured bounded wait the host may use inside a boundary callback. */
+  get feedbackBoundaryWaitMs(): number {
+    return this.#configuration.value.runtime.boundaryWaitMs;
+  }
+
+  /**
+   * K06 boundary readiness: waits, bounded, until no check admitted at or before
+   * this call remains in flight. The wait is on real owned work only and never
+   * extends past the configured bound; a zero bound consumes already-ready work.
+   */
+  async awaitBoundaryReady(timeoutMs: number): Promise<{ quiescent: boolean; waitedMs: number }> {
+    const started = Date.now();
+    const bound = Number.isFinite(timeoutMs) ? Math.max(0, Math.min(timeoutMs, 30_000)) : 0;
+    const deadline = started + bound;
+    const serialAtEntry = this.#runSerial;
+    let quietPolls = 0;
+    for (;;) {
+      const quiescent = this.#activeRuns.size === 0 && this.#runSerial === serialAtEntry;
+      if (quiescent) {
+        quietPolls += 1;
+        // Two stable polls so a check admitted in the same turn is observed
+        // rather than missed by a single lucky snapshot.
+        if (quietPolls >= 2) return { quiescent: true, waitedMs: Date.now() - started };
+      } else {
+        quietPolls = 0;
+      }
+      if (Date.now() >= deadline) return { quiescent: quiescent && quietPolls >= 1, waitedMs: Date.now() - started };
+      await new Promise<void>(resolve => {
+        const timer = setTimeout(resolve, 10);
+        if (typeof timer === "object" && timer !== null && "unref" in timer) timer.unref();
+      });
+    }
+  }
+
   /** Explicit operator action through the Pi command surface. */
   requestOperatorStop(): void {
     if (this.#state !== "active") return;
+    // Stop is a standing revocation of intervention authority, not just a queue drain.
+    this.#interventionRevoked ??= "operator-stop";
     const previousWork = this.#store.view().work;
     this.#store.markOperatorStopped();
     // Sticky per-run cancellation on the actual command surface too: a run
@@ -1582,6 +1754,10 @@ export class EngineSession {
     await this.#commitControl();
     if (destinationChanged) await this.#reloadJournal();
     this.#rebindChecks();
+    // An accepted configuration is the operator's approval boundary: bind the
+    // declarations of all granted, registered actions again (explicit reapproval
+    // for a contribution installed after the previous approval).
+    this.#pinApprovedActions();
     this.#emit({
       event: "quality.config.applied",
       level: "info",
@@ -1652,6 +1828,7 @@ export class EngineSession {
       configurationRevision: this.#configuration.revision,
       financial: this.#modelService?.financialSnapshot() ?? null,
       financialUncertain: this.#receiptPersistenceUncertain,
+      actions: actionCheckpointRecords(this.#feedbackState),
     });
     const outcome = await this.#control.commit();
     this.#controlRevision = outcome.revision;
@@ -1981,13 +2158,18 @@ export class EngineSession {
       reviewerEvidence: { refs: new Set<string>(), paths: new Set<string>(), acquisitions: [] },
       reviewerSelection: { truncatedItems: 0, omittedItems: 0 },
       reviewerOps: [],
+      assembledEvidenceRevision: this.#store.view().counters.primaryEvidenceRevision,
+      assembledEpisodeId: this.#store.view().scope.episodeId,
     };
+    beginEpisode(this.#feedbackState, this.#store.view().scope.episodeId);
+    this.#actionCounters = { admitted: 0, rejected: 0, uncertain: 0 };
     this.#physicalState.reserve(this, this.#isReviewerCheck(checkId));
     const timeoutCancel = this.#clock.setTimer(run.configuredTimeoutMs, () => this.#timeoutRun(run.runId));
     this.#runTimers.set(run.runId, timeoutCancel);
     this.#acceptIdentity(runId);
     this.#acceptIdentity(pending.intentId);
     this.#activeRuns.set(checkId, run);
+    this.#runSerial += 1;
     const state = this.#checkStates.get(checkId);
     if (state !== undefined) state.lastAdmittedMonoMs = run.startedMonoMs;
     this.#emit({
@@ -2002,7 +2184,7 @@ export class EngineSession {
         policyId: check.policy,
         configuredTimeoutMs: run.configuredTimeoutMs,
         queueWaitMs: Math.max(0, run.startedMonoMs - Date.parse(pending.firstDueAt)),
-        mode: "observe",
+        mode: check.mode === "inherit" ? this.#configuration.value.mode : check.mode,
       },
       correlation: { runId: run.runId, operationId: pending.intentId },
     });
@@ -2330,14 +2512,19 @@ export class EngineSession {
       return settled;
     }
     let decision: PolicyDecision;
+    // K06: effective mode and scoped freshness are runtime facts supplied to the pure policy.
+    const effectiveMode: "observe" | "advise" = check.mode === "inherit" ? this.#configuration.value.mode : check.mode;
+    const policyView = this.#store.view();
+    const freshness = this.#freshnessOf(run, policyView, assembled);
+    const previouslyDelivered = this.#previouslyDeliveredFindingIds();
     try {
       decision = resolvedPolicy.value.definition.decide(policyProfile.options, {
         run: run.runRef,
         result: settled.result,
-        view: this.#store.view(),
-        freshness: "current",
-        previouslyDeliveredFindingIds: [],
-        mode: "observe",
+        view: policyView,
+        freshness,
+        previouslyDeliveredFindingIds: previouslyDelivered,
+        mode: effectiveMode,
       });
     } catch {
       this.#emit({
@@ -2377,7 +2564,528 @@ export class EngineSession {
       },
       correlation: { runId: run.runId },
     });
+    // K06: in observe mode the intended decision is computed and recorded but no
+    // action is admitted or dispatched. Runtime admission revalidates every
+    // proposal against mode, grants, effects revision, Stop/pause, freshness,
+    // duplicate identity and the finite episode allowances before any effect.
+    if (effectiveMode === "advise" && decision.outcome === "propose" && Array.isArray(decision.actions)) {
+      this.#dispatchProposals(run, check, settled, decision, assembled, freshness);
+    }
     return settled;
+  }
+
+  #freshnessOf(run: ActiveRun, view: ReturnType<ObservationStore["view"]>, assembled: AssembledContext): "current" | "stale" | "unknown" {
+    if (view.operatorStopped || run.cancelled || this.#interventionRevoked !== null) return "stale";
+    if (view.scope.episodeId !== run.assembledEpisodeId) return "stale";
+    if (view.scope.authorizationRevision !== run.runRef.scope.authorizationRevision) return "stale";
+    // A relevant material change is decided by the cited dependencies themselves
+    // (#materialFreshness), not by any global primary-evidence counter: an
+    // unrelated counted event must not invalidate current, useful advice.
+    if (assembled.issueCodes.length > 0 || assembled.snapshot.coverage.state !== "complete") return "unknown";
+    return "current";
+  }
+
+  /**
+   * K06 B.04: recheck the issued material dependencies of the proposed findings
+   * through the owning evidence reader immediately before the effect. A cited
+   * source whose content fingerprint moved is stale; one that cannot be read
+   * again is unknown. Uncited material is never re-read.
+   */
+  async #materialFreshness(assembled: AssembledContext, citedRefs: readonly string[]): Promise<"current" | "stale" | "unknown"> {
+    const cited = new Set(citedRefs);
+    const material = new Map<string, string>();
+    for (const dependency of assembled.snapshot.dependencies) {
+      if (!cited.has(dependency.evidenceId)) continue;
+      if (dependency.check !== "content-fingerprint") continue;
+      const item = assembled.snapshot.items.find(entry => entry.id === dependency.evidenceId);
+      if (item === undefined) continue;
+      // Materialised source items are minted as `source:<sourceId>:<revision>`;
+      // the provider-facing provenance names the provider, not the declared
+      // source, so the owning declared source id comes from the item identity.
+      const declared = /^source:([^:]+):/u.exec(item.id)?.[1];
+      const sourceId = declared ?? item.provenance.sourceId;
+      if (typeof sourceId !== "string" || sourceId.length === 0) continue;
+      material.set(sourceId, dependency.revision);
+    }
+    if (material.size === 0) return "current";
+    const controller = new AbortController();
+    try {
+      let index = 0;
+      for (const [sourceId, revision] of material) {
+        index += 1;
+        if (index > 8) break;
+        const batch = await this.#sourceEvidence.readSource(sourceId, controller.signal);
+        if (!batch.ok) return "unknown";
+        const current = batch.value.dependencies.find(entry => entry.check === "content-fingerprint");
+        if (current === undefined) return "unknown";
+        if (current.revision !== revision) return "stale";
+      }
+    } catch {
+      return "unknown";
+    }
+    return "current";
+  }
+
+  /**
+   * K06 B.10: concrete target provenance for one finding. References resolve
+   * through the assembled items' owned provenance (source + target), so two
+   * distinct opaque targets never collapse into one issue identity, and a
+   * location that cannot be resolved is not silently merged with another.
+   */
+  #issueTargets(assembled: AssembledContext, finding: Finding): string[] {
+    const targets: string[] = [];
+    for (const ref of [...finding.evidenceIds, ...finding.affectedItems]) {
+      const item = assembled.snapshot.items.find(entry => entry.id === ref);
+      if (item === undefined) continue;
+      // Only real material targets carry a location identity. Derived
+      // observation items (history windows) are volatile per-run views of the
+      // same work, not distinct targets, and must not manufacture a new issue.
+      if (item.provenance.selection.kind === "derived") continue;
+      const provenance = item.provenance;
+      // Location only: the content revision is volatility, not identity, so the
+      // same defect at the same target dedupes across runs while a changed
+      // revision is handled by the material freshness recheck.
+      targets.push(`${provenance.sourceId}|${provenance.uri}`);
+    }
+    return targets;
+  }
+
+  /** K06: the runtime-owned host facet an admitted action may call. */
+  #feedbackFacet(run: ActiveRun): HostFeedback {
+    const raw = this.#input.feedbackHost ?? unavailableFeedbackHost();
+    return {
+      capabilities: () => raw.capabilities(),
+      deliver: async (request, signal) => {
+        const reason = this.#interventionBlockReason(run);
+        if (reason !== null) {
+          return { actionId: request.actionId, state: "cancelled", destinationId: null, evidenceIds: [], error: { code: reason, retryable: false } };
+        }
+        // 219-F1: the actual final request text is what the receiver would get,
+        // so the granted UTF-8 bound is enforced here, before any receiver call.
+        // A contributed action cannot deliver more than the operator granted
+        // merely because its planned proposal text measured smaller.
+        const finalText = typeof request.text === "string" ? request.text : "";
+        const finalBytes = Buffer.byteLength(finalText, "utf8");
+        const grantedBytes = this.#configuration.value.permissions.maxFeedbackBytes;
+        if (finalBytes > grantedBytes) {
+          return {
+            actionId: request.actionId,
+            state: "rejected",
+            destinationId: null,
+            evidenceIds: [],
+            error: { code: "core.feedback-bytes-exceeded", retryable: false },
+          };
+        }
+        const receipt = await raw.deliver(request, signal);
+        // The truthful descriptor uses the bytes that were actually delivered.
+        if (receipt.state !== "rejected" && receipt.state !== "cancelled") {
+          this.#deliveredBytes.set(request.actionId, finalBytes);
+        }
+        return receipt;
+      },
+      reconcile: (actionId, signal) => raw.reconcile(actionId, signal),
+    };
+  }
+
+  /**
+   * 219-F3: bind each granted action's accepted effect declaration at the
+   * configuration/operator approval boundary (activation and each accepted
+   * reload). Actions whose component is not registered at approval stay
+   * unapproved until the next approval - a later registration cannot approve
+   * itself through its first proposal.
+   */
+  #pinApprovedActions(): void {
+    const granted = this.#configuration.value.permissions.actions;
+    for (const actionId of granted.slice(0, 32)) {
+      const resolved = this.#registry.resolve(actionId, {});
+      if (!resolved.ok || resolved.value.kind !== "action") continue;
+      const effectKinds = [...resolved.value.definition.effects];
+      this.#actionEffects.set(
+        actionId,
+        createHash("sha256").update(JSON.stringify(effectKinds), "utf8").digest("hex").slice(0, 16),
+      );
+    }
+  }
+
+  #interventionBlockReason(run: ActiveRun): string | null {
+    if (this.#input.hostAborted?.() === true) this.#interventionRevoked ??= "main-abort-signal";
+    if (!this.interventionReady()) return "core.action-revoked";
+    if (run.cancelled) return "core.action-revoked";
+    const view = this.#store.view();
+    if (view.scope.episodeId !== run.assembledEpisodeId) return "core.dependency-stale";
+    if (view.scope.authorizationRevision !== run.runRef.scope.authorizationRevision) return "core.dependency-stale";
+    return null;
+  }
+
+  #previouslyDeliveredFindingIds(): string[] {
+    const ids = new Set<string>();
+    for (const record of this.#feedbackState.actions.values()) {
+      for (const ref of record.findingRefs) ids.add(ref);
+    }
+    return [...ids].slice(0, 32);
+  }
+
+  #feedbackTemplateText(reference: string): string {
+    if (!/^builtin:[a-z0-9][a-z0-9.-]*\.md$/u.test(reference)) return "";
+    const name = reference.slice("builtin:".length);
+    try {
+      return readFileSync(join(this.#input.resourcesDir, "prompts", name), "utf8").slice(0, 8_192);
+    } catch {
+      return "";
+    }
+  }
+
+  #renderFeedback(run: ActiveRun, check: CheckDefinition, settled: SettledAssessment, proposal: ActionProposalLike, maxBytes: number, actionId: string): { text: string; bytes: number } {
+    const reference = typeof proposal.options["feedbackTemplate"] === "string" ? proposal.options["feedbackTemplate"] as string : "builtin:feedback-v1";
+    const findings = proposal.findingIds
+      .map(id => settled.result.findings.find(finding => finding.id === id))
+      .filter((finding): finding is Finding => finding !== undefined);
+    const rendered = renderFeedbackNote({
+      actionId,
+      template: this.#feedbackTemplateText(reference),
+      checkId: run.checkId,
+      coverage: settled.result.coverage.state,
+      findings,
+      omitted: Math.max(0, settled.result.findings.length - findings.length),
+      maxBytes,
+    });
+    return { text: rendered.text, bytes: rendered.bytes };
+  }
+
+  /**
+   * K06 runtime admission. Every proposal is revalidated here; a rejected action
+   * remains visible as a bounded admission record and never reaches the host.
+   */
+  #dispatchProposals(run: ActiveRun, check: CheckDefinition, settled: SettledAssessment, decision: PolicyDecision, assembled: AssembledContext, freshness: "current" | "stale" | "unknown"): void {
+    const view = this.#store.view();
+    const permissions = this.#configuration.value.permissions;
+    const runtimeSettings = this.#configuration.value.runtime;
+    for (const proposal of decision.actions.slice(0, 8)) {
+      const reject = (componentId: string, effectKinds: readonly string[], reasonCode: string): void => {
+        this.#emit({
+          event: "quality.action.admission",
+          level: "warn",
+          reasonCodes: [reasonCode],
+          data: {
+            actionId: proposal.localId,
+            componentId,
+            outcome: "rejected",
+            effectKinds: [...effectKinds].slice(0, 8),
+            findingRefs: proposal.findingIds.slice(0, 16),
+            currentAuthority: view.scope.authorizationRevision,
+            freshness,
+            reasonCodes: [reasonCode],
+          } as JsonObject,
+          correlation: { runId: run.runId },
+        });
+        this.#actionCounters.rejected += 1;
+      };
+      const resolvedAction = this.#registry.resolve(proposal.action, proposal.options);
+      if (!resolvedAction.ok || resolvedAction.value.kind !== "action") {
+        reject(proposal.action, [], "core.action-unavailable");
+        continue;
+      }
+      const action = resolvedAction.value;
+      const effectKinds = [...action.definition.effects];
+      const effectsHash = createHash("sha256").update(JSON.stringify(effectKinds), "utf8").digest("hex").slice(0, 16);
+      // 219-F3: the accepted declaration is bound at configuration/operator
+      // approval. A first proposal never establishes its own baseline, so a
+      // component that appeared (or was widened) after approval stays inert
+      // until the operator reapproves the configuration.
+      const pinned = this.#actionEffects.get(proposal.action);
+      if (pinned === undefined) {
+        reject(proposal.action, effectKinds, "core.action-effects-unapproved");
+        continue;
+      }
+      if (pinned !== effectsHash) {
+        // A declaration that changed after approval requires reapproval.
+        reject(proposal.action, effectKinds, "core.action-effects-changed");
+        continue;
+      }
+      if (!permissions.actions.includes(proposal.action)) {
+        reject(proposal.action, effectKinds, "core.action-ungranted");
+        continue;
+      }
+      if (this.#state !== "active" || run.cancelled || view.operatorStopped) {
+        reject(proposal.action, effectKinds, "core.action-revoked");
+        continue;
+      }
+      if (view.observerPaused) {
+        reject(proposal.action, effectKinds, "core.observer-paused");
+        continue;
+      }
+      if (freshness !== "current") {
+        reject(proposal.action, effectKinds, freshness === "stale" ? "core.dependency-stale" : "core.dependency-unknown");
+        continue;
+      }
+      const proposedFindings = proposal.findingIds
+        .map(id => settled.result.findings.find(finding => finding.id === id))
+        .filter((finding): finding is Finding => finding !== undefined);
+      const issues = proposedFindings.map(finding => issueIdentityOf(finding, this.#issueTargets(assembled, finding)));
+      if (issues.length > 0 && issues.every(issue => this.#feedbackState.suppressedIssues.has(issue))) {
+        reject(proposal.action, effectKinds, "core.finding-already-delivered");
+        continue;
+      }
+      const delivery: "steer" | "follow-up" = proposal.options["delivery"] === "follow-up" ? "follow-up" : "steer";
+      const maxFeedback = permissions.maxFeedbackBytes;
+      if (delivery === "steer") {
+        if (this.#feedbackState.feedbackCount >= runtimeSettings.maxFeedbackPerEpisode) {
+          reject(proposal.action, effectKinds, "core.feedback-limit");
+          continue;
+        }
+      } else {
+        const granted = proposal.options["allowIdleStart"] === true && permissions.allowIdleContinuation;
+        if (!granted) {
+          reject(proposal.action, effectKinds, "core.idle-continuation-not-granted");
+          continue;
+        }
+        if (view.outstandingWork !== "supported") {
+          reject(proposal.action, effectKinds, "core.no-unfinished-work");
+          continue;
+        }
+        if (view.execution !== "idle") {
+          reject(proposal.action, effectKinds, "core.primary-not-idle");
+          continue;
+        }
+        if (this.#feedbackState.followUpCount >= runtimeSettings.maxAutonomousFollowUpsPerEpisode) {
+          reject(proposal.action, effectKinds, "core.follow-up-limit");
+          continue;
+        }
+      }
+      if (unresolvedActionCount(this.#feedbackState) >= FEEDBACK_INTENT_BOUND) {
+        // Bounded durable intent: earlier unresolved tombstones are never sliced
+        // away to make room; dependent admission is refused instead.
+        reject(proposal.action, effectKinds, "core.action-intent-capacity");
+        continue;
+      }
+      // Atomic reservation BEFORE any await: the action identity, its issue
+      // suppression and the per-episode allowance are owned here, so two
+      // equivalent proposals cannot both observe a free one-message budget.
+      const actionId = nextActionId(this.#feedbackState);
+      const renderedText = typeof proposal.options["text"] === "string"
+        ? proposal.options["text"] as string
+        : effectKinds.includes("primary.feedback")
+          ? this.#renderFeedback(run, check, settled, proposal, maxFeedback, actionId).text
+          : null;
+      if (renderedText === null || renderedText.trim().length === 0) {
+        reject(proposal.action, effectKinds, "core.action-render-missing");
+        continue;
+      }
+      const text = renderedText;
+      const textBytes = Buffer.byteLength(text, "utf8");
+      if (textBytes > maxFeedback) {
+        reject(proposal.action, effectKinds, "core.feedback-bytes-exceeded");
+        continue;
+      }
+      const reservation: FeedbackActionRecord = {
+        actionId,
+        issueIds: [...issues],
+        findingRefs: proposal.findingIds.slice(0, 16),
+        delivery,
+        state: "queued",
+        receiptRevision: 0,
+        destinationId: null,
+        evidenceIds: [],
+        errorCode: null,
+        textBytes,
+        checkpointRevision: this.#controlRevision,
+        createdAt: nowIso(this.#clock),
+      };
+      recordAction(this.#feedbackState, reservation);
+      if (delivery === "steer") this.#feedbackState.feedbackCount += 1;
+      else this.#feedbackState.followUpCount += 1;
+      for (const issue of issues) this.#feedbackState.suppressedIssues.add(issue);
+      this.#actionCounters.admitted += 1;
+      this.#emit({
+        event: "quality.action.admission",
+        level: "info",
+        reasonCodes: [],
+        data: {
+          actionId,
+          componentId: proposal.action,
+          outcome: "admitted",
+          effectKinds,
+          findingRefs: proposal.findingIds.slice(0, 16),
+          currentAuthority: view.scope.authorizationRevision,
+          freshness,
+          reasonCodes: [],
+        } as JsonObject,
+        correlation: { runId: run.runId },
+      });
+      const citedRefs = [...new Set(proposedFindings.flatMap(finding => [...finding.evidenceIds, ...finding.affectedItems]))].slice(0, 32);
+      void this.#runAdmittedAction(run, actionId, action as ActionComponent, { ...proposal, options: { ...proposal.options, text, bytes: textBytes, delivery } }, effectKinds, delivery, textBytes, issues, assembled, citedRefs);
+    }
+  }
+
+  async #runAdmittedAction(
+    run: ActiveRun,
+    actionId: string,
+    action: ActionComponent,
+    proposal: ActionProposalLike,
+    effectKinds: readonly string[],
+    delivery: "steer" | "follow-up",
+    textBytes: number,
+    issues: readonly string[],
+    assembled: AssembledContext,
+    citedRefs: readonly string[],
+  ): Promise<void> {
+    // The admission-time reservation is the durable intent; commit it BEFORE the
+    // observable effect. A checkpoint failure suspends the dependent effect
+    // instead of dispatching it blindly, and the spent allowance is not refunded.
+    const intent = this.#feedbackState.actions.get(actionId) as FeedbackActionRecord;
+    const persisted = await this.#commitControl();
+    if (!persisted) {
+      this.#emit({
+        event: "quality.action.admission",
+        level: "warn",
+        reasonCodes: ["core.action-intent-unsafe"],
+        data: {
+          actionId,
+          componentId: proposal.action,
+          outcome: "rejected",
+          effectKinds: [...effectKinds].slice(0, 8),
+          findingRefs: proposal.findingIds.slice(0, 16),
+          currentAuthority: run.runRef.scope.authorizationRevision,
+          freshness: "current",
+          reasonCodes: ["core.action-intent-unsafe"],
+        } as JsonObject,
+        correlation: { runId: run.runId },
+      });
+      this.#reconcileActionReceipt(
+        { actionId, state: "cancelled", destinationId: null, evidenceIds: [], error: { code: "core.action-intent-unsafe", retryable: false } },
+        run.runId,
+      );
+      this.#actionCounters.uncertain += 1;
+      return;
+    }
+    // The intent is durable. Revalidate current authority and the cited material
+    // before the observable effect; a stale callback must not target whatever
+    // global session now exists.
+    const blocked = this.#interventionBlockReason(run);
+    if (blocked !== null) {
+      this.#reconcileActionReceipt(
+        { actionId, state: "cancelled", destinationId: null, evidenceIds: [], error: { code: blocked, retryable: false } },
+        run.runId,
+      );
+      return;
+    }
+    const material = await this.#materialFreshness(assembled, citedRefs);
+    if (material !== "current") {
+      this.#reconcileActionReceipt(
+        {
+          actionId,
+          state: "cancelled",
+          destinationId: null,
+          evidenceIds: [],
+          error: { code: material === "stale" ? "core.dependency-stale" : "core.dependency-unknown", retryable: false },
+        },
+        run.runId,
+      );
+      return;
+    }
+    // The durable intent is committed; the in-memory record advances to the
+    // effectful state and the next control commit persists that revision.
+    const checkpointRevision = String(this.#controlRevision);
+    const record: FeedbackActionRecord = { ...intent, state: "dispatched", receiptRevision: 1, checkpointRevision: this.#controlRevision };
+    this.#feedbackState.actions.set(actionId, record);
+    this.#feedbackState.revision += 1;
+    const admitted: AdmittedAction = {
+      actionId,
+      run: run.runRef,
+      proposal: proposal as AdmittedAction["proposal"],
+      authorizationRevision: run.runRef.scope.authorizationRevision,
+    };
+    const host = this.#feedbackFacet(run);
+    const context: ActionContext = {
+      ...action.lifecycle(),
+      host,
+      // K07 owns managed escalation; until then the honest result is unavailable,
+      // never a fabricated queued expert run.
+      requestCheck: async () => ({ ok: false, error: { code: "core.capability-unavailable", retryable: false } }),
+    };
+    let receipt: EffectReceipt;
+    try {
+      receipt = await action.definition.execute(admitted, context);
+    } catch {
+      // A thrown execute is not proof of non-delivery: the receiver may already
+      // have accepted the note. Report the truthful uncertainty instead of a
+      // terminal failure that would block stronger later evidence.
+      receipt = { actionId, state: "unknown", destinationId: null, evidenceIds: [], error: { code: "core.action-execution-uncertain", retryable: false } };
+      this.#actionCounters.uncertain += 1;
+    }
+    const deliveredBytes = this.#deliveredBytes.get(actionId);
+    this.#deliveredBytes.delete(actionId);
+    if (deliveredBytes !== undefined) {
+      // Something was really handed over: report the dispatch with the bytes the
+      // receiver actually received (a refused request is never reported as one).
+      const record0 = this.#feedbackState.actions.get(actionId);
+      this.#feedbackState.actions.set(actionId, {
+        ...(record0 ?? record),
+        checkpointRevision: this.#controlRevision,
+      });
+      this.#emit({
+        event: "quality.action.dispatched",
+        level: "info",
+        reasonCodes: [],
+        data: {
+          actionId,
+          componentId: proposal.action,
+          effectKinds: [...effectKinds].slice(0, 8),
+          destinationRef: `pi.primary.${delivery === "follow-up" ? "before-settle" : "turn-end"}`,
+          bodyDescriptor: `feedback-bytes-${deliveredBytes}`,
+          checkpointRevision,
+        } as JsonObject,
+        correlation: { runId: run.runId },
+      });
+    }
+    this.#reconcileActionReceipt(receipt, run.runId);
+  }
+
+  #reconcileActionReceipt(receipt: EffectReceipt, runId: string | null): void {
+    const updated = reconcileReceipt(this.#feedbackState, receipt);
+    if (updated === null) return;
+    this.#emit({
+      event: "quality.action.receipt",
+      level: updated.state === "failed" || updated.state === "rejected" ? "warn" : "info",
+      reasonCodes: updated.errorCode === null ? [] : [updated.errorCode],
+      data: {
+        actionId: updated.actionId,
+        receiptRevision: updated.receiptRevision,
+        state: updated.state,
+        destinationRef: updated.destinationId,
+        evidenceRefs: [...updated.evidenceIds].slice(0, 16),
+        errorCode: updated.errorCode,
+      } as JsonObject,
+      ...(runId === null ? {} : { correlation: { runId } }),
+    });
+  }
+
+  /** K06: the adapter reports the strongest actual host feedback receipt it observed. */
+  noteHostFeedbackReceipt(receipt: EffectReceipt): void {
+    if (this.#state !== "active") return;
+    this.#reconcileActionReceipt(receipt, null);
+  }
+
+  /**
+   * K06: bounded feedback-observation record. An acknowledgment, dispute or
+   * behavior change is recorded as observed behavior; it never clears the
+   * underlying obligation by itself.
+   */
+  noteFeedbackObserved(observation: { actionId: string; classification: string; method: string; evidenceIds?: readonly string[]; coverage?: string }): void {
+    if (this.#state !== "active") return;
+    this.#emit({
+      event: "quality.feedback.observed",
+      level: "info",
+      reasonCodes: [],
+      data: {
+        actionId: observation.actionId,
+        classification: observation.classification,
+        method: observation.method,
+        evidenceRefs: [...(observation.evidenceIds ?? [])].slice(0, 16),
+        assessedAt: nowIso(this.#clock),
+        coverage: observation.coverage ?? "unknown",
+      } as JsonObject,
+    });
   }
 
   #validateAssessment(raw: unknown, run: ActiveRun, assembled: AssembledContext): SettledAssessment {
@@ -2654,7 +3362,7 @@ export class EngineSession {
         conclusion: "undetermined",
         coverage: "insufficient",
         findingCount: 0,
-        actionCount: 0,
+        actionCount: this.#actionCounters.admitted + this.#actionCounters.uncertain,
         usageAttemptRefs: [],
         accountingCoverage: "complete",
         durationMs: run.configuredTimeoutMs,
@@ -2728,7 +3436,7 @@ export class EngineSession {
         conclusion: settled.result.conclusion,
         coverage: settled.result.coverage.state,
         findingCount: settled.findingCount,
-        actionCount: 0,
+        actionCount: this.#actionCounters.admitted + this.#actionCounters.uncertain,
         usageAttemptRefs: settled.result.usageAttemptIds.slice(0, 16).map(id => boundedId(id, "attempt-ref-unavailable")),
         accountingCoverage: "complete",
         durationMs,
@@ -3991,6 +4699,7 @@ Your previous response was not valid structured output. Return only valid JSON m
       hostMode: this.#input.hostMode,
       resolved: this.#configuration,
       rejection: this.#rejection,
+      feedbackActions: this.#configuration.value.permissions.actions.includes("core.feedback") ? "available" : "unavailable",
       history: {
         records: this.#history.records(),
         recordCount: this.#history.recordCount,

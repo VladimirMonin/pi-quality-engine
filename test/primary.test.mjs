@@ -118,7 +118,10 @@ test("the real primary stays usable through engine retirement with zero owned di
     try {
       assert.deepEqual(resolve(runner.getExtensionPaths()[0] ?? ""), extensionEntry);
       assert.ok(runner.getCommand("quality"));
-      assert.equal(runner.hasHandlers("before_provider_request"), false, "the engine registers no provider hooks");
+      // K06 observes the actual request payload read-only for truthful inclusion
+      // receipts; it publishes nothing, replaces no payload and registers no
+      // other provider hook (asserted below for the remaining provider events).
+      assert.equal(runner.hasHandlers("before_provider_request"), true, "the engine observes the actual request payload read-only");
 
       await session.bindExtensions({ mode: "print", uiContext });
       assert.equal(dispatchCounter.total, 0, "session start and engine binding dispatch no provider request");

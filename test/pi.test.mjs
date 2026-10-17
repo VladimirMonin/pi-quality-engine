@@ -149,11 +149,19 @@ test("the built package loads in real Pi and starts then retires an inert runtim
     assert.equal(resolve(extension.resolvedPath), extensionEntry);
     assert.equal(extension.tools.size, 0);
     assert.deepEqual([...extension.commands.keys()], ["quality"]);
+    // K06 adds the public boundary handlers: the note courier consumes ready
+    // work at turn_end/agent_before_settle, injects into the next run at
+    // before_agent_start and observes real inclusion at context_with_system.
     assert.deepEqual([...extension.handlers.keys()].sort(), [
+      "agent_before_settle", "agent_settled", "before_agent_start", "before_provider_request",
       "input", "session_shutdown", "session_start", "tool_execution_end",
       "tool_execution_start", "turn_end",
     ]);
-    for (const providerEvent of ["before_provider_request", "before_provider_headers", "after_provider_response", "provider_stream_event"]) {
+    // K06 observes the actual request payload read-only for truthful inclusion
+    // receipts; it publishes nothing and replaces no payload. Headers, provider
+    // responses and the provider stream stay untouched.
+    assert.equal(extension.handlers.has("before_provider_request"), true);
+    for (const providerEvent of ["before_provider_headers", "after_provider_response", "provider_stream_event"]) {
       assert.equal(extension.handlers.has(providerEvent), false);
     }
 
@@ -161,7 +169,7 @@ test("the built package loads in real Pi and starts then retires an inert runtim
     const inactive = await readStatus(host);
     assert.equal(inactive.runtime.state, "inactive");
     assert.equal(inactive.runtime.generation, null);
-    assert.equal(inactive.engine.version, "0.3.0");
+    assert.equal(inactive.engine.version, "0.4.0");
     assert.equal(inactive.configuration.enabled, false);
     assert.equal(inactive.configuration.mode, "observe");
     assert.equal(inactive.configuration.rejection, null);
@@ -178,7 +186,10 @@ test("the built package loads in real Pi and starts then retires an inert runtim
     assert.equal(active.activation.checkExecution, "unavailable");
     assert.equal(active.activation.autonomousModelCalls, "unavailable");
     assert.equal(active.capabilities.modelEvaluation, "unavailable");
-    assert.equal(active.capabilities.feedbackActions, "unavailable");
+    // K06: the bounded feedback action route is implemented; a delivery still
+    // needs an explicit per-action grant, which the cold default does not carry.
+    assert.equal(active.capabilities.feedbackActions, "available");
+    assert.equal(active.activation.feedbackActions, "unavailable");
     assert.equal(active.capabilities.journalFiles, "available");
     assert.equal(active.capabilities.triggersAndScheduling, "available");
     assert.equal(active.capabilities.componentRegistry, "available");

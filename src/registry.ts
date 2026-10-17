@@ -18,6 +18,7 @@ import type {
   LifecycleContext,
   PackageDefinition,
   PackageRegistration,
+  ActionDefinition,
   PolicyDefinition,
   PromptDefinition,
   RegistryEndpoint,
@@ -33,7 +34,11 @@ export type ResolvedComponent =
   | { kind: "prompt"; registrationId: string; componentId: string; definition: PromptDefinition; lifecycle(): LifecycleContext }
   | { kind: "evaluator"; registrationId: string; componentId: string; definition: EvaluatorDefinition; lifecycle(): LifecycleContext }
   | { kind: "policy"; registrationId: string; componentId: string; definition: PolicyDefinition; lifecycle(): LifecycleContext }
+  | { kind: "action"; registrationId: string; componentId: string; definition: ActionDefinition; lifecycle(): LifecycleContext }
   | { kind: "sink"; registrationId: string; componentId: string; definition: SinkDefinition; lifecycle(): LifecycleContext };
+
+/** Narrowed action component used by runtime admission and dispatch. */
+export type ActionComponent = Extract<ResolvedComponent, { kind: "action" }>;
 
 export interface PackageInventoryEntry {
   packageId: string;
@@ -79,7 +84,7 @@ interface RegisteredComponent {
 }
 
 const SUPPORTED_KINDS: ReadonlySet<ResolvedComponent["kind"]> = new Set([
-  "trigger", "context", "prompt", "evaluator", "policy", "sink",
+  "trigger", "context", "prompt", "evaluator", "policy", "action", "sink",
 ]);
 
 /** Stable bounded counter vocabulary for component notes (O1 §6.2). */
@@ -271,6 +276,15 @@ function validateComponentShape(component: unknown): { ok: true; kind: ResolvedC
         return { ok: false, error: { code: "core.invalid-component", retryable: false, field: "decide" } };
       }
       break;
+    case "action": {
+      const effects = readDataProperty(record, "effects");
+      if (!Array.isArray(effects) || effects.length === 0 || effects.length > 8
+        || effects.some(entry => typeof entry !== "string" || !/^[a-z][a-z0-9.-]*\.[a-z][a-z0-9.-]*$/u.test(entry))
+        || !isFunctionProperty(record, "execute")) {
+        return { ok: false, error: { code: "core.invalid-component", retryable: false, field: "effects" } };
+      }
+      break;
+    }
     case "sink":
       if (!isFunctionProperty(record, "create")) {
         return { ok: false, error: { code: "core.invalid-component", retryable: false, field: "create" } };

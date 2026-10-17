@@ -474,6 +474,62 @@ export interface PolicyDefinition extends ComponentMeta {
   decide(options: JsonObject, input: PolicyInput): PolicyDecision;
 }
 
+// ---------------------------------------------------------------------------
+// C1 §§6.2, 15.1: effects, host feedback and receipts (K06)
+// ---------------------------------------------------------------------------
+
+/** A namespaced effect description such as `primary.feedback` or `evaluation.request`. */
+export type EffectKind = string;
+
+export interface AdmittedAction {
+  actionId: string;
+  run: RunRef;
+  proposal: ActionProposal;
+  authorizationRevision: string;
+}
+
+export interface FeedbackRequest {
+  actionId: string;
+  scope: Scope;
+  mode: "steer" | "follow-up";
+  text: string;
+  allowIdleStart: boolean;
+}
+
+export type ReceiptState =
+  | "dispatched" | "queued" | "included" | "completed"
+  | "rejected" | "failed" | "cancelled" | "unknown";
+
+export interface EffectReceipt {
+  actionId: string;
+  state: ReceiptState;
+  destinationId: string | null;
+  evidenceIds: readonly string[];
+  error?: ContractError;
+}
+
+export interface HostFeedback {
+  capabilities(): ReadonlySet<string>;
+  deliver(request: FeedbackRequest, signal: AbortSignal): Promise<EffectReceipt>;
+  reconcile(actionId: string, signal: AbortSignal): Promise<EffectReceipt>;
+}
+
+export interface ActionContext extends LifecycleContext {
+  host: HostFeedback;
+  requestCheck(checkId: string, cause: {
+    parentRunId: string;
+    findingIds: readonly string[];
+    evidenceIds: readonly string[];
+  }): Promise<Result<{ runId: string; state: "queued" | "coalesced" }>>;
+}
+
+export interface ActionDefinition extends ComponentMeta {
+  kind: "action";
+  effects: readonly EffectKind[];
+  execute(input: AdmittedAction, ctx: ActionContext): Promise<EffectReceipt>;
+  reconcile?(actionId: string, ctx: ActionContext): Promise<EffectReceipt>;
+}
+
 export interface PermittedDiagnosticRecord {
   schemaVersion: number;
   eventId: string;
@@ -499,7 +555,8 @@ export type RegisteredComponentDefinition =
   | ContextDefinition
   | PromptDefinition
   | EvaluatorDefinition
-  | PolicyDefinition;
+  | PolicyDefinition
+  | ActionDefinition;
 
 export interface PackageDefinition {
   id: string;
@@ -593,11 +650,23 @@ export interface RuntimeSettings {
   maxRunTimeoutMs: number;
   componentInitTimeoutMs: number;
   componentStopTimeoutMs: number;
+  /** K06 feedback: how long a host boundary may await ready work (0 = consume ready only). */
+  boundaryWaitMs: number;
+  /** K06 feedback: hard per-episode message allowance, never reset by input/reload. */
+  maxFeedbackPerEpisode: number;
+  /** K06 feedback: at most one granted follow-up after natural completion per episode. */
+  maxAutonomousFollowUpsPerEpisode: number;
 }
 
 export interface PermissionSettings {
   modelProfiles: readonly string[];
   actions: readonly string[];
+  /** Necessary, but not sufficient, for feedback to start a natural-idle primary run. */
+  allowIdleContinuation: boolean;
+  /** A supported custom action needs an explicit grant and actual host capability. */
+  allowPrimaryAbort: boolean;
+  /** Maximum one-message feedback size in UTF-8 bytes. */
+  maxFeedbackBytes: number;
 }
 
 export type SourceRole = "requirement" | "evidence" | "reference";
@@ -715,7 +784,7 @@ export interface ObservabilityConfiguration {
 export interface EngineConfiguration {
   schemaVersion: 1;
   enabled: boolean;
-  mode: "observe";
+  mode: "observe" | "advise";
   runtime: RuntimeSettings;
   permissions: PermissionSettings;
   sources: Readonly<Record<string, SourceDefinition>>;
@@ -1164,6 +1233,10 @@ export type DiagnosticEventName =
   | "quality.context.manifest-part"
   | "quality.assessment.result"
   | "quality.policy.decided"
+  | "quality.action.admission"
+  | "quality.action.dispatched"
+  | "quality.action.receipt"
+  | "quality.feedback.observed"
   | "quality.clock.resynchronized"
   | "quality.trigger.deadline"
   | "quality.journal.opened"

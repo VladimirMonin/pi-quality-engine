@@ -180,6 +180,23 @@ const EVENT_SCHEMAS: Record<DiagnosticEventName, EventSchema> = {
     policyId: { t: "string" }, policyRevision: { t: "string" }, disposition: { t: "string" },
     findingRefs: { t: "stringArray" }, proposalRefs: { t: "stringArray" }, reasonCodes: { t: "stringArray" },
   },
+  "quality.action.admission": {
+    actionId: { t: "string" }, componentId: { t: "string" }, outcome: { t: "string" },
+    effectKinds: { t: "stringArray" }, findingRefs: { t: "stringArray" },
+    currentAuthority: { t: "string" }, freshness: { t: "string" }, reasonCodes: { t: "stringArray" },
+  },
+  "quality.action.dispatched": {
+    actionId: { t: "string" }, componentId: { t: "string" }, effectKinds: { t: "stringArray" },
+    destinationRef: { t: "nullableString" }, bodyDescriptor: { t: "string" }, checkpointRevision: { t: "string" },
+  },
+  "quality.action.receipt": {
+    actionId: { t: "string" }, receiptRevision: { t: "integer" }, state: { t: "string" },
+    destinationRef: { t: "nullableString" }, evidenceRefs: { t: "stringArray" }, errorCode: { t: "nullableString" },
+  },
+  "quality.feedback.observed": {
+    actionId: { t: "string" }, classification: { t: "string" }, method: { t: "string" },
+    evidenceRefs: { t: "stringArray" }, assessedAt: { t: "string" }, coverage: { t: "string" },
+  },
   "quality.journal.opened": {
     logicalJournalId: { t: "string" }, segmentOrdinal: { t: "integer" }, writerGeneration: { t: "string" },
     previousSegmentOrdinal: { t: "nullableInteger" }, openReason: { t: "string" },

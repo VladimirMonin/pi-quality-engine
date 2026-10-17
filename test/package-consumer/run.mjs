@@ -79,10 +79,12 @@ assert.equal(resolve(extension.resolvedPath), entryPath);
 assert.equal(extension.tools.size, 0);
 assert.deepEqual([...extension.commands.keys()], ["quality"]);
 assert.deepEqual([...extension.handlers.keys()].sort(), [
+  "agent_before_settle", "agent_settled", "before_agent_start", "before_provider_request",
   "input", "session_shutdown", "session_start", "tool_execution_end",
   "tool_execution_start", "turn_end",
 ]);
-for (const providerEvent of ["before_provider_request", "before_provider_headers", "after_provider_response"]) {
+assert.equal(extension.handlers.has("before_provider_request"), true);
+for (const providerEvent of ["before_provider_headers", "after_provider_response"]) {
   assert.equal(extension.handlers.has(providerEvent), false);
 }
 

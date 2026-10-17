@@ -106,9 +106,9 @@ try {
   const packResult = runNpm(["pack", "--json", "--pack-destination", packDir], { cwd: packageRoot });
   const packInfo = JSON.parse(packResult.stdout)[0];
   assert.equal(packInfo.name, "pi-quality-engine");
-  assert.equal(packInfo.version, "0.3.0");
+  assert.equal(packInfo.version, "0.4.0");
   const paths = packInfo.files.map(file => file.path);
-  for (const required of ["package.json", "README.md", "THIRD_PARTY_NOTICES.md", "dist/index.js", "dist/contracts.js", "resources/prompts/repetition-v1.md", "resources/prompts/progress-v1.md", "resources/prompts/progress-v1.questions.json", "resources/prompts/engineering-v1.md", "resources/prompts/evaluation-v1.schema.json"]) {
+  for (const required of ["package.json", "README.md", "THIRD_PARTY_NOTICES.md", "dist/index.js", "dist/contracts.js", "resources/prompts/repetition-v1.md", "resources/prompts/progress-v1.md", "resources/prompts/progress-v1.questions.json", "resources/prompts/engineering-v1.md", "resources/prompts/evaluation-v1.schema.json", "resources/prompts/feedback-v1.md"]) {
     assert.ok(paths.includes(required), `packed artifact is missing ${required}`);
   }
   for (const path of paths) {
@@ -148,12 +148,13 @@ try {
   assert.ok(markerLine, `consumer report missing from stdout:\n${consumerResult.stdout}\n${consumerResult.stderr}`);
   const report = JSON.parse(markerLine.slice("QE_CONSUMER_REPORT=".length));
   assert.equal(report.ok, true);
-  assert.equal(report.packageVersion, "0.3.0");
+  assert.equal(report.packageVersion, "0.4.0");
   assert.equal(report.hostVersion, "1.1.0");
   assert.equal(report.peerRange, "*");
   assert.deepEqual(report.loadErrors, []);
   assert.deepEqual(report.commandNames, ["quality"]);
   assert.deepEqual(report.handlerEvents, [
+    "agent_before_settle", "agent_settled", "before_agent_start", "before_provider_request",
     "input", "session_shutdown", "session_start", "tool_execution_end",
     "tool_execution_start", "turn_end",
   ]);
@@ -164,7 +165,7 @@ try {
 ${consumerResult.stdout}
 ${consumerResult.stderr}`);
   const k05 = JSON.parse(k05Line.slice("QE_CONSUMER_K05=".length));
-  assert.equal(k05.version, "0.3.0");
+  assert.equal(k05.version, "0.4.0");
   assert.equal(k05.entryIsolated, true, "the reviewer ran from the installed artifact inside the consumer root");
   assert.equal(k05.arrivals, 2, "the installed reviewer used the scripted provider for its read and result turns");
   assert.equal(k05.bodyDelivered, true, "the installed reviewer's permitted read reached a later provider input");

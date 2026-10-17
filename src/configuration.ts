@@ -70,6 +70,9 @@ export const DEFAULT_RUNTIME_SETTINGS: RuntimeSettings = {
   maxRunTimeoutMs: 600_000,
   componentInitTimeoutMs: 10_000,
   componentStopTimeoutMs: 2_000,
+  boundaryWaitMs: 0,
+  maxFeedbackPerEpisode: 3,
+  maxAutonomousFollowUpsPerEpisode: 1,
 };
 
 const IMPLEMENTED_ROOT_KEYS = new Set([
@@ -89,6 +92,9 @@ const RUNTIME_LIMITS: Record<string, { min: number; max: number }> = {
   maxRunTimeoutMs: { min: 1_000, max: 600_000 },
   componentInitTimeoutMs: { min: 100, max: 60_000 },
   componentStopTimeoutMs: { min: 100, max: 60_000 },
+  boundaryWaitMs: { min: 0, max: 60_000 },
+  maxFeedbackPerEpisode: { min: 0, max: 16 },
+  maxAutonomousFollowUpsPerEpisode: { min: 0, max: 8 },
 };
 
 const PERMISSION_DEFAULTS: Record<string, unknown> = {
@@ -143,7 +149,7 @@ const WORK_STATES = new Set<WorkState>([
 const PRIORITIES = new Set(["low", "normal", "high"]);
 const BUILTIN_PROMPT_RESOURCES = new Set([
   "builtin:repetition-v1.md", "builtin:progress-v1.md", "builtin:progress-v1.questions.json",
-  "builtin:engineering-v1.md", "builtin:evaluation-v1.schema.json",
+  "builtin:engineering-v1.md", "builtin:evaluation-v1.schema.json", "builtin:feedback-v1.md",
 ]);
 const BUILTIN_CONTEXT_PROVIDERS = new Set(["core.task", "core.history", "core.waits", "core.files", "core.changes"]);
 const BUILTIN_TRIGGERS = new Set([
@@ -324,6 +330,30 @@ function validatePermissions(input: unknown): Result<Partial<PermissionSettings>
         return reject("config.invalid-value", "$.permissions.modelProfiles");
       }
       settings.modelProfiles = [...new Set(supplied as string[])];
+      continue;
+    }
+    if (key === "actions") {
+      // Explicit action grants name registered component ids (C1 §14.3), never
+      // a bare configuration alias; an ungranted action id is inert.
+      const supplied = input[key];
+      if (!Array.isArray(supplied) || supplied.length > 32
+        || supplied.some(entry => typeof entry !== "string" || !isComponentId(entry))) {
+        return reject("config.invalid-value", "$.permissions.actions");
+      }
+      settings.actions = [...new Set(supplied as string[])];
+      continue;
+    }
+    if (key === "allowIdleContinuation" || key === "allowPrimaryAbort") {
+      if (typeof input[key] !== "boolean") return reject("config.invalid-value", `$.permissions.${key}`);
+      settings[key] = input[key] as boolean;
+      continue;
+    }
+    if (key === "maxFeedbackBytes") {
+      const supplied = input[key];
+      if (typeof supplied !== "number" || !Number.isInteger(supplied) || supplied < 1 || supplied > 65_536) {
+        return reject("config.invalid-value", "$.permissions.maxFeedbackBytes");
+      }
+      settings.maxFeedbackBytes = supplied;
       continue;
     }
     if (!jsonEquals(input[key], PERMISSION_DEFAULTS[key])) {
@@ -953,7 +983,7 @@ function validateCheckDefinition(
   if (mode !== "inherit" && mode !== "observe" && mode !== "advise") {
     return reject("config.invalid-value", `${field}.mode`);
   }
-  if (mode === "advise") return reject("config.capability-unavailable", `${field}.mode`);
+  // K06 admits the explicit advise mode; a check may narrow it back to observe.
 
   const triggersInput = input["triggers"] ?? [];
   if (!Array.isArray(triggersInput)) return reject("config.invalid-value", `${field}.triggers`);
@@ -1060,7 +1090,7 @@ function validateCheckDefinition(
 export interface ConfigurationLayer {
   schemaVersion: 1;
   enabled: boolean | undefined;
-  mode: "observe" | undefined;
+  mode: "observe" | "advise" | undefined;
   runtime: Partial<RuntimeSettings>;
   permissions: Partial<PermissionSettings>;
   sources: Record<string, SourceDefinition>;
@@ -1266,7 +1296,7 @@ export function validateConfiguration(value: JsonObject): Result<ConfigurationLa
   if (mode !== undefined && mode !== "observe" && mode !== "advise") {
     return reject("config.invalid-value", "$.mode");
   }
-  if (mode === "advise") return reject("config.capability-unavailable", "$.mode");
+  // K06 admits the explicit global advise mode; observe remains the default.
 
   const runtime = validateRuntimeSettings(value["runtime"]);
   if (!runtime.ok) return runtime;
@@ -1310,7 +1340,7 @@ export function validateConfiguration(value: JsonObject): Result<ConfigurationLa
     value: {
       schemaVersion: 1,
       enabled,
-      mode: mode === "observe" ? "observe" : undefined,
+      mode: mode === "observe" || mode === "advise" ? mode : undefined,
       runtime: runtime.value,
       permissions: permissions.value,
       sources: sources.value as Record<string, SourceDefinition>,
@@ -1331,7 +1361,7 @@ export function defaultConfiguration(): EngineConfiguration {
     enabled: false,
     mode: "observe",
     runtime: { ...DEFAULT_RUNTIME_SETTINGS },
-    permissions: { modelProfiles: [], actions: [] },
+    permissions: { modelProfiles: [], actions: [], allowIdleContinuation: false, allowPrimaryAbort: false, maxFeedbackBytes: 2048 },
     sources: {},
     modelProfiles: {},
     prompts: {},
@@ -1459,11 +1489,14 @@ function applyUserLayer(previous: EngineConfiguration, layer: ConfigurationLayer
   return {
     ...previous,
     enabled: layer.enabled ?? previous.enabled,
-    mode: "observe",
+    mode: layer.mode ?? previous.mode,
     runtime: { ...previous.runtime, ...layer.runtime },
     permissions: {
       modelProfiles: layer.permissions.modelProfiles ?? previous.permissions.modelProfiles,
-      actions: previous.permissions.actions,
+      actions: layer.permissions.actions ?? previous.permissions.actions,
+      allowIdleContinuation: layer.permissions.allowIdleContinuation ?? previous.permissions.allowIdleContinuation,
+      allowPrimaryAbort: layer.permissions.allowPrimaryAbort ?? previous.permissions.allowPrimaryAbort,
+      maxFeedbackBytes: layer.permissions.maxFeedbackBytes ?? previous.permissions.maxFeedbackBytes,
     },
     sources: { ...previous.sources, ...layer.sources },
     modelProfiles: { ...previous.modelProfiles, ...layer.modelProfiles },
@@ -1506,6 +1539,25 @@ function applyUserLayer(previous: EngineConfiguration, layer: ConfigurationLayer
 function applyProjectLayer(previous: EngineConfiguration, layer: ConfigurationLayer): Result<EngineConfiguration> {
   if (Object.keys(layer.runtime).length > 0) {
     return reject("config.capability-unavailable", "$.runtime");
+  }
+  // A project layer may narrow authority, never widen it (C1 §17.1).
+  if (layer.mode === "advise" && previous.mode !== "advise") {
+    return reject("config.widens-limit", "$.mode");
+  }
+  const suppliedPermissions = layer.permissions;
+  if (suppliedPermissions.actions !== undefined) {
+    for (const action of suppliedPermissions.actions) {
+      if (!previous.permissions.actions.includes(action)) return reject("config.widens-limit", "$.permissions.actions");
+    }
+  }
+  if (suppliedPermissions.allowIdleContinuation === true && !previous.permissions.allowIdleContinuation) {
+    return reject("config.widens-limit", "$.permissions.allowIdleContinuation");
+  }
+  if (suppliedPermissions.allowPrimaryAbort === true && !previous.permissions.allowPrimaryAbort) {
+    return reject("config.widens-limit", "$.permissions.allowPrimaryAbort");
+  }
+  if (suppliedPermissions.maxFeedbackBytes !== undefined && suppliedPermissions.maxFeedbackBytes > previous.permissions.maxFeedbackBytes) {
+    return reject("config.widens-limit", "$.permissions.maxFeedbackBytes");
   }
   for (const [family, entries] of [
     ["sources", layer.sources],

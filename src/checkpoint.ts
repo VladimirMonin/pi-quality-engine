@@ -18,6 +18,8 @@ import { existsSync, mkdirSync, readFileSync, readdirSync } from "node:fs";
 import { open, readFile, rename, unlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
+import type { ReceiptState } from "./contracts.js";
+
 const CHECKPOINT_MAX_BYTES = 65_536;
 
 /** Directory sync errors that mean "the platform does not offer it here". */
@@ -78,6 +80,21 @@ export interface FinancialSnapshot {
   }>;
 }
 
+/**
+ * K06 durable action intent: proof that a bounded effect was admitted and
+ * dispatched, without the note text. It exists so a restart reconciles the same
+ * action identity instead of resending the note.
+ */
+export interface ActionCheckpointRecord {
+  actionId: string;
+  issueIds: string[];
+  delivery: "steer" | "follow-up";
+  state: ReceiptState;
+  receiptRevision: number;
+  checkpointRevision: number;
+  updatedAt: string;
+}
+
 export interface ControlCheckpointState {
   schemaVersion: 1;
   observedSessionId: string;
@@ -89,6 +106,8 @@ export interface ControlCheckpointState {
   financial: FinancialSnapshot | null;
   /** Sticky material-receipt persistence uncertainty; never implicitly cleared. */
   financialUncertain: boolean;
+  /** Bounded durable action intents (no note text), newest last. */
+  actions: ActionCheckpointRecord[];
   revision: number;
   updatedAt: string;
 }
@@ -110,6 +129,7 @@ export interface ControlCheckpointOpen {
   authorizationRevision: string | null;
   financial: FinancialSnapshot | null;
   financialUncertain: boolean;
+  actions: ActionCheckpointRecord[];
   degraded: boolean;
   errorCode: string | null;
 }
@@ -245,6 +265,42 @@ function priorSessionEvidence(agentDir: string, key: string): boolean {
   return false;
 }
 
+const ACTION_STATES: ReadonlySet<string> = new Set([
+  "dispatched", "queued", "included", "completed", "rejected", "failed", "cancelled", "unknown",
+]);
+
+/** Bounded parse of durable action intents; malformed entries are dropped, not trusted. */
+export function parseActionRecords(input: unknown): ActionCheckpointRecord[] {
+  if (!Array.isArray(input)) return [];
+  const records: ActionCheckpointRecord[] = [];
+  for (const entry of input.slice(-8)) {
+    if (!isPlainObject(entry)) continue;
+    const actionId = entry["actionId"];
+    const issueIds = entry["issueIds"];
+    const delivery = entry["delivery"];
+    const state = entry["state"];
+    const receiptRevision = entry["receiptRevision"];
+    const checkpointRevision = entry["checkpointRevision"];
+    const updatedAt = entry["updatedAt"];
+    if (typeof actionId !== "string" || actionId.length === 0 || actionId.length > 64) continue;
+    if (!Array.isArray(issueIds) || issueIds.length > 8 || issueIds.some(id => typeof id !== "string" || id.length > 32)) continue;
+    if (delivery !== "steer" && delivery !== "follow-up") continue;
+    if (typeof state !== "string" || !ACTION_STATES.has(state)) continue;
+    if (typeof receiptRevision !== "number" || !Number.isInteger(receiptRevision) || receiptRevision < 0) continue;
+    if (typeof checkpointRevision !== "number" || !Number.isInteger(checkpointRevision) || checkpointRevision < 0) continue;
+    records.push({
+      actionId,
+      issueIds: [...issueIds] as string[],
+      delivery,
+      state: state as ReceiptState,
+      receiptRevision,
+      checkpointRevision,
+      updatedAt: typeof updatedAt === "string" ? updatedAt.slice(0, 40) : "",
+    });
+  }
+  return records;
+}
+
 export class ControlCheckpoint {
   static async open(options: {
     agentDir: string;
@@ -264,6 +320,7 @@ export class ControlCheckpoint {
     let authorizationRevision: string | null = null;
     let financial: FinancialSnapshot | null = null;
     let financialUncertain = false;
+    let actions: ActionCheckpointRecord[] = [];
     let degraded = false;
     let errorCode: string | null = null;
     let revision = 0;
@@ -282,6 +339,7 @@ export class ControlCheckpoint {
         authorizationRevision = typeof parsed["authorizationRevision"] === "string" ? parsed["authorizationRevision"] : null;
         financial = parseFinancialSnapshot(parsed["financial"]);
         financialUncertain = parsed["financialUncertain"] === true;
+        actions = parseActionRecords(parsed["actions"]);
       } else {
         // Unreadable control state must not silently resume; keep the
         // conservative stop and surface the corruption.
@@ -327,7 +385,7 @@ export class ControlCheckpoint {
       }
     }
     return {
-      checkpoint: new ControlCheckpoint(path, directory, lockPath, key, options, revision, owned, authorizationRevision, financial, financialUncertain),
+      checkpoint: new ControlCheckpoint(path, directory, lockPath, key, options, revision, owned, authorizationRevision, financial, financialUncertain, actions),
       owned,
       restored,
       operatorStopped,
@@ -335,6 +393,7 @@ export class ControlCheckpoint {
       authorizationRevision,
       financial,
       financialUncertain,
+      actions,
       degraded,
       errorCode,
     };
@@ -352,6 +411,7 @@ export class ControlCheckpoint {
   #authorizationRevision = "auth-0";
   #financial: FinancialSnapshot | null = null;
   #financialUncertain = false;
+  #actions: ActionCheckpointRecord[] = [];
   #degraded = false;
   #errorCode: string | null = null;
   #counter = 0;
@@ -369,9 +429,11 @@ export class ControlCheckpoint {
     authorizationRevision: string | null,
     financial: FinancialSnapshot | null,
     financialUncertain: boolean,
+    actions: ActionCheckpointRecord[],
   ) {
     this.#financial = financial;
     this.#financialUncertain = financialUncertain;
+    this.#actions = actions;
     this.#ownsLock = ownsLock;
     if (authorizationRevision !== null) this.#authorizationRevision = authorizationRevision;
     this.#path = path;
@@ -417,9 +479,11 @@ export class ControlCheckpoint {
     configurationRevision?: string;
     financial?: FinancialSnapshot | null;
     financialUncertain?: boolean;
+    actions?: ActionCheckpointRecord[];
   }): void {
     if (state.financial !== undefined) this.#financial = state.financial;
     if (state.financialUncertain !== undefined) this.#financialUncertain = state.financialUncertain;
+    if (state.actions !== undefined) this.#actions = parseActionRecords(state.actions);
     this.#stop = state.operatorStopped;
     this.#paused = state.observerPaused;
     if (state.authorizationRevision !== undefined) this.#authorizationRevision = state.authorizationRevision;
@@ -462,6 +526,7 @@ export class ControlCheckpoint {
       configurationRevision: this.#options.configurationRevision,
       financial: this.#financial,
       financialUncertain: this.#financialUncertain,
+      actions: this.#actions,
       revision: this.#revision,
       updatedAt: this.#options.clock.nowUtc(),
     };

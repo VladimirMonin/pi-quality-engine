@@ -188,12 +188,11 @@ test("present configuration requires schema version 1 and typed implemented valu
 });
 
 test("valid C1 values outside the implemented slice are reported unavailable, not accepted", () => {
+  // K06 implements the explicit advise mode, the idle-continuation grant and the
+  // bounded feedback runtime limits, so those three are no longer in this slice.
   const unavailable: Array<[unknown, string]> = [
-    [{ schemaVersion: 1, mode: "advise" }, "$.mode"],
     [{ schemaVersion: 1, observability: { capture: { prompts: "excerpt" } } }, "$.observability.capture.prompts"],
     [{ schemaVersion: 1, observability: { presentation: "diagnostic" } }, "$.observability.presentation"],
-    [{ schemaVersion: 1, permissions: { allowIdleContinuation: true } }, "$.permissions.allowIdleContinuation"],
-    [{ schemaVersion: 1, runtime: { maxFeedbackPerEpisode: 1 } }, "$.runtime.maxFeedbackPerEpisode"],
   ];
   for (const [input, expectedField] of unavailable) {
     const parsed = validateConfiguration(JSON.parse(JSON.stringify(input)));
@@ -201,6 +200,16 @@ test("valid C1 values outside the implemented slice are reported unavailable, no
     if (parsed.ok) continue;
     assert.equal(parsed.error.code, "config.capability-unavailable", JSON.stringify(input));
     assert.equal(parsed.error.field, expectedField);
+  }
+  // The K06 values are accepted with their implemented shape, not merely parsed.
+  const implemented: unknown[] = [
+    { schemaVersion: 1, mode: "advise" },
+    { schemaVersion: 1, permissions: { allowIdleContinuation: true } },
+    { schemaVersion: 1, runtime: { maxFeedbackPerEpisode: 1 } },
+  ];
+  for (const input of implemented) {
+    const parsed = validateConfiguration(JSON.parse(JSON.stringify(input)));
+    assert.equal(parsed.ok, true, JSON.stringify(input));
   }
 
   // K02 activates the deterministic loop: `enabled: true` and a disabled
@@ -426,7 +435,9 @@ test("a trusted project file cannot override the user-owned observability policy
 
 test("a cold invalid user file leaves the project file untouched and defaults effective", async () => {
   await withFixture(async paths => {
-    await writeConfig(join(paths.agentDir, "quality", "config.json"), { schemaVersion: 1, mode: "advise" });
+    // A user value outside the implemented slice keeps the project untouched; the
+    // K06 advise mode is implemented and is covered positively above instead.
+    await writeConfig(join(paths.agentDir, "quality", "config.json"), { schemaVersion: 1, observability: { presentation: "diagnostic" } });
     await writeConfig(join(paths.projectConfigDir, "quality.json"), {
       schemaVersion: 1,
       observability: { recentHistory: { maxEvents: 16 } },
