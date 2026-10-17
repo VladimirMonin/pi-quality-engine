@@ -21,7 +21,10 @@ Roles are boundaries, not mandatory classes or folders. Create only exercised mo
   assembly, coverage and actual-byte budgets; `src/evidence.ts` owns original
   acquisition/custody and `src/git-evidence.ts` read-only episode-relative Git.
   `src/models.ts` owns common model preflight, attempts and accounting;
-  `src/adapters/pi-models.ts` supplies the pinned public SDK boundary.
+  `src/adapters/pi-models.ts` supplies the pinned public SDK boundary and fresh
+  reviewer host. `src/builtins/pi-reviewer.ts` owns the bounded reviewer execution
+  contract, tool/result authority and once-owned lifecycle; the ordinary
+  `core.pi-session` evaluator uses the run-bound review service in `src/runtime.ts`.
   `src/diagnostics.ts` projects bounded history, and `src/journal.ts` owns the
   bounded append-oriented session journal. `src/builtins/` uses the same path.
 - The accepted S1 foundation is the explicitly enabled observation-only deterministic
@@ -34,10 +37,15 @@ Roles are boundaries, not mandatory classes or folders. Create only exercised mo
   and protected owned accounting through that same path. Validate represented input
   capabilities on the selected actual model in common preflight before attempt,
   reservation, durable intent or transport. No ambient-route fallback is allowed.
-  Clean Pi-session review, feedback/actions, capture/export and later bindings remain
-  unavailable. Scripted mechanical support is not live-route/usefulness proof or
-  universal platform, TUI/RPC, ACL or power-loss certification. Read current scope
-  in [Document 08](../docs/08-development-checkpoints-and-release-checklists.md#k04).
+  Clean Pi-session review uses that same managed admission/accounting path with
+  explicit isolated resources, granted reads, owner-issued evidence and observed
+  selections. Reviewer aggregates do not add another charge. Tool admission,
+  denied terminal events, executed failures and acquired evidence keep their
+  actual operation identity and disposition. Feedback/actions, capture/export and
+  later bindings remain unavailable. Scripted mechanical support is not live-model
+  quality/billing proof or universal platform, TUI/RPC, ACL or power-loss
+  certification. Read the qualified scope in
+  [Document 08](../docs/08-development-checkpoints-and-release-checklists.md#k05).
 - Configuration validates before activation; cold invalid configuration remains inactive.
 - The runtime owns each observed session generation, admission and effect authority.
 - Trigger/policy decisions do not perform direct host effects, network calls or hidden timers.

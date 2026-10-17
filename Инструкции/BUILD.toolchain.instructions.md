@@ -39,6 +39,12 @@ inside a fresh owned candidate mirror, trace nested producers and preserve real
 prior-stage byte controls. Keep prior results immutable and retain the actual
 installed/tested tarball; compare payload bytes, not version strings alone.
 Avoid composing Windows paths from POSIX `$PWD`.
+The default `test:pi` list is the common host regression set, not the K05 reviewer
+file. Exercise `test/k05-host.test.mjs` separately in the same deliberate isolated
+environment; its held-operation cases need their actual supported `--import`
+preload and `QE_HOLD_READ_PRELOAD`. That variable is not forwarded by the common
+isolation wrapper. Record default skips and separately executed selected groups;
+a common-host or package exit alone does not establish their coverage.
 `node scripts/collect-evidence.mjs` collects identities, not proof of passing gates;
 independently bind all packed payloads/resources to actual commit/build bytes.
 When Git EOL normalization changes bytes, build/test/pack exact committed source

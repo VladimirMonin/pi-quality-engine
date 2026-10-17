@@ -30,6 +30,13 @@ Keep claims separate:
 - Synthetic history plus a live assessor proves bounded semantic judgment.
 - Bounded live closed-loop work is needed to claim practical improvement.
 
+After actual independent acceptance, qualify the exact indexed/committed,
+EOL-normalized and installed artifact representation without reopening accepted
+behavior or adding variants. Reuse unaffected candidate-bound evidence; compare
+actual payloads and run the applicable existing final-byte gates in disposable
+state. A default host run's skipped reviewer cases remain skipped even when its
+exit is zero; retain separately invoked preload-dependent witnesses accurately.
+
 Ordinary tests run offline without billable credentials. Never silently replay a
 stored answer on a failed live route. Paid experiments require explicit approval,
 exact route, inputs, request/spend/time limits and actual termination conditions.

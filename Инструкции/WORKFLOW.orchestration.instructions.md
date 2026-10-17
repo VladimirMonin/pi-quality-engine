@@ -46,9 +46,18 @@ CLI or another model without an explicit decision.
 1. Assign one coherent medium behavior or repair slice with its owning contracts,
    actual starting state, protected boundaries, required evidence and stop condition.
    Do not assign the entire roadmap or demand later checkpoint features.
-2. Preserve saved Pi session identities. A rejected slice resumes the **same
-   implementer session** with exact failed boundaries, reproducers, expected
+2. Preserve saved Pi session identities by default. A rejected slice resumes the
+   **same implementer session** with exact failed boundaries, reproducers, expected
    results and owned repair paths; do not start a competing implementation.
+   If a bounded attempt at supported recovery establishes that continuation is
+   unusable, the operator-authorized exception permits a fresh native Pi session
+   with the same provider, model, role and thinking level. Preserve the old history
+   in place, uncommitted work, current handoff and results; verify the prior host's
+   actual terminal status and absence of its writer before replacement. Keep any
+   abnormal exit explicit, not relabeled as success. The successor first compares
+   the transfer baseline with current files, inherits the same worktree, scope,
+   access/spending limits and Stop protections, and continues rather than restarting
+   the project. Do not edit old history or use this exception to bypass restrictions.
 3. Continue through recoverable refusal or failure using the same session and
    established context. Real permission, access, credential or route blockers
    must be explicit; recovery is not permission to bypass a restriction.

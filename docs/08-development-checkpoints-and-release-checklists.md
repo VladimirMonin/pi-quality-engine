@@ -13,7 +13,7 @@ source_baseline_date: "2026-10-12"
 prepared_date: "2026-10-13"
 planned_project_version_range: "0.0.1 through 1.0.0"
 language: "en"
-status: "K01–K04 accepted at their recorded local tags; bounded S1 complete, K04 S2 increment locally released; K05–K13 and later stage exits remain not-run"
+status: "K01–K05 accepted at their recorded local tags; bounded S1 and qualified S2 complete; K06–K13 and S3/S4 remain not-run; live routes unverified"
 ---
 
 ## Pi Quality Engine — Development Checkpoints and Release Checklists 🧭
@@ -27,7 +27,7 @@ This workbook turns the four delivery stages already defined in [Document 04](04
 > [!important] What a checked box means
 > A checked box means there is evidence for **this candidate commit and the stated scope**: an executed case, a concrete assertion, and a retained artifact or an explicit documented non-artifact reason. The box does not mean that an implementing model is confident, that a source file exists, or that a helper returned `success`.
 >
-> Boxes started unchecked. Checked items apply only to the recorded accepted K01–K04 candidates and their stated qualifications. Bounded S1 exit is accepted; K04 is not full S2. K05–K13 and later stage exits remain unproved. Evidence reuse is explicitly scoped, never an assertion that every mapped subcase was freshly run.
+> Boxes started unchecked. Checked items apply only to the recorded accepted K01–K05 candidates and their stated qualifications. Bounded S1 and K05's mechanical/integration S2 exit are accepted; K04 alone was not full S2. K06–K13 and S3/S4 remain unproved. The three live routes remain separately UNVERIFIED. Evidence reuse is explicitly scoped, never an assertion that every mapped subcase was freshly run.
 
 ### Authority and use 📑
 
@@ -153,6 +153,8 @@ Tests adapt to harmless implementation refactoring, not to broken required behav
 Historical K01 common-gate acceptance at `7efe1ff097319b741423c92cd327abb4c9633b6e` remains limited to its memory-only subset; COMMON-E.04 was not applicable there because no intentionally broken persistent/contributed destination was shipped.
 
 **K02 follow-up, 2026-10-14:** the common boxes below are also evidenced for `9c7e3c2a7980895122a9ade72fb8436ad696d091` and its observation-only subset. COMMON-E.04 now passes with the real broken-journal degradation case and independent memory/host facts, not a fabricated disk receipt. See the [immutable implementation gate](../verification/K02-reacceptance3/implementation-gate.json) and [exact-commit results](../verification/K02-reacceptance3/committed-results.json). Reevaluate every later candidate; neither record accepts full S1 exit.
+
+**K05 local release, 2026-10-17:** Astra209 independently accepted frozen111's original31 predicates/12 variants. Sol's exact indexed-tree qualification binds implementation `731b68f3ab59f2c890437a9242479a6c8607a3c5` and the same tested52-payload artifact; see [K05's release record](#k05). This qualifies the implemented S2 subset, not live judgment/billing, S3 effects or universal host termination.
 
 ### Candidate and scope checklist 📌
 
@@ -559,7 +561,15 @@ The table describes tests to execute, not results already obtained. Each row mus
 
 ## 9. 0.3.0 — Clean Pi reviewers — S2 complete 🏁
 
-**Checkpoint K05 · D1 S2 exit · Candidate tag `v0.3.0` · Initial state: not-run**
+**Checkpoint K05 · D1 S2 exit · Local tag `v0.3.0` · ACCEPTED / VERIFIED_LOCAL_RELEASE**
+
+Accepted implementation: **`731b68f3ab59f2c890437a9242479a6c8607a3c5`**, parent `2aa14e4e95ae0e2048d4f75a54525cf4804447ea`. Unsigned annotated LOCAL tag object: **`806f6830e69a901da54c8131f64d8ba469583f8b`**, targeting that implementation, not subsequent docs. [Astra209's independent decision](file:///C:/Users/User/AppData/Local/hermes/cache/scratch/qe-k05-candidate-209-astra/FINAL.md) accepts frozen111's working/native-scripted/installed scope; its identity-file SHA256 `b29d133dd8c34d047311eb532ef4addcb054347e9d0e8f587a2c65a1a626424e` is not a Git commit.
+
+[Exact-tree qualification gate](file:///C:/Users/User/AppData/Local/hermes/cache/scratch/qe-k05-release-210-sol/implementation-gate.json), SHA256 `297dfddfc9412ee27e747750d0853798ae3e40bd13fbf05605edbb8496e51528`:135 unit,26 common Pi, K05 host37 PASS/12 SKIP, separately held4/4 and protected/aggregate2/2; build/routing/package exit0. Groups overlap; no aggregate `npm run check` invocation is inferred. All16 committed changed paths match accepted raw bytes; nine unchanged inherited product inputs differ from their working copies only by recorded CRLF→LF. The exact-index mirror and committed tree agree. All52 packed payloads and the entire179192B tar are byte-identical to Astra209's accepted artifact, SHA256 **`6e1b584ca1d51be656aab1f5bcf3b5732340561bb7e33f9a5c71f7bab84fd299`**.
+
+The actual installed Pi1.1.0/package0.3.0 witness has two provider arrivals/two owned requests, a permitted read in the later actual input, canonical acceptance and one primary-triggered reviewer run. The [canonical handoff](../verification/K05/author/implementation-20261016T022708Z-df00c2d9/handoff.md) retains current S2 scope, qualified reuse, corrected RED history and local release. X.04's independent report approval and actual local tag are now both evidenced; all original31 dispositions and12 variants are closed at their declared layers. No accepted-neighbour or optional assertion campaign was added.
+
+This is useful controlled mechanical investigation, not proof of real-model engineering quality, live billing or a general orchestrator. Polza/Jev, OpenRouter/Jev and local d3-mini remain individually **UNVERIFIED**. Historical overruns, missing preimages, UNKNOWNs and producer labels/`preliminary` flags stay historical and unmodified; no later feedback authority, K06, publication or push follows from this tag.
 
 Deep review becomes a normal evaluator profile that creates a fresh Pi SDK session. This checkpoint removes any dependency on an installed subagent or advisor plugin. The session must actually investigate a permitted file and return structure; creating an empty session is not enough.
 
@@ -571,20 +581,20 @@ Deep review becomes a normal evaluator profile that creates a fresh Pi SDK sessi
 
 ### Construction and behavior checklist 🛠️
 
-- [ ] **K05-B.01** Create reviewers through the actual Pi SDK, with explicit model/auth route, resource loader, tools, and in-memory session storage.
-- [ ] **K05-B.02** Do not inherit the full primary conversation or ambient extension stack. Material enters through the approved context plan or later controlled reads.
-- [ ] **K05-B.03** Include the structured-result submission tool in the actual allowlist when that return path is used. Test its exposure, not only its registration.
-- [ ] **K05-B.04** Constrain reads to granted sources/roots and record additional evidence with its version, range, role, and coverage.
-- [ ] **K05-B.05** Use a fresh session for each initial deep-review run. Any later reuse/compaction feature must be declared and its maintenance requests accounted, not silently inherited.
-- [ ] **K05-B.06** Record reviewer tools as owned-reviewer activity. They cannot advance primary tool counters or create operator task authority.
-- [ ] **K05-B.07** Account for each owned model request before combining reviewer summaries. Reviewer aggregate usage does not create an additional charge.
-- [ ] **K05-B.08** Apply finite request, tool, time, context, and cost bounds to the reviewer. A selected profile alone does not grant spending.
-- [ ] **K05-B.09** Capture the strongest observable request inputs rather than asserting knowledge of hidden provider transformations.
-- [ ] **K05-B.10** Retire/dispose owned sessions and detach their subscriptions. A provider that ignores abort remains an unresolved physical operation rather than an instantly free slot.
-- [ ] **K05-B.11** Keep provider-exposed reasoning and tool output out of default capture. In-memory reviewer storage must not silently create a disk transcript elsewhere.
-- [ ] **K05-B.12** Return malformed or incomplete reviewer output as a validated operational result, not an invented successful assessment.
-- [ ] **K05-B.13** Use the same evaluator/check path for scheduled deep review that later expert escalation will request.
-- [ ] **K05-B.14** Confirm that the complete S2 path works on bare Pi with only the engine and an explicitly configured normal provider route.
+- [x] **K05-B.01** Create reviewers through the actual Pi SDK, with explicit model/auth route, resource loader, tools, and in-memory session storage.
+- [x] **K05-B.02** Do not inherit the full primary conversation or ambient extension stack. Material enters through the approved context plan or later controlled reads.
+- [x] **K05-B.03** Include the structured-result submission tool in the actual allowlist when that return path is used. Test its exposure, not only its registration.
+- [x] **K05-B.04** Constrain reads to granted sources/roots and record additional evidence with its version, range, role, and coverage.
+- [x] **K05-B.05** Use a fresh session for each initial deep-review run. Any later reuse/compaction feature must be declared and its maintenance requests accounted, not silently inherited.
+- [x] **K05-B.06** Record reviewer tools as owned-reviewer activity. They cannot advance primary tool counters or create operator task authority.
+- [x] **K05-B.07** Account for each owned model request before combining reviewer summaries. Reviewer aggregate usage does not create an additional charge.
+- [x] **K05-B.08** Apply finite request, tool, time, context, and cost bounds to the reviewer. A selected profile alone does not grant spending.
+- [x] **K05-B.09** Capture the strongest observable request inputs rather than asserting knowledge of hidden provider transformations.
+- [x] **K05-B.10** Retire/dispose owned sessions and detach their subscriptions. A provider that ignores abort remains an unresolved physical operation rather than an instantly free slot.
+- [x] **K05-B.11** Keep provider-exposed reasoning and tool output out of default capture. In-memory reviewer storage must not silently create a disk transcript elsewhere.
+- [x] **K05-B.12** Return malformed or incomplete reviewer output as a validated operational result, not an invented successful assessment.
+- [x] **K05-B.13** Use the same evaluator/check path for scheduled deep review that later expert escalation will request.
+- [x] **K05-B.14** Confirm that the complete S2 path works on bare Pi with only the engine and an explicitly configured normal provider route.
 
 ### Pragmatic checkpoint tests 🧪
 
@@ -603,18 +613,18 @@ The table describes tests to execute, not results already obtained. Each row mus
 
 ### Evidence to retain 🔍
 
-- [ ] **K05-E.01** Retain a complete synthetic multi-turn reviewer trace and the independently captured next-request inputs.
-- [ ] **K05-E.02** Retain reviewer resource/tool inventory, ambient canary outcome, and prohibited-read/command outcomes.
-- [ ] **K05-E.03** Retain exact owned-request accounting with aggregate exclusion and late-usage reconciliation.
-- [ ] **K05-E.04** Retain no-transcript filesystem scan and disposal/resource measurements after cancellation.
-- [ ] **K05-E.05** Retain the S2 stage summary showing both direct assessment and clean reviewer execution without donor plugins.
+- [x] **K05-E.01** Retain a complete synthetic multi-turn reviewer trace and the independently captured next-request inputs.
+- [x] **K05-E.02** Retain reviewer resource/tool inventory, ambient canary outcome, and prohibited-read/command outcomes.
+- [x] **K05-E.03** Retain exact owned-request accounting with aggregate exclusion and late-usage reconciliation.
+- [x] **K05-E.04** Retain no-transcript filesystem scan and disposal/resource measurements after cancellation.
+- [x] **K05-E.05** Retain the S2 stage summary showing both direct assessment and clean reviewer execution without donor plugins.
 
 ### Exit and tag decision ✅
 
-- [ ] **K05-X.01** All mandatory S2 mechanical/integration obligations pass; unknown live billing remains labeled rather than concealed.
-- [ ] **K05-X.02** The clean reviewer is useful as a controlled investigation, not a success-returning dummy session.
-- [ ] **K05-X.03** Keep the default mode observe; no later feedback authority is inferred from successful reviewer execution.
-- [ ] **K05-X.04** Approve the S2 report and tag the tested candidate `v0.3.0`.
+- [x] **K05-X.01** All mandatory S2 mechanical/integration obligations pass; unknown live billing remains labeled rather than concealed.
+- [x] **K05-X.02** The clean reviewer is useful as a controlled investigation, not a success-returning dummy session.
+- [x] **K05-X.03** Keep the default mode observe; no later feedback authority is inferred from successful reviewer execution.
+- [x] **K05-X.04** Approve the S2 report and tag the tested candidate `v0.3.0`.
 
 **The accepted tag may claim:** Standalone short and tool-assisted deep assessment with explicit context, resource isolation, and owned accounting.
 
@@ -1568,7 +1578,7 @@ The row groupings do not waive individual D/O obligations. The candidate manifes
 | Stage | Exit version | State | Accepted commit/tag | Evidence manifest | Outstanding blockers |
 |---|---|---|---|---|---|
 | S1 — Observable standalone runtime | 0.1.0 | Bounded exit ACCEPTED; K01–K03 | K03 `035aaa3fe767c62cd16b962cf06012e2bb37f480` / `v0.1.0` | [K03 gate](../verification/K03/reviewer/20261014202738294-p53924-b2973cbe/implementation-gate.json) | No broader platform/usefulness claim |
-| S2 — Real evidence and owned evaluators | 0.3.0 | K04 increment ACCEPTED/local release verified; exit NOT RUN | K04 `28960100016fbe85729159413a1b6e977c2cdac2` / `v0.2.0` | [K04 exact-commit gate](../verification/K04/reviewer/local-release-20261016T014116Z-1c6a6ecb/implementation-gate.json) | K05 clean reviewer/S2 exit not run; three real routes UNVERIFIED |
+| S2 — Real evidence and owned evaluators | 0.3.0 | Qualified mechanical/integration exit ACCEPTED; local release verified | K05 `731b68f3ab59f2c890437a9242479a6c8607a3c5` / `v0.3.0` | [K05 exact-tree gate](file:///C:/Users/User/AppData/Local/hermes/cache/scratch/qe-k05-release-210-sol/implementation-gate.json) | No mandatory mechanical repair remains; three real routes UNVERIFIED; no live quality/billing claim |
 | S3 — Bounded feedback and recovery | 0.5.0 | Not run | — | — | Not assessed |
 | S4 — Public extensibility and release validation | 1.0.0 | Not run | — | — | Not assessed |
 
