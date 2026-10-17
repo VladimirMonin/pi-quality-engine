@@ -156,6 +156,8 @@ Historical K01 common-gate acceptance at `7efe1ff097319b741423c92cd327abb4c9633b
 
 **K05 local release, 2026-10-17:** Astra209 independently accepted frozen111's original31 predicates/12 variants. Sol's exact indexed-tree qualification binds implementation `731b68f3ab59f2c890437a9242479a6c8607a3c5` and the same tested52-payload artifact; see [K05's release record](#k05). This qualifies the implemented S2 subset, not live judgment/billing, S3 effects or universal host termination.
 
+**K06 local release, 2026-10-17:** Astra221 accepted frozen220's original28 at qualified working/tar scopes. Exact index/EOL/package qualification now binds implementation `40bcce3e0f2d2f3b62f1d3ca2a6873670957a7c1` and annotated `v0.4.0`; see [K06](#k06). This closes only the implemented feedback subset, not K07/S3 exit or live/installed-feedback/TUI/RPC claims.
+
 ### Candidate and scope checklist 📌
 
 - [x] **COMMON-C.01** Identify the intended project version, checkpoint, existing D1 stage, exact candidate commit, and declared capability subset before running acceptance.
@@ -634,7 +636,22 @@ The table describes tests to execute, not results already obtained. Each row mus
 
 ## 10. 0.4.0 — Evidence-based feedback on authorized host boundaries 🏁
 
-**Checkpoint K06 · D1 S3 · Candidate tag `v0.4.0` · Initial state: not-run**
+**Checkpoint K06 · D1 S3 subset · Independently ACCEPTED / local `v0.4.0` verified**
+
+Astra221's final independent decision accepts frozen220; all219 product findings are closed. Original28:27 PASS_SCOPED and1 downstream release partial; the actual qualification/commit/tag below closes that remaining local X.03 action, not a new acceptance inventory. The [existing canonical handoff](../verification/K06/author/implementation-20261017-212/handoff.md) retains the dated author/reviewer history.
+
+| Actual release identity | Verified value |
+|---|---|
+| Implementation / parent | `40bcce3e0f2d2f3b62f1d3ca2a6873670957a7c1` / `4ac9bc3c82d07e2e9c289391e549eb807012d84b` |
+| Tested tree | `608978eab276f55a1ac25f4fdb2aeb7c8052115a`;85 tracked blobs/modes;21 explicitly staged paths |
+| Annotated unsigned local tag | `v0.4.0`, object `c9e9fc54b799ea0342880bbce8a3919a318206c8`, targeting implementation |
+| Tested archive |202144 bytes/59 payloads; SHA256 `2cb2f6880e2552f3f23546d026d89673e89f55179a72a839bc88143a12547dc6`, entirely identical to accepted220/221 |
+| Independent acceptance | `C:/Users/User/AppData/Local/hermes/cache/scratch/qe-k06-final-recheck-221-astra/`; `FINAL.md`, `release.json`, original28 and payload bindings |
+| Exact-representation release | [Sol222 qualification gate](file:///C:/Users/User/AppData/Local/hermes/cache/scratch/qe-k06-release-k07-222-sol/implementation-gate.json); [implementation](file:///C:/Users/User/AppData/Local/hermes/cache/scratch/qe-k06-release-k07-222-sol/implementation-commit.json); [tag readback](file:///C:/Users/User/AppData/Local/hermes/cache/scratch/qe-k06-release-k07-222-sol/tag-readback.json) |
+
+All21 changed index blobs equal accepted raw bytes. Eleven inherited CRLF/LF-only differences were derived and tested from the actual index mirror. Immediate final-byte checks passed: build,154 unit, routing,26 common Pi,3 selected native K06 host cases and package/isolated consumer. Existing precise221 controls passed in the owned mirror. Retained original T05c passed **separately**, not as part of the author's19/154. One owned output-allocation ENOENT attempt is preserved: T05c passed there; only the other3 failed control definitions were repeated after creating a fresh output directory. No product/assertion changed; groups overlap and are not summed, and aggregate `npm run check` was not invoked by222.
+
+The accepted scope is native SDK print/scripted feedback with current authority, final2048-byte bounds and truthful queued/dispatched receipts. Actual MAIN input/ack/privacy evidence is distinct from receipt strength. Installed loading/resources/K05 consumer and exact final tar/native-input equivalence are accepted; **no actual installed K06 feedback, live judgment/billing, TUI/RPC parity or semantic clearance classifier is claimed**. `core.request-check` and full S3 recovery remain [K07](#k07). Later docs/README maintenance does not move this tag or assert a byte-identical repack from docs HEAD. Remote Git delivery is recorded separately in222's final packet; no package/Release publication follows.
 
 The engine may now return useful recommendations to an authorized primary session. A policy proposes an effect; the runtime admits it; the host adapter supplies a receipt. The milestone is not met merely because an advice card appears or a send method returns.
 
@@ -646,19 +663,19 @@ The engine may now return useful recommendations to an authorized primary sessio
 
 ### Construction and behavior checklist 🛠️
 
-- [ ] **K06-B.01** Keep policy evaluation free of direct host/model side effects. It returns proposals which pass runtime admission.
-- [ ] **K06-B.02** In observe mode, record intended decisions but dispatch neither feedback nor an expert escalation caused by the finding.
-- [ ] **K06-B.03** Require explicit action grants and appropriate current work/authorization state. A high model score alone never grants authority.
-- [ ] **K06-B.04** Check task/source/finding dependencies again before dispatch; unrelated edits do not invalidate everything, but changed relevant evidence does.
-- [ ] **K06-B.05** Render the smallest actionable recommendation with the C1 byte bound. Do not send a full review transcript when a bounded finding suffices.
-- [ ] **K06-B.06** Distinguish C1 receipt states: `dispatched`, `queued`, `included`, `completed`, `rejected`, `failed`, `cancelled`, and `unknown`.
-- [ ] **K06-B.07** Claim `included` only when the real host/provider boundary establishes it. An API acknowledgment is not model inclusion.
-- [ ] **K06-B.08** Preserve user Stop across pending delivery, observer pause/resume, reload, and delayed evaluator completion.
-- [ ] **K06-B.09** Handle natural-idle continuation separately from busy steering; keep `allowIdleContinuation` false by default.
-- [ ] **K06-B.10** Deduplicate findings and effects without deleting the underlying project obligation. Ignoring a rule does not make it optional.
-- [ ] **K06-B.11** Keep feedback prose out of default diagnostics even though the primary legitimately receives it as model content.
-- [ ] **K06-B.12** Persist enough effect intent/state for a crash or lost acknowledgment to remain unknown rather than trigger a blind second send.
-- [ ] **K06-B.13** Treat acknowledgment, behavior change, and finding clearance as separate observations. No “fixed” receipt state is invented.
+- [x] **K06-B.01** Keep policy evaluation free of direct host/model side effects. It returns proposals which pass runtime admission.
+- [x] **K06-B.02** In observe mode, record intended decisions but dispatch neither feedback nor an expert escalation caused by the finding.
+- [x] **K06-B.03** Require explicit action grants and appropriate current work/authorization state. A high model score alone never grants authority.
+- [x] **K06-B.04** Check task/source/finding dependencies again before dispatch; unrelated edits do not invalidate everything, but changed relevant evidence does.
+- [x] **K06-B.05** Render the smallest actionable recommendation with the C1 byte bound. Do not send a full review transcript when a bounded finding suffices.
+- [x] **K06-B.06** Distinguish C1 receipt states: `dispatched`, `queued`, `included`, `completed`, `rejected`, `failed`, `cancelled`, and `unknown`.
+- [x] **K06-B.07** Claim `included` only when the real host/provider boundary establishes it. An API acknowledgment is not model inclusion.
+- [x] **K06-B.08** Preserve user Stop across pending delivery, observer pause/resume, reload, and delayed evaluator completion.
+- [x] **K06-B.09** Handle natural-idle continuation separately from busy steering; keep `allowIdleContinuation` false by default.
+- [x] **K06-B.10** Deduplicate findings and effects without deleting the underlying project obligation. Ignoring a rule does not make it optional.
+- [x] **K06-B.11** Keep feedback prose out of default diagnostics even though the primary legitimately receives it as model content.
+- [x] **K06-B.12** Persist enough effect intent/state for a crash or lost acknowledgment to remain unknown rather than trigger a blind second send.
+- [x] **K06-B.13** Treat acknowledgment, behavior change, and finding clearance as separate observations. No “fixed” receipt state is invented.
 
 ### Pragmatic checkpoint tests 🧪
 
@@ -677,16 +694,16 @@ The table describes tests to execute, not results already obtained. Each row mus
 
 ### Evidence to retain 🔍
 
-- [ ] **K06-E.01** Retain actual recipient input for a synthetic feedback fixture alongside corresponding action receipts.
-- [ ] **K06-E.02** Retain positive finding controls for observe, denied grant, natural idle, and operator Stop scenarios.
-- [ ] **K06-E.03** Retain staleness/deduplication/lost-ack case outcomes and effect identity reconciliation.
-- [ ] **K06-E.04** Retain exact rendered-byte measurements and the Standard no-feedback-body scan.
+- [x] **K06-E.01** Retain actual recipient input for a synthetic feedback fixture alongside corresponding action receipts.
+- [x] **K06-E.02** Retain positive finding controls for observe, denied grant, natural idle, and operator Stop scenarios.
+- [x] **K06-E.03** Retain staleness/deduplication/lost-ack case outcomes and effect identity reconciliation.
+- [x] **K06-E.04** Retain exact rendered-byte measurements and the Standard no-feedback-body scan.
 
 ### Exit and tag decision ✅
 
-- [ ] **K06-X.01** Every claimed delivery state is backed by a matching host boundary, not log text alone.
-- [ ] **K06-X.02** No permission, Stop, freshness, or byte-limit guard was bypassed by a model-generated recommendation.
-- [ ] **K06-X.03** Tag `v0.4.0` only for tested host modes; unsupported receipt/wake routes remain clearly unavailable.
+- [x] **K06-X.01** Every claimed delivery state is backed by a matching host boundary, not log text alone.
+- [x] **K06-X.02** No permission, Stop, freshness, or byte-limit guard was bypassed by a model-generated recommendation.
+- [x] **K06-X.03** Tag `v0.4.0` only for tested host modes; unsupported receipt/wake routes remain clearly unavailable.
 
 **The accepted tag may claim:** Opt-in bounded feedback with truthful delivery evidence and stop/freshness protection on the tested routes.
 
@@ -1579,7 +1596,7 @@ The row groupings do not waive individual D/O obligations. The candidate manifes
 |---|---|---|---|---|---|
 | S1 — Observable standalone runtime | 0.1.0 | Bounded exit ACCEPTED; K01–K03 | K03 `035aaa3fe767c62cd16b962cf06012e2bb37f480` / `v0.1.0` | [K03 gate](../verification/K03/reviewer/20261014202738294-p53924-b2973cbe/implementation-gate.json) | No broader platform/usefulness claim |
 | S2 — Real evidence and owned evaluators | 0.3.0 | Qualified mechanical/integration exit ACCEPTED; local release verified | K05 `731b68f3ab59f2c890437a9242479a6c8607a3c5` / `v0.3.0` | [K05 exact-tree gate](file:///C:/Users/User/AppData/Local/hermes/cache/scratch/qe-k05-release-210-sol/implementation-gate.json) | No mandatory mechanical repair remains; three real routes UNVERIFIED; no live quality/billing claim |
-| S3 — Bounded feedback and recovery | 0.5.0 | Not run | — | — | Not assessed |
+| S3 — Bounded feedback and recovery | 0.5.0 | K06 feedback subset ACCEPTED; S3 exit pending K07 | K06 `40bcce3e0f2d2f3b62f1d3ca2a6873670957a7c1` / `v0.4.0` | [K06 exact-tree gate](file:///C:/Users/User/AppData/Local/hermes/cache/scratch/qe-k06-release-k07-222-sol/implementation-gate.json) | Existing K07 escalation/recovery/storage obligations; no live/usefulness or broader mode claim |
 | S4 — Public extensibility and release validation | 1.0.0 | Not run | — | — | Not assessed |
 
 Fill this board only from executed checkpoint decisions. It is not a separate source of approval. A failed later regression can reopen a previously accepted behavior for the new candidate without rewriting the historical meaning of the old tag.

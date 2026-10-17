@@ -40,11 +40,16 @@ prior-stage byte controls. Keep prior results immutable and retain the actual
 installed/tested tarball; compare payload bytes, not version strings alone.
 Avoid composing Windows paths from POSIX `$PWD`.
 The default `test:pi` list is the common host regression set, not the K05 reviewer
-file. Exercise `test/k05-host.test.mjs` separately in the same deliberate isolated
-environment; its held-operation cases need their actual supported `--import`
-preload and `QE_HOLD_READ_PRELOAD`. That variable is not forwarded by the common
-isolation wrapper. Record default skips and separately executed selected groups;
-a common-host or package exit alone does not establish their coverage.
+or K06 feedback host file. Use `QE_TEST_FILES=test/k06-host.test.mjs` with the
+existing isolation wrapper for K06; aggregate `check` does not implicitly run it.
+K05 held-operation cases separately need actual supported `--import` preload and
+`QE_HOLD_READ_PRELOAD`; that variable is not forwarded by the wrapper. Record
+nonselected definitions, default skips and separately executed groups, not passes
+for unexecuted coverage. A common-host/package exit alone does not establish them.
+Installed loading/resources/earlier consumer behavior and byte-identical final
+artifact/native-input equivalence are distinct from actually observed installed
+feedback. Keep the exact accepted alternative and limitation; do not promote a
+version match or prior consumer label into a new end-to-end observation.
 `node scripts/collect-evidence.mjs` collects identities, not proof of passing gates;
 independently bind all packed payloads/resources to actual commit/build bytes.
 When Git EOL normalization changes bytes, build/test/pack exact committed source

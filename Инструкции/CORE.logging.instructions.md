@@ -36,8 +36,13 @@ size and monotonic elapsed rotation, gzip and eligible closure-based retention.
 Known loss remains partial even after a successful final sync; partial native
 writes are completed exactly or reported as loss, never acknowledged as a full
 record. Preserve damaged/foreign/live/unrelated evidence and uncertain age.
-`src/checkpoint.ts` separately owns bounded Stop/authorization/control metadata;
-logging choices cannot reset it. Directory pressure is a cleanup target, not a
+`src/checkpoint.ts` separately owns bounded Stop/authorization, owned finance and
+effect intent/dedupe/receipt metadata; logging choices cannot reset it. Approved
+effect declarations are pinned by runtime at accepted configuration activation/reload.
+Unknown action identities are retained before settled history. If unresolved state
+fills its bound, refuse new dependent effects instead of evicting tombstones.
+Record the actual final text-byte descriptor without its body; receiver inclusion,
+acknowledgment, behavior change and supported clearance are separate observations. Directory pressure is a cleanup target, not a
 quota that permits deleting active/checkpoint data. Native Windows file sync and
 best-effort directory sync do not establish universal or power-loss durability.
 

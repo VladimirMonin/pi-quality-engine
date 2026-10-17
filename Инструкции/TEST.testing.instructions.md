@@ -36,6 +36,16 @@ behavior or adding variants. Reuse unaffected candidate-bound evidence; compare
 actual payloads and run the applicable existing final-byte gates in disposable
 state. A default host run's skipped reviewer cases remain skipped even when its
 exit is zero; retain separately invoked preload-dependent witnesses accurately.
+The common host set also excludes `test/k06-host.test.mjs`; use the existing
+`QE_TEST_FILES` selector explicitly. A retained material-change control removed
+from the current owner file remains separate case-bound evidence, never silently
+part of the current suite count. Reuse its exact accepted body/support with fresh
+contained output allocation, not a reconstructed oracle or restored product test.
+Qualify the actual final text reaching a contributed receiver, current declaration
+approval and unresolved-capacity refusal at their owning boundaries. Native
+context preparation/queue acknowledgment is not input inclusion. Actual installed
+loading and exact artifact/input equivalence do not become an installed-feedback
+observation; preserve the accepting owner's disclosed distinction.
 
 Ordinary tests run offline without billable credentials. Never silently replay a
 stored answer on a failed live route. Paid experiments require explicit approval,

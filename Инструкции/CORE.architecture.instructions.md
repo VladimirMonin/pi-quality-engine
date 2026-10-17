@@ -25,8 +25,12 @@ Roles are boundaries, not mandatory classes or folders. Create only exercised mo
   reviewer host. `src/builtins/pi-reviewer.ts` owns the bounded reviewer execution
   contract, tool/result authority and once-owned lifecycle; the ordinary
   `core.pi-session` evaluator uses the run-bound review service in `src/runtime.ts`.
-  `src/diagnostics.ts` projects bounded history, and `src/journal.ts` owns the
-  bounded append-oriented session journal. `src/builtins/` uses the same path.
+  `src/feedback.ts` owns bounded issue/effect state, receipt reconciliation and
+  note rendering; `src/builtins/actions.ts` uses the ordinary admitted action path.
+  `src/adapters/pi-feedback.ts` is the narrow current-generation Pi boundary courier,
+  composed in `src/index.ts`, not another scheduler. `src/diagnostics.ts` projects
+  bounded history, and `src/journal.ts` owns the bounded append-oriented session
+  journal. `src/builtins/` uses the same path.
 - The accepted S1 foundation is the explicitly enabled observation-only deterministic
   loop with bounded lifecycle/admission, protected Stop/authorization control and
   initial metadata journal rotation/retention; `/quality stop` is an operator action.
@@ -41,11 +45,17 @@ Roles are boundaries, not mandatory classes or folders. Create only exercised mo
   explicit isolated resources, granted reads, owner-issued evidence and observed
   selections. Reviewer aggregates do not add another charge. Tool admission,
   denied terminal events, executed failures and acquired evidence keep their
-  actual operation identity and disposition. Feedback/actions, capture/export and
-  later bindings remain unavailable. Scripted mechanical support is not live-model
-  quality/billing proof or universal platform, TUI/RPC, ACL or power-loss
-  certification. Read the qualified scope in
-  [Document 08](../docs/08-development-checkpoints-and-release-checklists.md#k05).
+  actual operation identity and disposition. K06 adds opt-in `core.engineering`
+  proposals and `core.feedback`: scope, Stop/abort, approved registration/effects,
+  material dependencies, actual final text bytes and reserved episode limits are
+  checked by runtime-owned facets and again at queue adoption. Natural-idle wake
+  requires both grants and current supported work. Context preparation is not
+  provider inclusion; native receipts stay at their evidenced strength. Bounded
+  protected intent/tombstones preserve unknown effects rather than evicting them.
+  Expert `core.request-check`/full S3 recovery remain K07 work; capture/export and
+  later bindings stay unavailable. Scripted support is not live quality/billing,
+  observed installed K06 feedback or universal platform/TUI/RPC/ACL/power-loss
+  certification. Read [K06's qualified scope](../docs/08-development-checkpoints-and-release-checklists.md#k06).
 - Configuration validates before activation; cold invalid configuration remains inactive.
 - The runtime owns each observed session generation, admission and effect authority.
 - Trigger/policy decisions do not perform direct host effects, network calls or hidden timers.

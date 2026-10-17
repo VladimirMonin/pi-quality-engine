@@ -37,14 +37,20 @@ The project is specified as a standalone Pi extension for evidence-based assessm
 
 ### Current accepted checkpoint 📍
 
-K01–K03 close bounded S1. **K04 /0.2.0 is independently ACCEPTED and its local
-implementation release is verified** at `28960100016fbe85729159413a1b6e977c2cdac2`,
-annotated local `v0.2.0`. Read the [K04 decision and exact release evidence](08-development-checkpoints-and-release-checklists.md#k04)
-and the [single canonical K04 handoff](../verification/K04-repair17-s5-final-handoff.md).
-The next canonical implementation locator is [K05 — clean Pi reviewers](08-development-checkpoints-and-release-checklists.md#k05),
-not a new deliverable defined here. K05/S2 exit has not been implemented or accepted;
-this documentation update launches nothing. Polza/Jev, OpenRouter/Jev and local
-d3-mini Q8 each remain UNVERIFIED. A local tag is not publication or spending authority.
+K01–K03 close bounded S1; K05 closes its qualified mechanical S2 scope.
+**K06 /0.4.0 is independently ACCEPTED by Astra221 and locally released** at
+`40bcce3e0f2d2f3b62f1d3ca2a6873670957a7c1`, annotated `v0.4.0` targeting that
+implementation rather than later documentation. Read the
+[K06 decision and exact representation qualification](08-development-checkpoints-and-release-checklists.md#k06)
+and the [existing canonical K06 handoff](../verification/K06/author/implementation-20261017-212/handoff.md).
+Only native SDK print/scripted feedback is qualified; installed loading/K05
+consumer plus precise final tar/input equivalence is not observed installed K06
+feedback, TUI/RPC parity, semantic clearance or live judgment/billing.
+The next canonical implementation locator is [K07 — escalation/recovery and S3 exit](08-development-checkpoints-and-release-checklists.md#k07).
+Sol222 owns its source-bound SAME-DeepSeek preparation for Hermes dispatch;
+this documentation update launches nobody or claims K07 implemented. Polza/Jev,
+OpenRouter/Jev and local d3-mini Q8 each remain UNVERIFIED. Git delivery is
+separately recorded; a tag grants neither package publication nor spending.
 
 <a id="first-reading"></a>
 
