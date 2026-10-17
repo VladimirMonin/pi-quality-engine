@@ -125,6 +125,11 @@ export interface ModelRegistryPort {
   hasConfiguredAuth(model: Record<string, unknown>): boolean;
   completeChat(model: Record<string, unknown>, messages: readonly { role: string; content: string }[], options: Record<string, unknown>, signal: AbortSignal): Promise<ChatTransportResult>;
   classify(model: Record<string, unknown>, state: Record<string, unknown>, questions: Record<string, unknown>, options: Record<string, unknown>, signal: AbortSignal): Promise<ClassifierTransportResult>;
+  /**
+   * Optional native streaming transport used by the run-bound reviewer.
+   * Admission/accounting stay in ModelService; this only produces the stream.
+   */
+  streamSimple?(model: Record<string, unknown>, context: unknown, options: unknown): unknown;
 }
 
 export interface ModelServiceBudget {
@@ -161,6 +166,38 @@ export interface ModelDispatchInput {
    * Last-moment revocation authority, rechecked after the awaited durable
    * intent and immediately before any transport arrival.
    */
+  revoked?: () => boolean;
+  /**
+   * Reviewer streaming transport. When present, the approved model is passed to
+   * this native stream boundary instead of the direct completeChat/classify
+   * calls; admission, reservation, intent, revocation and settlement stay in
+   * this same owner.
+   */
+  reviewTransport?: (model: Record<string, unknown>, signal: AbortSignal) => Promise<Result<ReviewerTurnTransport>>;
+}
+
+/** One bounded reviewer turn: the native stream plus its later completion. */
+export interface ReviewerTurnTransport {
+  stream: unknown;
+  completion: Promise<{
+    usage: Record<string, unknown> | null;
+    stopReason?: string | null;
+    errorCode?: string | null;
+    model?: { provider: string; id: string; revision: string | null };
+  }>;
+}
+
+export interface ReviewerTurnInput {
+  runId: string;
+  profileId: string;
+  estimatedInputTokens: number;
+  maxOutputTokens: number;
+  inputManifestRef?: string;
+  inputSerializedDigest?: string;
+  profileRevision?: string;
+  signal: AbortSignal;
+  onIntent?: (attempt: ModelAttemptRecord) => boolean | Promise<boolean>;
+  onDispatched?: (attempt: ModelAttemptRecord) => void;
   revoked?: () => boolean;
 }
 
@@ -710,6 +747,82 @@ export class ModelService {
     });
     try {
       const transportPromise: Promise<Result<ModelResponse>> = (async () => {
+        if (input.reviewTransport !== undefined) {
+          const admitted = await input.reviewTransport(model, input.signal);
+          if (!admitted.ok) {
+            return this.#settle(attempt, "settled", {
+              output: "",
+              model: {
+                provider: typeof model["provider"] === "string" ? model["provider"] : profile.provider,
+                id: typeof model["id"] === "string" ? model["id"] : profile.model,
+                revision: typeof model["revision"] === "string" ? model["revision"] : null,
+              },
+              usage: null,
+              stopReason: "error",
+              errorCode: admitted.error.code,
+              profile,
+            });
+          }
+          // The stream is delivered to the caller through the shared closure;
+          // its completion settles this exact owned attempt once, later.
+          // The stream is delivered to the caller promptly, but the request
+          // deadline stays alive across real streaming completion: a held turn
+          // becomes a truthful unresolved attempt without refunding physical
+          // work, and the late authoritative completion still settles THIS
+          // attempt once through the shared ledger.
+          let requestTimer: ReturnType<typeof setTimeout> | null = null;
+          const clearRequestTimer = (): void => {
+            if (requestTimer !== null) clearTimeout(requestTimer);
+            requestTimer = null;
+          };
+          requestTimer = setTimeout(() => {
+            if (attempt.state === "dispatched") {
+              attempt.state = "unresolved";
+              attempt.errorCode = "core.model-request-timeout";
+              attempt.visibility = "partial";
+              attempt.settledAt = this.#now();
+              this.#ledgerRevision += 1;
+              this.#publish();
+            }
+          }, profile.requestTimeoutMs);
+          void admitted.value.completion.then(completion => {
+            clearRequestTimer();
+            this.#settle(attempt, "settled", {
+              output: "",
+              model: completion.model ?? {
+                provider: typeof model["provider"] === "string" ? model["provider"] : profile.provider,
+                id: typeof model["id"] === "string" ? model["id"] : profile.model,
+                revision: typeof model["revision"] === "string" ? model["revision"] : null,
+              },
+              usage: completion.usage,
+              stopReason: completion.stopReason ?? null,
+              errorCode: completion.errorCode ?? null,
+              profile,
+            });
+          }, () => {
+            clearRequestTimer();
+            attempt.state = "unresolved";
+            attempt.errorCode = attempt.errorCode ?? "core.model-request-unresolved";
+            attempt.visibility = "partial";
+            attempt.settledAt = this.#now();
+            this.#ledgerRevision += 1;
+            this.#publish();
+          });
+          return {
+            ok: true,
+            value: {
+              attemptIds: [attempt.attemptId],
+              actualModel: attempt.actualModel ?? {
+                provider: profile.provider,
+                id: profile.model,
+                revision: null,
+              },
+              output: null,
+              manifestId: `model-${attempt.attemptId}`,
+              accounting: "unknown",
+            },
+          };
+        }
         if (input.kind === "chat") {
           const transport = await this.#registry.completeChat(model, input.messages ?? [], {
             maxOutputTokens,
@@ -763,6 +876,41 @@ export class ModelService {
     } finally {
       if (timer !== null) clearTimeout(timer);
     }
+  }
+
+  /**
+   * Admits one bounded reviewer turn through the same shared owner and returns
+   * its native stream. Denied turns create no attempt and never reach the
+   * transport; an admitted turn reserves, awaits protected intent, rechecks
+   * revocation and settles from the actual completion.
+   */
+  async dispatchReviewTurn(
+    input: ReviewerTurnInput,
+    transport: (model: Record<string, unknown>, signal: AbortSignal) => Promise<Result<ReviewerTurnTransport>>,
+  ): Promise<Result<{ attemptId: string; stream: unknown }>> {
+    let stream: unknown = null;
+    const outcome = await this.dispatch({
+      runId: input.runId,
+      profileId: input.profileId,
+      kind: "chat",
+      purpose: "reviewer",
+      estimatedInputTokens: input.estimatedInputTokens,
+      maxOutputTokens: input.maxOutputTokens,
+      ...(input.inputManifestRef === undefined ? {} : { inputManifestRef: input.inputManifestRef }),
+      ...(input.inputSerializedDigest === undefined ? {} : { inputSerializedDigest: input.inputSerializedDigest }),
+      ...(input.profileRevision === undefined ? {} : { profileRevision: input.profileRevision }),
+      ...(input.onIntent === undefined ? {} : { onIntent: input.onIntent }),
+      ...(input.onDispatched === undefined ? {} : { onDispatched: input.onDispatched }),
+      ...(input.revoked === undefined ? {} : { revoked: input.revoked }),
+      signal: input.signal,
+      reviewTransport: async (model, signal) => {
+        const admitted = await transport(model, signal);
+        if (admitted.ok) stream = admitted.value.stream;
+        return admitted;
+      },
+    });
+    if (!outcome.ok) return { ok: false, error: outcome.error };
+    return { ok: true, value: { attemptId: outcome.value.attemptIds[0] ?? "", stream } };
   }
 
   #settle(
@@ -855,6 +1003,10 @@ export class ModelService {
     attempt.state = "released";
     attempt.errorCode = errorCode;
     attempt.settledAt = this.#now();
+    // An un-dispatched release clears the attempt's own reservation too, so a
+    // released record never reports a lingering reserved amount.
+    attempt.reservedTokens = 0;
+    attempt.reservedCost = null;
     this.#reservedTokens = Math.max(0, this.#reservedTokens - estimated);
     this.#dispatchedCount = Math.max(0, this.#dispatchedCount - 1);
     if (estimatedCost !== null) {

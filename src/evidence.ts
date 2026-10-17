@@ -156,6 +156,8 @@ export interface AcquisitionObservation {
   /** Original raw byte size of the acquired resource. */
   bytes: number;
   changedDuringRead: boolean;
+  /** True when the returned material is a partial view of the source, not a complete acquisition. */
+  partial?: boolean;
   outcome: "acquired";
   /** Actual prompt resource purpose, when the owning call knows it. */
   purpose?: "instruction" | "questions" | "resultSchema";

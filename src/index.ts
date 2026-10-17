@@ -15,7 +15,7 @@ import type { RegistryQuery } from "./contracts.js";
 import { EngineSession, SessionPhysicalState, inspectInactiveSession } from "./runtime.js";
 import type { EngineSessionInput, EngineStatus, PrimaryHostEvent, SessionControlState } from "./runtime.js";
 import { mapPiEvent } from "./adapters/pi-host.js";
-import { piModelRegistryPort } from "./adapters/pi-models.js";
+import { createPiReviewerHost, piModelRegistryPort } from "./adapters/pi-models.js";
 import type { PiHostEventContext } from "./adapters/pi-host.js";
 
 function packageResourcesDir(): string {
@@ -32,6 +32,7 @@ function sessionInput(ctx: ExtensionContext): EngineSessionInput {
     projectTrusted: ctx.isProjectTrusted(),
     projectRoot: ctx.cwd,
     modelRegistry: piModelRegistryPort(ctx.modelRegistry),
+    reviewHostFactory: model => createPiReviewerHost(ctx.modelRegistry, { model }),
     hostVersion: VERSION,
     hostMode: ctx.mode,
     resourcesDir: packageResourcesDir(),

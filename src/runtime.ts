@@ -10,6 +10,7 @@ import { createHash, randomBytes } from "node:crypto";
 import { readFileSync, statSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { admitContextItem, assembleContext, ITEM_ASSET, PROVENANCE_ASSETS, ReferenceTokens, type AssembledContext, type ItemAssetEntry } from "./context.js";
+import { runReviewerSession, type ReviewerAcquisitionDescriptor, type ReviewerHost } from "./builtins/pi-reviewer.js";
 import { DEFAULT_MAX_RECORD_BYTES, DiagnosticHistory } from "./diagnostics.js";
 import { loadEffectiveConfiguration } from "./configuration.js";
 import type { ConfigurationRejection } from "./configuration.js";
@@ -37,7 +38,7 @@ import { GitEpisodeEvidence } from "./git-evidence.js";
 import { ModelService, renderChatInput, renderClassifierState, finalizeRenderedInput } from "./models.js";
 import type { ModelRegistryPort, ModelUsageSummary } from "./models.js";
 import { createPromptFilesProvider } from "./builtins/prompts.js";
-import { chatEvaluator, classifierEvaluator, repeatedToolsEvaluator } from "./builtins/evaluators.js";
+import { chatEvaluator, classifierEvaluator, piSessionEvaluator, repeatedToolsEvaluator } from "./builtins/evaluators.js";
 import { recordOnlyPolicy } from "./builtins/policies.js";
 import type {
   AssessmentFindingMetadata,
@@ -67,6 +68,8 @@ import type {
   RegistryQuery,
   ResolvedConfiguration,
   Result,
+  ReviewRequest,
+  ReviewResult,
   RunRef,
   Scope,
   TriggerReason,
@@ -77,7 +80,7 @@ import type {
 } from "./contracts.js";
 
 export const ENGINE_NAME = "pi-quality-engine";
-export const ENGINE_VERSION = "0.2.0";
+export const ENGINE_VERSION = "0.3.0";
 export const ENGINE_BUILD_REF = `${ENGINE_NAME}@${ENGINE_VERSION}`;
 export const DATA_POLICY_REVISION = "o1-1";
 
@@ -112,6 +115,11 @@ export interface EngineSessionInput {
   projectRoot?: string;
   /** Model registry port used for approved engine-owned direct requests. */
   modelRegistry?: ModelRegistryPort;
+  /**
+   * Builds the production reviewer host for the resolved approved model. The
+   * composition root supplies it from the host's public SDK registry.
+   */
+  reviewHostFactory?: (model: Record<string, unknown>) => Promise<ReviewerHost>;
   /** Registry availability notification sink used by the composition root. */
   publishRegistryEndpoint?: (endpoint: ComponentRegistry["endpoint"]) => void;
   /** Same-session control state; the composition root preserves it across reload. */
@@ -440,8 +448,8 @@ class RunCustody {
       revisionRef,
       sourceId: event.ownerId,
       displayPath: null,
-      sizes: [{ boundary: "source", utf8Bytes: event.bytes, unicodeScalars: null, lines: null, estimatedTokens: null, complete: true }],
-      visibility: event.changedDuringRead ? "partial" : "complete",
+      sizes: [{ boundary: event.partial === true ? "selected" : "source", utf8Bytes: event.bytes, unicodeScalars: null, lines: null, estimatedTokens: null, complete: event.partial !== true }],
+      visibility: event.changedDuringRead || event.partial === true ? "partial" : "complete",
       repeated: false,
       emitted: false,
     });
@@ -489,8 +497,45 @@ interface ActiveRun {
   configRevision: string;
   configuredTimeoutMs: number;
   timedOut: boolean;
+  /** Sticky cancellation: a stopped/cancelled run can never publish a result. */
+  cancelled: boolean;
+  /** Run-scoped cleanup signal: Stop or the whole-run deadline aborts it. */
+  abort: AbortController;
+  /** F08/F09: owned backend operations still physically outstanding. */
+  physicalLeases: number;
+  /** F08/F09: false while a producer could still start owned operations. */
+  producerOpen: boolean;
+  /** F08/F09: true once the logical reviewer outcome has been settled. */
+  logicalSettled: boolean;
+  /** True once the run has been released from every physical view exactly once. */
+  physicalFinalised: boolean;
   /** The one run-owned acquisition/issuance custody record. */
   custody: RunCustody;
+  /**
+   * 201-F2: real reviewer acquisitions minted at the operation/result boundary,
+   * before the next provider request and before submission validation. Holds only
+   * opaque references, project-relative targets and content-derived versions.
+   */
+  reviewerEvidence: {
+    refs: Set<string>;
+    paths: Set<string>;
+    acquisitions: Array<{
+      toolName: string;
+      toolCallId: string | null;
+      path: string | null;
+      version: string | null;
+      sourceVersion: string | null;
+      selection: string;
+      bytes: number;
+    }>;
+  };
+  /**
+   * 201-F3/203: the actual bounded initial selection delivered for this run. Rendering, the
+   * request manifest and the functional coverage check all derive from these same counts.
+   */
+  reviewerSelection: { truncatedItems: number; omittedItems: number };
+  /** 201-F4/203: bounded real reviewer tool-operation facts for owner observation. */
+  reviewerOps: Array<{ operationId: string; toolRef: string; toolName: string; outcome: string; ordinal: number; bytes?: number; refs?: readonly string[] }>;
 }
 
 interface SettledAssessment {
@@ -564,6 +609,24 @@ function invalidAssessmentResult(reasonCode: string): AssessmentResult {
   };
 }
 
+/**
+ * C1 §12.5 / M1 §13.2: cancellation immediately revokes result authority. A
+ * stopped or cancelled run settles as cancelled/undetermined; its late
+ * provider usage still reconciles on the original model attempt.
+ */
+function cancelledAssessmentResult(reasonCode: string): AssessmentResult {
+  return {
+    operational: "cancelled",
+    coverage: { state: "insufficient", scopeDescription: "Cancellation revoked this run's result authority before publication.", issues: [{ sourceId: "core.runtime", reason: reasonCode, required: true, evidenceIds: [] }] },
+    conclusion: "undetermined",
+    findings: [],
+    scores: [],
+    additionalEvidence: [],
+    dependencies: [],
+    usageAttemptIds: [],
+  };
+}
+
 interface CheckRuntimeState {
   checkId: string;
   state: "active" | "waiting" | "disabled";
@@ -581,17 +644,32 @@ interface CheckRuntimeState {
  */
 export class SessionPhysicalState {
   readonly #owned = new Map<object, number>();
+  /** Reviewer subcapacity: physically pending reviewer work owned per generation. */
+  readonly #reviewers = new Map<object, number>();
   #current: { owner: object; notify: () => void } | null = null;
 
-  reserve(owner: object): void {
+  reserve(owner: object, reviewer = false): void {
     this.#owned.set(owner, (this.#owned.get(owner) ?? 0) + 1);
+    if (reviewer) this.#reviewers.set(owner, (this.#reviewers.get(owner) ?? 0) + 1);
   }
 
   release(owner: object): void {
     const count = this.#owned.get(owner) ?? 0;
     if (count > 1) this.#owned.set(owner, count - 1);
     else this.#owned.delete(owner);
+    const reviewerCount = this.#reviewers.get(owner) ?? 0;
+    if (reviewerCount > 1) this.#reviewers.set(owner, reviewerCount - 1);
+    else this.#reviewers.delete(owner);
     this.#current?.notify();
+  }
+
+  /** Physically pending reviewer operations owned by other generations. */
+  reviewersInFlight(owner: object): number {
+    let total = 0;
+    for (const [key, value] of this.#reviewers) {
+      if (key !== owner) total += value;
+    }
+    return total;
   }
 
   /** Physical operations owned by other generations of the same session. */
@@ -1116,6 +1194,7 @@ export class EngineSession {
         repeatedToolsEvaluator,
         chatEvaluator,
         classifierEvaluator,
+        piSessionEvaluator,
         recordOnlyPolicy,
       ],
       resources: {
@@ -1331,6 +1410,9 @@ export class EngineSession {
     const previousWork = this.#store.view().work;
     if (event.type === "operator-stop") {
       this.#store.markOperatorStopped();
+      // Sticky per-run cancellation: already-dispatched work keeps its physical
+      // lifetime and late accounting, but can no longer publish a result.
+      for (const run of this.#activeRuns.values()) run.cancelled = true;
       this.#publish(this.#primarySource(), {
         externalId: null,
         kind: "core.operator-stopped",
@@ -1429,6 +1511,10 @@ export class EngineSession {
     if (this.#state !== "active") return;
     const previousWork = this.#store.view().work;
     this.#store.markOperatorStopped();
+    // Sticky per-run cancellation on the actual command surface too: a run
+    // pending at Stop keeps its physical lifetime and late accounting but can
+    // no longer publish a result.
+    for (const run of this.#activeRuns.values()) run.cancelled = true;
     if (this.#input.controlState !== undefined) this.#input.controlState.operatorStopped = true;
     this.#emitRuntimeState(previousWork);
     // Stop takes effect immediately in memory; the protected checkpoint is the
@@ -1803,6 +1889,21 @@ export class EngineSession {
       this.#admit(checkId, "queued", ["core.capacity"], pending);
       return;
     }
+    // C1 reviewer sublimit beside the total evaluation capacity: a run whose
+    // evaluator is the run-bound Pi reviewer counts against maxConcurrentReviewers
+    // (default 1). Physically pending work keeps its reservation across
+    // generations through the shared physical state, so a logical result or
+    // dispose return never frees this slot early.
+    const maxReviewers = this.#configuration.value.runtime.maxConcurrentReviewers;
+    if (this.#isReviewerCheck(checkId)) {
+      const activeReviewers = [...this.#activeRuns.values()].filter(run => this.#isReviewerCheck(run.checkId)).length
+        + this.#physicalState.reviewersInFlight(this);
+      if (activeReviewers >= maxReviewers) {
+        this.#noteSuppressed("core.reviewer-capacity");
+        this.#admit(checkId, "queued", ["core.reviewer-capacity"], pending);
+        return;
+      }
+    }
     this.#pendingIntents.delete(checkId);
     this.#admit(checkId, "admitted", [], pending);
     this.#startRun(checkId, check, pending);
@@ -1833,6 +1934,13 @@ export class EngineSession {
     });
   }
 
+  /** True when the check's bound evaluator is the run-bound Pi reviewer. */
+  #isReviewerCheck(checkId: string): boolean {
+    const evaluatorId = this.#configuration.value.checks[checkId]?.evaluator;
+    const bound = evaluatorId === undefined ? undefined : this.#configuration.value.evaluators[evaluatorId];
+    return bound?.use === "core.pi-session";
+  }
+
   #noteSuppressed(reasonCode: string): void {
     this.#suppressedReasons.set(reasonCode, (this.#suppressedReasons.get(reasonCode) ?? 0) + 1);
   }
@@ -1859,13 +1967,22 @@ export class EngineSession {
       configRevision: this.#configuration.revision,
       configuredTimeoutMs: check.timeoutMs ?? this.#configuration.value.runtime.defaultRunTimeoutMs,
       timedOut: false,
+      cancelled: false,
+      abort: new AbortController(),
+      physicalLeases: 0,
+      producerOpen: false,
+      logicalSettled: false,
+      physicalFinalised: false,
       custody: new RunCustody(new ReferenceTokens({
         acceptsReasonCode: (componentId, code) => this.#registry.acceptsDiagnosticCode(componentId, code),
         isAcceptedIdentity: value => this.#acceptsReference(value),
         expectedBuiltinRevision: uri => this.#expectedBuiltinRevision(uri),
       }, this.#referenceKey)),
+      reviewerEvidence: { refs: new Set<string>(), paths: new Set<string>(), acquisitions: [] },
+      reviewerSelection: { truncatedItems: 0, omittedItems: 0 },
+      reviewerOps: [],
     };
-    this.#physicalState.reserve(this);
+    this.#physicalState.reserve(this, this.#isReviewerCheck(checkId));
     const timeoutCancel = this.#clock.setTimer(run.configuredTimeoutMs, () => this.#timeoutRun(run.runId));
     this.#runTimers.set(run.runId, timeoutCancel);
     this.#acceptIdentity(runId);
@@ -1895,7 +2012,11 @@ export class EngineSession {
   async #executeRun(run: ActiveRun, check: CheckDefinition): Promise<void> {
     const context = await this.#assemble(run, check);
     if (this.#state !== "active") {
-      this.#physicalState.release(this);
+      // P3: retirement during assembly is not physical completion; mark the
+      // logical state so the finalizer can release once real work drains.
+      run.logicalSettled = true;
+      run.producerOpen = false;
+      this.#finaliseRunIfDrained(run);
       return;
     }
     if (!context.ok) {
@@ -1982,11 +2103,23 @@ export class EngineSession {
         correlation: { runId: run.runId },
       });
     }
-    const settled = await this.#evaluate(run, check, assembled);
+    const evaluated = await this.#evaluate(run, check, assembled);
     if (this.#state !== "active") {
-      this.#physicalState.release(this);
+      // P3: retirement during review keeps physical ownership until the real
+      // drain; logical terminal state is marked without granting authority.
+      run.logicalSettled = true;
+      run.producerOpen = false;
+      this.#finaliseRunIfDrained(run);
       return;
     }
+    const settled = run.cancelled
+      ? {
+        result: cancelledAssessmentResult("core.operator-stopped"),
+        validationState: "valid" as const,
+        terminalReason: "core.operator-stopped",
+        findingCount: 0,
+      }
+      : evaluated;
     this.#settleRun(run, settled);
     if (this.#modelService !== null && this.#modelService.attempts.length > 0) {
       this.#emit({
@@ -2071,16 +2204,7 @@ export class EngineSession {
     });
     // Safe descriptors are offered BEFORE the acquired source facts on every
     // return path, including a refused/overflowed assembly with no dispatch.
-    for (const descriptor of run.custody.drainNewDescriptors()) {
-      this.#rememberDescriptor(descriptor as unknown as JsonObject);
-      this.#emit({
-        event: "quality.resource.described",
-        level: "info",
-        reasonCodes: [],
-        data: descriptor as unknown as JsonObject,
-        correlation: { runId: run.runId },
-      });
-    }
+    this.#offerCustodyDescriptors(run);
     for (const record of this.#sourceEvidence.drainAcquisitions(run.runId)) {
       this.#emit({
         event: "quality.context.source",
@@ -2140,7 +2264,13 @@ export class EngineSession {
       raw = await resolvedEvaluator.value.definition.evaluate(profile.options, evaluatorInput, {
         ...resolvedEvaluator.value.lifecycle(),
         run: run.runRef,
-        services: { request: this.#modelsFacet(run).request },
+        services: {
+          request: this.#modelsFacet(run).request,
+          review: (request, signal) => this.#review(run, request, run.abort.signal, assembled, {
+            componentId: resolvedEvaluator.value.componentId,
+            registrationId: resolvedEvaluator.value.registrationId,
+          }),
+        },
       });
     } catch {
       return {
@@ -2150,6 +2280,9 @@ export class EngineSession {
         findingCount: 0,
       };
     }
+    // 201-F4/203: real bounded reviewer tool-operation records at the owned observation boundary,
+    // with the actual component identity, operation ordinal, outcome and issued references.
+    this.#drainReviewerOperations(run, { componentId: resolvedEvaluator.value.componentId, registrationId: resolvedEvaluator.value.registrationId });
     if (this.#state !== "active") {
       return {
         result: invalidAssessmentResult("core.retired-generation"),
@@ -2158,7 +2291,22 @@ export class EngineSession {
         findingCount: 0,
       };
     }
-    const settled = this.#validateAssessment(raw, run, assembled);
+    // 201-F4: reviewer operations minted during the run (real acquisitions with content-
+    // derived versions) are offered as bounded owned resource descriptors, metadata only,
+    // before validation and settlement rather than only after the evaluator returns.
+    this.#offerCustodyDescriptors(run);
+    const validated = this.#validateAssessment(raw, run, assembled);
+    // C1 §12.5 / M1 §13.2: cancellation immediately revokes result authority.
+    // The publication owner itself must substitute the cancelled outcome, so a
+    // stopped run's late completion can never publish an evaluated success.
+    const settled = run.cancelled
+      ? {
+        result: cancelledAssessmentResult("core.operator-stopped"),
+        validationState: "valid" as const,
+        terminalReason: "core.operator-stopped",
+        findingCount: 0,
+      }
+      : validated;
     this.#emit({
       event: "quality.assessment.result",
       level: settled.result.operational === "failed" ? "warn" : "info",
@@ -2264,6 +2412,11 @@ export class EngineSession {
     if (findingsInput === null) return invalid("core.invalid-evaluation-result");
     const knownReferences = new Set<string>(assembled.snapshot.items.map(item => item.id));
     for (const dependency of assembled.snapshot.dependencies) knownReferences.add(dependency.evidenceId);
+    // 201-F2: material the reviewer actually acquired during this run is citable at the
+    // canonical boundary through its minted opaque references, or by the project-relative
+    // path of a file whose material the tools really returned (evidence/affected only).
+    for (const ref of run.reviewerEvidence.refs) knownReferences.add(ref);
+    const knownAcquisitionPaths = run.reviewerEvidence.paths;
     const findings: Finding[] = [];
     for (const findingInput of findingsInput) {
       if (!isPlainRecord(findingInput)) return invalid("core.invalid-evaluation-result");
@@ -2287,8 +2440,9 @@ export class EngineSession {
         if (values === null) return invalid("core.invalid-evaluation-result");
         for (const ref of values) {
           if (typeof ref !== "string" || !BOUNDED_ID_PATTERN.test(ref)) return invalid("core.invalid-evaluation-result");
-          // References must resolve to actual context items or evidence dependencies.
-          if (!knownReferences.has(ref)) return invalid("core.invalid-evaluation-result");
+          // References must resolve to actual context items, evidence dependencies, or
+          // material this run actually acquired during the review.
+          if (!knownReferences.has(ref) && !(key !== "requirementRefs" && knownAcquisitionPaths.has(ref))) return invalid("core.invalid-evaluation-result");
           refs[key].push(ref);
         }
       }
@@ -2407,7 +2561,12 @@ export class EngineSession {
     if (conclusion === "findings" && findings.length === 0) return invalid("core.invalid-evaluation-result");
     if (operational !== "completed" && conclusion !== "undetermined") return invalid("core.invalid-evaluation-result");
     // Committed coverage cannot be widened by the evaluator.
-    const committedStrength = Math.min(COVERAGE_STRENGTH[coverageState], COVERAGE_STRENGTH[assembled.snapshot.coverage.state]);
+    // 201-F3/203: the authoritative bounded initial selection also caps the committed coverage:
+    // a claim of complete coverage is downgraded when only part of the admitted material was
+    // actually delivered, using the existing coverage-strength mechanism rather than changing
+    // the reviewer's result authority.
+    const selectionStrength = run.reviewerSelection.truncatedItems > 0 || run.reviewerSelection.omittedItems > 0 ? 1 : 2;
+    const committedStrength = Math.min(COVERAGE_STRENGTH[coverageState], COVERAGE_STRENGTH[assembled.snapshot.coverage.state], selectionStrength);
     const committedState = committedStrength === 2 ? "complete" : committedStrength === 1 ? "partial" : "insufficient";
     let committedConclusion = conclusion;
     if (committedState !== "complete" && committedConclusion === "no-supported-finding") committedConclusion = "undetermined";
@@ -2473,6 +2632,11 @@ export class EngineSession {
     const run = [...this.#activeRuns.values()].find(candidate => candidate.runId === runId);
     if (run === undefined || run.timedOut) return;
     run.timedOut = true;
+    // The whole-run deadline revokes result authority immediately and requests
+    // real reviewer cleanup now, instead of waiting for the later review
+    // timeout; logical cancellation still never frees physical occupancy.
+    run.cancelled = true;
+    run.abort.abort();
     const cancel = this.#runTimers.get(runId);
     if (cancel !== undefined) cancel();
     this.#runTimers.delete(runId);
@@ -2500,21 +2664,56 @@ export class EngineSession {
     });
   }
 
+  /** F08/F09: run-scoped physical lease. Acquired BEFORE real work starts and
+   * released only when that owned operation genuinely settles; the run retains
+   * its reservation until every lease is released. */
+  #holdPhysical(run: ActiveRun): () => void {
+    // P1: never register NEW physical work on a revoked or already-finalized
+    // owner; already-started work keeps its own lease until it truly settles.
+    if (run.physicalFinalised || run.cancelled || run.abort.signal.aborted) {
+      return () => undefined;
+    }
+    run.physicalLeases += 1;
+    let released = false;
+    return () => {
+      if (released) return;
+      released = true;
+      run.physicalLeases = Math.max(0, run.physicalLeases - 1);
+      this.#finaliseRunIfDrained(run);
+    };
+  }
+
+  /** Once-only physical finalizer: removes the run from every admission view
+   * and releases the physical reservation exactly once, only when no owned
+   * backend operation is still outstanding. Never emits another settlement. */
+  #finaliseRunIfDrained(run: ActiveRun): void {
+    // Astra63: a zero-leaf gap is not drain proof. The reservation is retained
+    // until the producer is CLOSED and the logical outcome has settled AND no
+    // owned operation is outstanding — so work that starts between operations
+    // still holds the run.
+    if (run.physicalFinalised || run.producerOpen || !run.logicalSettled || run.physicalLeases > 0) return;
+    run.physicalFinalised = true;
+    if (this.#activeRuns.get(run.checkId) === run) this.#activeRuns.delete(run.checkId);
+    this.#physicalState.release(this);
+    this.#wakePendingAdmissions();
+  }
+
   #settleRun(run: ActiveRun, settled: SettledAssessment): void {
     const cancel = this.#runTimers.get(run.runId);
     if (cancel !== undefined) cancel();
     this.#runTimers.delete(run.runId);
     if (run.timedOut) {
-      // Physical settlement after the logical timeout releases the reserved
-      // capacity exactly once; no second settlement record is emitted.
-      this.#activeRuns.delete(run.checkId);
-      this.#physicalState.release(this);
-      this.#wakePendingAdmissions();
+      // Logical timeout settles once; the reservation is retained until the
+      // producer is closed and every owned physical operation actually drains.
+      run.logicalSettled = true;
+      run.producerOpen = false;
+      this.#finaliseRunIfDrained(run);
       return;
     }
     const durationMs = Math.max(0, this.#clock.nowMonoMs() - run.startedMonoMs);
-    this.#activeRuns.delete(run.checkId);
-    this.#physicalState.release(this);
+    run.logicalSettled = true;
+    run.producerOpen = false;
+    this.#finaliseRunIfDrained(run);
     const state = this.#checkStates.get(run.checkId);
     if (state !== undefined) {
       state.runs += 1;
@@ -2558,6 +2757,360 @@ export class EngineSession {
       readSource: (sourceId, signal) => this.#sourceEvidence.readSource(sourceId, signal),
       readPermittedFile: (path: string, signal: AbortSignal, observation?: ReadObservationContext) => this.#sourceEvidence.readPermittedFile(path, signal, observation),
       recentObservations: limit => this.#store.recentObservations(limit),
+    };
+  }
+
+  /**
+   * Run-bound C1 reviewer service: one fresh Pi session per evaluation through
+   * the production host, with every provider turn admitted by the shared model
+   * owner (protected intent, Stop/generation revocation) and canonical
+   * validation left to the existing assessment validator.
+   */
+  async #review(run: ActiveRun, request: ReviewRequest, signal: AbortSignal, assembled: AssembledContext, evaluatorIdentity: { componentId: string; registrationId: string }): Promise<Result<ReviewResult>> {
+    // P1: the local review deadline is a real revocation latch — from its
+    // instant onward no NEW owned backend acquisition is admissible, even
+    // though run.cancelled/abort are only set by Stop/whole-run timeout.
+    const reviewDeadlineMonoMs = this.#clock.nowMonoMs() + request.timeoutMs;
+    const profile = this.#configuration.value.modelProfiles[request.profileId];
+    if (profile === undefined) return { ok: false, error: { code: "core.model-profile-unknown", retryable: false } };
+    const port = this.#input.modelRegistry;
+    const factory = this.#input.reviewHostFactory;
+    if (port === undefined || factory === undefined || port.streamSimple === undefined) {
+      return { ok: false, error: { code: "core.review-unavailable", retryable: false } };
+    }
+    const model = port.findChat(profile.provider, profile.model);
+    if (model === null) return { ok: false, error: { code: "core.model-route-unavailable", retryable: false } };
+    // Producer lifetime: owned operations may start from here until the
+    // runner returns, so the reservation cannot be finalised in that window.
+    run.producerOpen = true;
+    // 173/S3: the evaluator review deadline also bounds the pre-runner factory await; a late
+    // host return is cleanup-only and never becomes renewed authority.
+    // B.10/T06 physical lifetime: the factory itself is an owned operation. Its once-owned
+    // lease is acquired BEFORE it starts and released only at its genuine settlement
+    // (resolution or rejection), so a bounded logical timeout cannot refund a still-pending
+    // factory and the review subcapacity stays occupied until the real work drains.
+    const releaseFactory = this.#holdPhysical(run);
+    let factoryReleased = false;
+    const settleFactory = () => {
+      if (factoryReleased) return;
+      factoryReleased = true;
+      releaseFactory();
+    };
+    let factoryOutcome: Promise<ReviewerHost>;
+    try {
+      factoryOutcome = factory(model);
+    } catch (error) {
+      settleFactory();
+      throw error;
+    }
+    void factoryOutcome.then(settleFactory, settleFactory);
+    let factoryTimer: ReturnType<typeof setTimeout> | null = null;
+    const hostOrTimeout = await Promise.race([
+      factoryOutcome,
+      new Promise<"timeout">(resolvePromise => {
+        factoryTimer = setTimeout(() => resolvePromise("timeout"), Math.max(1, reviewDeadlineMonoMs - this.#clock.nowMonoMs()));
+        if (typeof factoryTimer.unref === "function") factoryTimer.unref();
+      }),
+    ]);
+    if (factoryTimer !== null) clearTimeout(factoryTimer);
+    if (hostOrTimeout === "timeout") {
+      // The bounded wait lost the race while the factory is still pending; its lease stays held
+      // until the factory genuinely settles, and a late host is never prompted or adopted.
+      run.producerOpen = false;
+      return { ok: true, value: { output: null, validation: "invalid", modelRequests: 0, toolCalls: 0, additionalReadBytes: 0, terminalReason: "core.review-timeout", evidenceRefs: [] } };
+    }
+    const host = hostOrTimeout;
+    // 201-F1: resolve the accepted named read grants against the assembled admitted material
+    // before the session starts. Unresolved named grants grant nothing and are stated truthfully.
+    const readSources = [...(request.readSources ?? [])];
+    const allowProjectReads = request.allowProjectReads !== false;
+    // An admitted item carries its declaration identity in its own id (`source:<id>:<hash>`)
+    // while provenance.sourceId records the providing component, so both are accepted here.
+    const itemsForSource = (sourceId: string) => request.context.items.filter(item =>
+      item.provenance.sourceId === sourceId || item.id.startsWith(`source:${sourceId}:`));
+    const permittedReadUris = readSources
+      .flatMap(sourceId => itemsForSource(sourceId).map(item => item.provenance.uri))
+      .map(uri => (uri.startsWith("file:") ? uri.slice("file:".length) : uri))
+      .filter(uri => uri.length > 0);
+    const unresolvedReadSources = readSources.filter(sourceId => itemsForSource(sourceId).length === 0);
+    // 201-F2: mint each real acquisition's run-owned references at the operation/result
+    // boundary, before the next provider request and before submission validation, so the
+    // material actually acquired during the session is citable at the canonical boundary.
+    const adoptionRefs: string[] = [];
+    const onAdoptedEvidence = (descriptor: ReviewerAcquisitionDescriptor): readonly string[] => {
+      if (descriptor.isError === true) return [];
+      if (run.reviewerEvidence.acquisitions.length >= 16) return [];
+      const observed = run.custody.observer.observe({
+        sourceId: "reviewer-tool",
+        ownerId: "reviewer-tool",
+        bindingId: descriptor.toolCallId ?? null,
+        resource: descriptor.path ?? descriptor.toolName,
+        revision: descriptor.selectedDigest ?? `selected-${descriptor.selectedBytes ?? descriptor.bytes}-bytes`,
+        bytes: descriptor.selectedBytes ?? descriptor.bytes,
+        changedDuringRead: false,
+        partial: descriptor.truncated === true || descriptor.sourceVersion == null,
+        outcome: "acquired",
+      });
+      if (observed === null) return [];
+      run.reviewerEvidence.refs.add(observed.resourceRef);
+      run.reviewerEvidence.refs.add(observed.revisionRef);
+      if (descriptor.path !== undefined && descriptor.path.length > 0) run.reviewerEvidence.paths.add(descriptor.path);
+      run.reviewerEvidence.acquisitions.push({
+        toolName: descriptor.toolName,
+        toolCallId: descriptor.toolCallId ?? null,
+        path: descriptor.path ?? null,
+        version: descriptor.selectedDigest ?? null,
+        sourceVersion: descriptor.sourceVersion ?? null,
+        selection: descriptor.actual ?? "unknown",
+        bytes: descriptor.bytes,
+      });
+      adoptionRefs.push(observed.resourceRef, observed.revisionRef);
+      return [observed.resourceRef, observed.revisionRef];
+    };
+    const outcome = await runReviewerSession({
+      runId: run.runId,
+      readSources,
+      allowProjectReads,
+      permittedReadUris,
+      onAdoptedEvidence,
+      onToolOperation: operation => {
+        if (run.reviewerOps.length < 32) {
+          run.reviewerOps.push(operation);
+          this.#acceptIdentity(operation.operationId);
+          this.#acceptIdentity(operation.toolRef);
+        }
+      },
+      cwd: this.#input.projectRoot ?? this.#input.projectConfigDir,
+      agentDir: this.#input.agentDir,
+      promptText: (() => {
+        // Explicit admitted context (P-06/explicit-context): the reviewer sees the
+        // actual evidence item identities and criteria it may cite, never raw
+        // bodies and never invented custody.
+        const textOf = (blocks: readonly { type?: string; text?: unknown }[]): string => blocks
+          .filter(block => block.type === "text" && typeof block.text === "string")
+          .map(block => block.text as string)
+          .join(String.fromCharCode(10));
+        const evidenceIds = request.context.items.map(item => item.id).slice(0, 16);
+        const criteria = [...run.criterionIds].slice(0, 8);
+        // 201-F1: the accepted read policy is carried to the operative admission owner and
+        // reflected here; an unresolved named grant grants nothing and is stated, not ignored.
+        const grantLines = [
+          `[grant] projectReads ${allowProjectReads ? "allowed" : "denied"} namedSources ${readSources.length === 0 ? "(none)" : readSources.join(", ")} resolved ${permittedReadUris.length}`,
+          ...(unresolvedReadSources.length === 0 ? [] : [`[grant-unresolved] ${unresolvedReadSources.join(", ")} could not be resolved to admitted material and grant nothing`]),
+        ];
+        // B04/B09: the declared instruction bodies and the per-request
+        // added-evidence manifest reach the real reviewer input with exact
+        // provenance, so identities are never the only supplied content.
+        const manifestLines = request.context.items.slice(0, 16).map(item =>
+          `[evidence ${item.id} role ${item.role} required ${item.required ? "yes" : "no"} bytes ${item.bytes} source ${item.provenance.sourceId} uri ${item.provenance.uri} revision ${item.provenance.revision}]`);
+        // B04: the declared instruction bodies reach the reviewer input with
+        // truthful provenance. The session serializes the prompt in more than
+        // one SDK input, so the body legitimately appears more than once in the
+        // captured transcripts; the fixture asserts presence with the observed
+        // count recorded rather than an unproven exactly-once claim.
+        const instructionLines = assembled.resources.instructions.slice(0, 4).map(item =>
+          `[instruction ${item.provenance.uri} rev ${item.provenance.revision}]`
+          + String.fromCharCode(10)
+          + textOf(item.content));
+        const manifestSummary = `Added-evidence manifest: items ${request.context.items.length}, selectedBytes ${assembled.selectedBytes}, omittedItems ${assembled.omittedItems}, issues ${assembled.issueCodes.length === 0 ? "(none)" : assembled.issueCodes.join(", ")}, resourceRevision ${assembled.resources.resourceRevision}.`;
+        // F01: the ACTUAL admitted source/material bodies reach the first
+        // reviewer request, bounded by the existing configuration, with truthful
+        // provenance and an explicit omission marker when the admitted material
+        // exceeds the bounded prompt budget. Identities alone are not content.
+        // 201-F3/203: ONE bounded selection is authoritative for the rendered material, the request
+        // manifest and the functional coverage checked at validation. Items beyond the finite item
+        // window are counted as omitted, and a partially delivered body never claims completeness.
+        const admittedItems = request.context.items;
+        const material = (() => {
+          const sections: string[] = [];
+          let budget = 6_000;
+          let omitted = Math.max(0, admittedItems.length - 8);
+          let truncated = 0;
+          for (const item of admittedItems.slice(0, 8)) {
+            const body = textOf(item.content);
+            if (body.length === 0) { omitted += 1; continue; }
+            if (budget <= 0) { omitted += 1; continue; }
+            if (body.length > budget) {
+              // 201-F3: never silently clip. Retain the bounded selection but state the exact
+              // original/retained sizes so the actual request and its coverage stay truthful.
+              const retained = body.slice(0, budget);
+              truncated += 1;
+              sections.push(`[material-partial ${item.id} role ${item.role} uri ${item.provenance.uri} revision ${item.provenance.revision} originalChars ${body.length} retainedChars ${retained.length}]`
+                + String.fromCharCode(10) + retained
+                + String.fromCharCode(10) + `[material-truncated] the remainder after character ${retained.length} of ${body.length} was not delivered`);
+              budget = 0;
+              continue;
+            }
+            const slice = body.slice(0, budget);
+            budget -= slice.length;
+            sections.push(`[material ${item.id} role ${item.role} uri ${item.provenance.uri} revision ${item.provenance.revision}]`
+              + String.fromCharCode(10) + slice);
+          }
+          if (omitted > 0) sections.push(`[material-omitted] ${omitted} admitted item(s) exceeded the bounded prompt selection`);
+          if (truncated > 0) sections.push(`[material-partial-summary] ${truncated} admitted item(s) were only partially delivered`);
+          return { sections, omitted, truncated };
+        })();
+        const materialSections = material.sections;
+        run.reviewerSelection = { truncatedItems: material.truncated, omittedItems: material.omitted };
+        const questionSections = (() => {
+          const questions = assembled.resources.questions;
+          if (questions === null || questions === undefined) return [] as string[];
+          const ids = Object.keys(questions).slice(0, 12);
+          if (ids.length === 0) return [] as string[];
+          return [`[questions] ${ids.map(id => `${id}: ${JSON.stringify(questions[id]).slice(0, 240)}`).join(" | ")}`];
+        })();
+        return [
+          `Bounded review of check ${run.checkId}.`,
+          ...grantLines,
+          ...instructionLines,
+          ...materialSections,
+          ...questionSections,
+          manifestSummary,
+          `[selection] promptTruncatedItems ${material.truncated} promptOmittedItems ${material.omitted}`,
+          ...manifestLines,
+          `Permitted evidence item identities: ${evidenceIds.length === 0 ? "(none)" : evidenceIds.join(", ")}.`,
+          `Check criteria: ${criteria.length === 0 ? "(none)" : criteria.join(", ")}.`,
+          "Investigate the permitted project evidence with the provided read-only tools; cite the identities above or the project-relative path of any file whose material the tools actually returned to you, then submit the canonical structured assessment result through submit_result.",
+        ].join(String.fromCharCode(10));
+      })(),
+      tools: request.tools,
+      maxModelRequests: request.maxModelRequests,
+      maxToolCalls: request.maxToolCalls,
+      maxAdditionalReadBytes: request.maxAdditionalReadBytes,
+      // 163: preparation is charged to the same absolute review allowance, so the runner
+      // never receives a fresh full timeout after the host factory resolves.
+      timeoutMs: Math.max(1, reviewDeadlineMonoMs - this.#clock.nowMonoMs()),
+      repairAttempts: request.repairAttempts,
+      signal,
+      holdPhysical: () => this.#holdPhysical(run),
+      isRevoked: () => this.#store.operatorStopped || this.#state !== "active" || run.cancelled || run.abort.signal.aborted || this.#clock.nowMonoMs() >= reviewDeadlineMonoMs,
+      // (producer lifetime is closed in the finally below)
+      streamTurn: async ({ turn, context, options, signal: turnSignal, inputManifestRef, inputSerializedDigest }) => {
+        const service = this.#modelService;
+        if (service === null) return { ok: false, error: { code: "core.review-unavailable", retryable: false } };
+        let nativeStream: unknown = null;
+        const admitted = await service.dispatchReviewTurn({
+          runId: run.runId,
+          profileId: request.profileId,
+          estimatedInputTokens: Math.max(1, Math.ceil(Buffer.byteLength(JSON.stringify(context ?? null), "utf8") / 4)),
+          maxOutputTokens: request.maxOutputTokens,
+          signal: turnSignal,
+          ...(inputManifestRef === undefined ? {} : { inputManifestRef }),
+          ...(inputSerializedDigest === undefined ? {} : { inputSerializedDigest }),
+          // F01 metadata-only projection for the REVIEWER path: the actual
+          // per-turn input binding stays observable/correlatable without any
+          // body, prompt text or provider-envelope claim. The payload carries
+          // every canonical dispatched field, so the engine's own attribution
+          // record is retained instead of being dropped as an unclosed payload.
+          onDispatched: attempt => {
+            this.#emit({
+              event: "quality.model.dispatched",
+              level: "info",
+              reasonCodes: [],
+              data: {
+                attemptId: attempt.attemptId,
+                requestGroupId: `group-${run.runId}`,
+                ordinal: turn,
+                purpose: "reviewer",
+                profileId: attempt.profileId,
+                profileRevision: attempt.profileRevision,
+                requestedRoute: attempt.requestedRoute === null ? null : { ...attempt.requestedRoute, revision: null },
+                actualRoute: attempt.actualRoute,
+                destinationRef: attempt.destinationRef,
+                manifestId: `sdk-input-${attempt.attemptId}`,
+                requestBoundary: "sdk-call",
+                retryVisibility: attempt.retryVisibility,
+                priceBasisRef: attempt.priceBasisRef,
+                reservationRef: `attempt:${attempt.attemptId}`,
+                requestTimeoutMs: attempt.requestTimeoutMs,
+                maxOutputTokens: attempt.effectiveMaxOutputTokens,
+                reasoningSetting: attempt.reasoningSetting,
+                accountingOwner: "engine",
+                ...(attempt.inputManifestRef === null ? {} : { inputManifestRef: attempt.inputManifestRef }),
+                ...(attempt.inputSerializedDigest === null ? {} : { inputSerializedDigest: attempt.inputSerializedDigest }),
+              } as JsonObject,
+              correlation: { runId: run.runId },
+            });
+          },
+          onIntent: async () => this.#commitControl(),
+          revoked: () => this.#store.operatorStopped || this.#state !== "active" || turnSignal.aborted || this.#clock.nowMonoMs() >= reviewDeadlineMonoMs,
+        }, async (modelRecord) => {
+          // B.10/T06 physical lifetime: the actual provider stream is an owned operation. Its
+          // lease is acquired before the stream starts and released only at its genuine native
+          // settlement (resolution or rejection), including synchronous start failure. Logical
+          // timeout/retire/dispose cannot refund a still-pending native stream.
+          const releaseStream = this.#holdPhysical(run);
+          let streamReleased = false;
+          const settleStream = () => {
+            if (streamReleased) return;
+            streamReleased = true;
+            releaseStream();
+          };
+          let stream: unknown;
+          try {
+            stream = port.streamSimple === undefined ? undefined : port.streamSimple(modelRecord, context, options);
+          } catch (error) {
+            settleStream();
+            throw error;
+          }
+          if (stream === undefined) {
+            settleStream();
+            return { ok: false, error: { code: "core.review-unavailable", retryable: false } };
+          }
+          nativeStream = stream;
+          const resultOf = (stream as { result?: () => Promise<unknown> }).result;
+          const completion = (() => {
+            try {
+              return typeof resultOf === "function"
+                ? resultOf.call(stream).then(message => {
+                  const record = isPlainRecord(message) ? message : {};
+                  return {
+                    usage: isPlainRecord(record["usage"]) ? record["usage"] : null,
+                    stopReason: typeof record["stopReason"] === "string" ? record["stopReason"] : null,
+                    errorCode: typeof record["errorMessage"] === "string" ? record["errorMessage"] : null,
+                    model: {
+                      provider: typeof record["provider"] === "string" ? record["provider"] : profile.provider,
+                      id: typeof record["model"] === "string" ? record["model"] : profile.model,
+                      revision: null,
+                    },
+                  };
+                })
+                : Promise.resolve({ usage: null, stopReason: null, errorCode: null });
+            } catch (error) {
+              settleStream();
+              throw error;
+            }
+          })();
+          void completion.then(settleStream, settleStream);
+          return { ok: true, value: { stream, completion } };
+        });
+        if (!admitted.ok) return admitted;
+        return { ok: true, value: { stream: admitted.value.stream ?? nativeStream } };
+      },
+      validate: payload => {
+        // The reviewer's submission is judged by the same canonical validator
+        // that will judge the evaluator's return, so the configured repair and
+        // the final settlement cannot disagree about validity.
+        const settled = this.#validateAssessment(payload, run, assembled);
+        return settled.validationState === "valid"
+          ? { valid: true, reason: "core.review-result-valid" }
+          : { valid: false, reason: settled.terminalReason };
+      },
+    }, host);
+    if (!outcome.ok) return outcome;
+    return {
+      ok: true,
+      value: {
+        output: outcome.value.output,
+        validation: outcome.value.validation,
+        modelRequests: outcome.value.modelRequests,
+        toolCalls: outcome.value.toolCalls,
+        additionalReadBytes: outcome.value.additionalReadBytes,
+        terminalReason: outcome.value.terminalReason,
+        evidenceRefs: (() => {
+          return adoptionRefs.slice(0, 16);
+        })(),
+      },
     };
   }
 
@@ -2620,6 +3173,11 @@ Your previous response was not valid structured output. Return only valid JSON m
                 actualRoute: attempt.actualRoute,
                 destinationRef: attempt.destinationRef,
                 manifestId: `sdk-input-${attempt.attemptId}`,
+                // F01 metadata-only projection: the actual per-turn input
+                // binding (manifest ref + serialized digest) becomes observable
+                // for correlation without any body or prompt text.
+                ...(attempt.inputManifestRef === null ? {} : { inputManifestRef: attempt.inputManifestRef }),
+                ...(attempt.inputSerializedDigest === null ? {} : { inputSerializedDigest: attempt.inputSerializedDigest }),
                 requestBoundary: "sdk-call",
                 retryVisibility: attempt.retryVisibility,
                 priceBasisRef: attempt.priceBasisRef,
@@ -3160,6 +3718,53 @@ Your previous response was not valid structured output. Return only valid JSON m
   // Diagnostics
   // -------------------------------------------------------------------------
 
+  /**
+   * 201-F4/203: offer every real reviewer tool operation as one bounded, metadata-only
+   * `quality.component.note` record under the actual evaluator component identity. Operation
+   * ordinals, outcomes and issued references are carried; no args, paths, bodies or prose are.
+   */
+  #drainReviewerOperations(run: ActiveRun, identity: { componentId: string; registrationId: string }): void {
+    for (const operation of run.reviewerOps.splice(0)) {
+      const code = operation.outcome === "denied" ? "core.reviewer-tool-denied"
+        : operation.outcome === "admitted" ? "core.reviewer-tool-admitted"
+          : operation.outcome === "failed" ? "core.reviewer-tool-failed"
+            : operation.outcome === "acquired" ? "core.reviewer-tool-acquired"
+              : "core.reviewer-result-submitted";
+      this.#emit({
+        event: "quality.component.note",
+        level: operation.outcome === "denied" || operation.outcome === "failed" ? "warn" : "info",
+        reasonCodes: [],
+        data: {
+          componentId: identity.componentId,
+          registrationId: identity.registrationId,
+          code,
+          refs: [...new Set([operation.operationId, operation.toolRef, ...(operation.refs ?? [])])].slice(0, 6),
+          counts: { ordinal: operation.ordinal, ...(operation.bytes === undefined ? {} : { bytes: operation.bytes }) },
+        },
+        correlation: { runId: run.runId },
+      });
+    }
+  }
+
+  /**
+   * 201-F2/F4: offer every newly minted run-owned resource descriptor as one bounded,
+   * metadata-only `quality.resource.described` record. Called on the assembly return path
+   * and again after the reviewer run so acquisitions made during the session reach the
+   * owned diagnostic/history surface without any body, path or content capture.
+   */
+  #offerCustodyDescriptors(run: ActiveRun): void {
+    for (const descriptor of run.custody.drainNewDescriptors()) {
+      this.#rememberDescriptor(descriptor as unknown as JsonObject);
+      this.#emit({
+        event: "quality.resource.described",
+        level: "info",
+        reasonCodes: [],
+        data: descriptor as unknown as JsonObject,
+        correlation: { runId: run.runId },
+      });
+    }
+  }
+
   #rememberDescriptor(data: JsonObject): void {
     const resourceId = typeof data["resourceId"] === "string" ? data["resourceId"] : null;
     const revisionRef = typeof data["revisionRef"] === "string" ? data["revisionRef"] : null;
@@ -3262,6 +3867,14 @@ Your previous response was not valid structured output. Return only valid JSON m
     this.#modelService?.disposeFeed();
     this.#state = "retired";
     this.#retiredAt = nowIso(this.#clock);
+    // F09: retirement revokes queued investigative/result authority
+    // synchronously — already-declared sequential work in a retired generation
+    // must not acquire later. Physical ownership still persists until the
+    // underlying operation genuinely settles.
+    for (const run of this.#activeRuns.values()) {
+      run.cancelled = true;
+      if (!run.abort.signal.aborted) run.abort.abort();
+    }
     this.#physicalState.clearCurrent(this);
     this.#scheduler.dispose();
     this.#pendingIntents.clear();

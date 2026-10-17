@@ -233,3 +233,91 @@ process.stdout.write(`QE_CONSUMER_REPORT=${JSON.stringify({
   journalFiles: (await listOrEmpty(journalDirectory)).filter(name => name.endsWith(".jsonl")),
   fixtureFilesCreated: afterInertStart,
 })}\n`);
+
+// Phase three (K05): the installed artifact runs a real reviewer session with a
+// local scripted provider and its permitted read reaches a later provider input
+// before the canonical submission is accepted. PRELIMINARY while the traversal
+// question is unresolved; it is not the final common/package gate.
+const reviewerSeen = { arrivals: 0, transcripts: [], results: [] };
+const RESULT = {
+  operational: "completed",
+  coverage: { state: "complete", scopeDescription: "installed reviewer witnessed the permitted file", issues: [] },
+  conclusion: "no-supported-finding",
+  findings: [], scores: [], additionalEvidence: [], dependencies: [], usageAttemptIds: [],
+};
+function reviewerMessage(model, content, stopReason) {
+  return {
+    role: "assistant", content, api: model.api, provider: model.provider, model: model.id,
+    usage: { input: 120, output: 30, cacheRead: 0, cacheWrite: 0, totalTokens: 150, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
+    stopReason, timestamp: Date.now(),
+  };
+}
+function reviewerStream(message) {
+  return {
+    async *[Symbol.asyncIterator]() {
+      yield { type: "start", partial: { ...message, content: [] } };
+      yield { type: "done", reason: message.stopReason, message };
+    },
+    async result() { return message; },
+  };
+}
+await writeFile(join(projectDir, "notes.md"), "K05_INSTALLED_REVIEWER_BODY", "utf8");
+await writeFile(join(agentDir, "quality", "evidence.md"), "installed-marker-evidence", "utf8");
+await writeFile(join(agentDir, "quality", "config.json"), JSON.stringify({
+  schemaVersion: 1,
+  enabled: true,
+  mode: "observe",
+  sources: { evidence: { uris: ["evidence.md"], role: "evidence", required: true } },
+  modelProfiles: { scripted: { provider: "qe-package-reviewer", model: "scripted-1", price: "unknown", requiredInputs: ["text"], requestTimeoutMs: 30000 } },
+  permissions: { modelProfiles: ["scripted"] },
+  prompts: { repetition: { use: "core.prompt-files", options: { instructions: ["builtin:repetition-v1.md"] } } },
+  contexts: { work: { providers: [{ id: "files", use: "core.files", options: { sourceIds: ["evidence"] } }], maxEstimatedTokens: 8000 } },
+  evaluators: { direct: { use: "core.pi-session", modelProfile: "scripted", options: { timeoutMs: 30000 } } },
+  policies: { record: { use: "core.record-only" } },
+  checks: { direct: { triggers: [{ id: "due", use: "core.every-tools", options: { count: 1 } }], context: "work", prompt: "repetition", evaluator: "direct", policy: "record", cooldownMs: 0, criteria: ["efficiency.repetition"], workStates: ["work-expected"], maxRunsPerEpisode: 2 } },
+}), "utf8");
+models.registerProvider("qe-package-reviewer", {
+  name: "scripted installed reviewer provider",
+  api: "qe-package-reviewer-api",
+  apiKey: "fixture-not-credential",
+  baseUrl: "http://127.0.0.1:9/not-used",
+  streamSimple: (model, context) => {
+    reviewerSeen.arrivals += 1;
+    reviewerSeen.transcripts.push(JSON.stringify(context.messages ?? []));
+    const message = reviewerSeen.arrivals === 1
+      ? reviewerMessage(model, [{ type: "toolCall", id: "pkg-read", name: "read", arguments: { path: "notes.md" } }], "toolUse")
+      : reviewerMessage(model, [{ type: "toolCall", id: "pkg-submit", name: "submit_result", arguments: RESULT }], "toolUse");
+    return reviewerStream(message);
+  },
+  models: [{ id: "scripted-1", name: "scripted", api: "qe-package-reviewer-api", input: ["text"], cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }, contextWindow: 32_768, maxTokens: 8_192 }],
+});
+await runner.emit({ type: "session_start", reason: "startup" });
+const packaged = await readStatus(runner, messages);
+assert.equal(packaged.configuration.rejection, null, "the installed package accepts the reviewer configuration");
+await runner.emit({ type: "input", text: "installed reviewer", source: "interactive" });
+await runner.emit({ type: "tool_execution_start", toolCallId: "pkg-1", toolName: "read", args: {} });
+await runner.emit({ type: "tool_execution_end", toolCallId: "pkg-1", toolName: "read", result: { content: [] }, isError: false, durationMs: 1 });
+const packagedDeadline = Date.now() + 30_000;
+let packagedSettled = await readStatus(runner, messages);
+while ((packagedSettled.checks?.runs ?? 0) < 1 && Date.now() < packagedDeadline) {
+  await new Promise(resolvePromise => setTimeout(resolvePromise, 50));
+  packagedSettled = await readStatus(runner, messages);
+}
+assert.equal(packagedSettled.checks.runs, 1, "the installed artifact runs exactly one reviewer for the eligible completion");
+assert.equal(reviewerSeen.arrivals, 2, "the installed reviewer used the scripted provider for its read and result turns");
+assert.equal(reviewerSeen.transcripts.some(text => text.includes("K05_INSTALLED_REVIEWER_BODY")), true, "the installed reviewer's real read body reached a later provider input");
+const packagedResults = [];
+for (const name of await readdir(join(agentDir, "quality", "logs")).catch(() => [])) {
+  if (!name.endsWith(".jsonl")) continue;
+  const text = await readFile(join(agentDir, "quality", "logs", name), "utf8");
+  for (const line of text.split(String.fromCharCode(10))) {
+    if (line.trim().length === 0) continue;
+    const record = JSON.parse(line);
+    if (record.event === "quality.assessment.result") packagedResults.push(record.fields?.data);
+  }
+}
+assert.equal(packagedResults.some(result => result?.operational === "completed" && result?.conclusion === "no-supported-finding"), true, "the installed artifact accepted the canonical submission");
+assert.equal(Number(packagedSettled.accounting?.ownedRequestCount ?? 0) >= 2, true, "the installed reviewer's owned requests settle through the shared ledger");
+assert.equal(Number(packagedSettled.accounting?.excluded?.externalHandoffs ?? 1), 0, "no external handoff is fabricated by the installed reviewer");
+await runner.emit({ type: "session_shutdown", reason: "quit" });
+console.log("QE_CONSUMER_K05=" + JSON.stringify({ version: manifest.version, entryIsolated: resolve(entryPath).startsWith(resolve(consumerRoot) + sep), arrivals: reviewerSeen.arrivals, runs: packagedSettled.checks.runs, ownedRequests: packagedSettled.accounting?.ownedRequestCount ?? null, bodyDelivered: reviewerSeen.transcripts.some(text => text.includes("K05_INSTALLED_REVIEWER_BODY")), canonicalAccepted: packagedResults.some(result => result?.operational === "completed" && result?.conclusion === "no-supported-finding") }));

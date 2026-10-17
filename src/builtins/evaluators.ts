@@ -264,3 +264,62 @@ function mapProgressAnswers(output: unknown, input: EvaluationInput, attemptIds:
 }
 
 void (0 as unknown as JsonObject);
+
+/** K05 clean Pi reviewer evaluator: a run-bound fresh session via services.review. */
+export const piSessionEvaluator: EvaluatorDefinition = {
+  id: "core.pi-session",
+  apiMajor: 1,
+  kind: "evaluator",
+  mechanism: "pi-session",
+  accepts: ["text", "json"],
+  optionsSchema: {
+    type: "object",
+    additionalProperties: false,
+    properties: {
+      tools: { type: "array", items: { type: "string" } },
+      readSources: { type: "array", items: { type: "string" } },
+      allowProjectReads: { type: "boolean" },
+      maxModelRequests: { type: "integer", minimum: 1, maximum: 16 },
+      maxToolCalls: { type: "integer", minimum: 1, maximum: 64 },
+      timeoutMs: { type: "integer", minimum: 1_000, maximum: 600_000 },
+      maxOutputTokens: { type: "integer", minimum: 1, maximum: 65_536 },
+      maxAdditionalReadBytes: { type: "integer", minimum: 0, maximum: 16_777_216 },
+      compaction: { type: "string" },
+      extensions: { type: "array", items: { type: "string" } },
+      skills: { type: "array", items: { type: "string" } },
+      resultMode: { type: "string" },
+      repairAttempts: { type: "integer", minimum: 0, maximum: 1 },
+    },
+  },
+  requiredCapabilities: [],
+  diagnosticCodes: ["core.review-unavailable", "core.review-failed", "core.review-result-invalid", "core.reviewer-tool-admitted", "core.reviewer-tool-denied", "core.reviewer-tool-failed", "core.reviewer-tool-acquired", "core.reviewer-result-submitted"],
+  async evaluate(options, input, ctx): Promise<DirectResult> {
+    if (input.modelProfileId === null) return unavailableDirectResult("core.model-profile-required");
+    if (ctx.services.review === undefined) return unavailableDirectResult("core.review-unavailable");
+    // Exact C1 defaults, overridable only by the already-validated option set.
+    const option = <T>(key: string, fallback: T): T => (options[key] === undefined ? fallback : options[key] as T);
+    const reviewed = await ctx.services.review({
+      run: input.run,
+      context: input.context,
+      profileId: input.modelProfileId,
+      tools: option("tools", ["read", "grep", "find", "ls"] as string[]),
+      readSources: option("readSources", [] as string[]),
+      allowProjectReads: option("allowProjectReads", true),
+      maxModelRequests: option("maxModelRequests", 4),
+      maxToolCalls: option("maxToolCalls", 8),
+      timeoutMs: option("timeoutMs", 120_000),
+      maxOutputTokens: option("maxOutputTokens", Math.min(4_096, 4_096)),
+      maxAdditionalReadBytes: option("maxAdditionalReadBytes", 262_144),
+      compaction: "disabled",
+      extensions: option("extensions", [] as string[]),
+      skills: option("skills", [] as string[]),
+      resultMode: "structured",
+      repairAttempts: option<number>("repairAttempts", 0) === 1 ? 1 : 0,
+    }, ctx.signal);
+    if (!reviewed.ok) return failedDirectResult(reviewed.error.code);
+    if (reviewed.value.validation !== "valid" || reviewed.value.output === null) {
+      return failedDirectResult(reviewed.value.terminalReason);
+    }
+    return reviewed.value.output as DirectResult;
+  },
+};

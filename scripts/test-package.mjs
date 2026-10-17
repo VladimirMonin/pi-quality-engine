@@ -106,7 +106,7 @@ try {
   const packResult = runNpm(["pack", "--json", "--pack-destination", packDir], { cwd: packageRoot });
   const packInfo = JSON.parse(packResult.stdout)[0];
   assert.equal(packInfo.name, "pi-quality-engine");
-  assert.equal(packInfo.version, "0.2.0");
+  assert.equal(packInfo.version, "0.3.0");
   const paths = packInfo.files.map(file => file.path);
   for (const required of ["package.json", "README.md", "THIRD_PARTY_NOTICES.md", "dist/index.js", "dist/contracts.js", "resources/prompts/repetition-v1.md", "resources/prompts/progress-v1.md", "resources/prompts/progress-v1.questions.json", "resources/prompts/engineering-v1.md", "resources/prompts/evaluation-v1.schema.json"]) {
     assert.ok(paths.includes(required), `packed artifact is missing ${required}`);
@@ -148,7 +148,7 @@ try {
   assert.ok(markerLine, `consumer report missing from stdout:\n${consumerResult.stdout}\n${consumerResult.stderr}`);
   const report = JSON.parse(markerLine.slice("QE_CONSUMER_REPORT=".length));
   assert.equal(report.ok, true);
-  assert.equal(report.packageVersion, "0.2.0");
+  assert.equal(report.packageVersion, "0.3.0");
   assert.equal(report.hostVersion, "1.1.0");
   assert.equal(report.peerRange, "*");
   assert.deepEqual(report.loadErrors, []);
@@ -158,6 +158,19 @@ try {
     "tool_execution_start", "turn_end",
   ]);
   assert.equal(report.toolCount, 0);
+  // K05 installed reviewer witness (preliminary while traversal is unresolved).
+  const k05Line = consumerResult.stdout.split(String.fromCharCode(10)).map(line => line.replace(String.fromCharCode(13), "")).find(line => line.startsWith("QE_CONSUMER_K05="));
+  assert.ok(k05Line, `installed reviewer witness missing from consumer stdout:
+${consumerResult.stdout}
+${consumerResult.stderr}`);
+  const k05 = JSON.parse(k05Line.slice("QE_CONSUMER_K05=".length));
+  assert.equal(k05.version, "0.3.0");
+  assert.equal(k05.entryIsolated, true, "the reviewer ran from the installed artifact inside the consumer root");
+  assert.equal(k05.arrivals, 2, "the installed reviewer used the scripted provider for its read and result turns");
+  assert.equal(k05.bodyDelivered, true, "the installed reviewer's permitted read reached a later provider input");
+  assert.equal(k05.canonicalAccepted, true, "the installed artifact accepted the canonical submission");
+  assert.equal(k05.runs, 1, "the installed artifact ran exactly one reviewer for the eligible completion");
+  assert.equal(Number(k05.ownedRequests) >= 2, true, "the installed reviewer's owned requests settled through the shared ledger");
   assert.deepEqual(report.statuses, { inactive: "inactive", active: "active", retired: "retired" });
   assert.deepEqual(report.eventNames, [
     "quality.runtime.started", "quality.config.applied", "quality.runtime.retired", "quality.journal.closed",
@@ -189,6 +202,67 @@ try {
       networkPolicy: "package-manager dependency acquisition only; no model/API traffic",
     },
     consumer: report,
+    // K05 installed-artifact reviewer witness. Truthful additional labeling:
+    // the legacy K02 consumer report above is retained unchanged, while these
+    // fields record the K05 reviewer read->canonical-submit case that actually
+    // ran in the same installed consumer. PRELIMINARY while the traversal
+    // question is unresolved; this is not the final common/package gate.
+    k05: {
+      checkpoint: "K05",
+      case: "K05-installed-reviewer-read-submit",
+      preliminary: true,
+      sourceIdentity: {
+        headCommit: (() => {
+          try {
+            const rev = spawnSync("git", ["rev-parse", "HEAD"], { cwd: packageRoot, encoding: "utf8" });
+            return rev.status === 0 ? rev.stdout.trim() : null;
+          } catch { return null; }
+        })(),
+        // HEAD alone cannot identify a dirty candidate: retain the byte
+        // identities of every dirty path in the candidate checkout.
+        dirtyFiles: (() => {
+          try {
+            const diff = spawnSync("git", ["status", "--porcelain"], { cwd: packageRoot, encoding: "utf8" });
+            const lines = (diff.status === 0 ? diff.stdout : "")
+              .split(String.fromCharCode(10)).filter(line => line.trim().length > 0);
+            return lines.map(line => {
+              const path = line.slice(3).trim();
+              try {
+                const bytes = readFileSync(join(packageRoot, path));
+                return { status: line.slice(0, 2).trim(), path, sha256: createHash("sha256").update(bytes).digest("hex") };
+              } catch {
+                return { status: line.slice(0, 2).trim(), path, sha256: null };
+              }
+            });
+          } catch { return []; }
+        })(),
+      },
+      tarball: {
+        filename: packInfo.filename,
+        sha256: tarballSha256,
+        integrity: packInfo.integrity,
+        shasum: packInfo.shasum,
+        files: paths.length,
+        version: packInfo.version,
+      },
+      witness: {
+        packageVersion: k05.version,
+        isolatedEntry: k05.entryIsolated,
+        providerArrivals: k05.arrivals,
+        readBodyDeliveredToLaterInput: k05.bodyDelivered,
+        canonicalResultAccepted: k05.canonicalAccepted,
+        primaryRuns: k05.runs,
+        ownedRequests: k05.ownedRequests,
+      },
+      command: {
+        packageScript: "scripts/test-package.mjs",
+        consumerEntry: "test/package-consumer/run.mjs",
+        consumerExit: 0,
+        packageExit: 0,
+      },
+      consumerStdout: consumerResult.stdout,
+      consumerStderr: consumerResult.stderr,
+    },
   };
   writeFileSync(join(evidenceDir, "package-consumer.json"), `${JSON.stringify(evidence, null, 2)}\n`, "utf8");
   writeFileSync(join(evidenceDir, "package-inventory.json"), `${JSON.stringify({

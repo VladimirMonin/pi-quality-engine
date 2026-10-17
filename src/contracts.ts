@@ -262,6 +262,47 @@ export interface ModelResponse {
 
 export interface EvaluationServices {
   request(input: ModelRequest, signal: AbortSignal): Promise<Result<ModelResponse>>;
+  /**
+   * C1 §11–13 run-bound reviewer service. A `mechanism:"pi-session"` evaluator
+   * receives a fresh bounded Pi session that may investigate permitted evidence
+   * and submit a canonical structured result. Context/prompt facets keep the
+   * request-only Pick and never receive this capability.
+   */
+  review?(request: ReviewRequest, signal: AbortSignal): Promise<Result<ReviewResult>>;
+}
+
+/** Exact C1 review options for one reviewer evaluation (defaults shown). */
+export interface ReviewRequest {
+  run: RunRef;
+  /** Canonical assembled snapshot; the reviewer may request permitted extra evidence. */
+  context: ContextSnapshot;
+  profileId: string;
+  tools: readonly string[];
+  readSources: readonly string[];
+  allowProjectReads: boolean;
+  maxModelRequests: number;
+  maxToolCalls: number;
+  timeoutMs: number;
+  maxOutputTokens: number;
+  maxAdditionalReadBytes: number;
+  compaction: "disabled";
+  extensions: readonly string[];
+  skills: readonly string[];
+  resultMode: "structured";
+  repairAttempts: 0 | 1;
+}
+
+/** Outcome of one run-bound reviewer session. */
+export interface ReviewResult {
+  /** Validated canonical assessment result submitted by the reviewer, if any. */
+  output: unknown;
+  validation: "valid" | "invalid";
+  modelRequests: number;
+  toolCalls: number;
+  additionalReadBytes: number;
+  terminalReason: string;
+  /** Evidence references the reviewer actually returned and used, if represented. */
+  evidenceRefs: readonly string[];
 }
 
 export interface EvidenceAccess {
@@ -539,6 +580,8 @@ export interface RetentionSettings {
 
 export interface RuntimeSettings {
   maxConcurrentEvaluations: number;
+  /** C1 reviewer sublimit: concurrent run-bound Pi reviewer sessions. */
+  maxConcurrentReviewers: number;
   maxPendingChecks: number;
   maxRequestsPerSession: number;
   maxOwnedTokensPerSession: number;

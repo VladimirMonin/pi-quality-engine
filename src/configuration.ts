@@ -59,6 +59,7 @@ export const DEFAULT_RETENTION_SETTINGS: RetentionSettings = {
 };
 export const DEFAULT_RUNTIME_SETTINGS: RuntimeSettings = {
   maxConcurrentEvaluations: 2,
+  maxConcurrentReviewers: 1,
   maxPendingChecks: 32,
   maxRequestsPerSession: 200,
   maxOwnedTokensPerSession: 400_000,
@@ -79,6 +80,7 @@ const UNIMPLEMENTED_ROOT_KEYS = ["observationSources"] as const;
 
 const RUNTIME_LIMITS: Record<string, { min: number; max: number }> = {
   maxConcurrentEvaluations: { min: 1, max: 16 },
+  maxConcurrentReviewers: { min: 1, max: 16 },
   maxPendingChecks: { min: 1, max: 512 },
   maxRequestsPerSession: { min: 1, max: 10_000 },
   maxOwnedTokensPerSession: { min: 1_000, max: 1_000_000_000 },
@@ -149,7 +151,7 @@ const BUILTIN_TRIGGERS = new Set([
   "core.wait-deadline", "core.evidence-change", "core.before-completion",
 ]);
 const BUILTIN_EVALUATORS = new Set(["core.repeated-tools", "core.chat", "core.classifier"]);
-const MODEL_BACKED_EVALUATORS = new Set(["core.chat", "core.classifier"]);
+const MODEL_BACKED_EVALUATORS = new Set(["core.chat", "core.classifier", "core.pi-session"]);
 const BUILTIN_POLICIES = new Set(["core.record-only"]);
 
 const CONFIG_ID_PATTERN = /^[a-z][a-z0-9-]{0,63}$/;
@@ -804,6 +806,44 @@ function validateEvaluatorProfile(id: string, input: unknown): Result<EvaluatorP
     if (repairAttempts !== undefined
       && (typeof repairAttempts !== "number" || !Number.isInteger(repairAttempts) || repairAttempts < 0 || repairAttempts > 1)) {
       return reject("config.invalid-value", `${field}.options.repairAttempts`);
+    }
+  } else if (use.value === "core.pi-session") {
+    // C1 §11–13 reviewer options: exact keys and bounded values only.
+    const reviewerKeys = new Set(["tools", "readSources", "allowProjectReads", "maxModelRequests", "maxToolCalls", "timeoutMs", "maxOutputTokens", "maxAdditionalReadBytes", "compaction", "extensions", "skills", "resultMode", "repairAttempts"]);
+    for (const key of Object.keys(options)) {
+      if (!reviewerKeys.has(key)) return reject("config.unknown-key", `${field}.options`);
+    }
+    const reviewerTools = options["tools"] ?? ["read", "grep", "find", "ls"];
+    if (!Array.isArray(reviewerTools) || reviewerTools.length > 4
+      || reviewerTools.some(entry => typeof entry !== "string" || !["read", "grep", "find", "ls"].includes(entry))) {
+      return reject("config.invalid-value", `${field}.options.tools`);
+    }
+    const readSources = options["readSources"] ?? [];
+    if (!Array.isArray(readSources) || readSources.length > 16 || readSources.some(entry => typeof entry !== "string")) {
+      return reject("config.invalid-value", `${field}.options.readSources`);
+    }
+    const allowProjectReads = options["allowProjectReads"] ?? true;
+    if (typeof allowProjectReads !== "boolean") return reject("config.invalid-value", `${field}.options.allowProjectReads`);
+    const boundedInt = (key: string, fallback: number, min: number, max: number): number | null => {
+      const raw = options[key] ?? fallback;
+      return typeof raw === "number" && Number.isInteger(raw) && raw >= min && raw <= max ? raw : null;
+    };
+    if (boundedInt("maxModelRequests", 4, 1, 16) === null) return reject("config.invalid-value", `${field}.options.maxModelRequests`);
+    if (boundedInt("maxToolCalls", 8, 1, 64) === null) return reject("config.invalid-value", `${field}.options.maxToolCalls`);
+    if (boundedInt("timeoutMs", 120_000, 1_000, 600_000) === null) return reject("config.invalid-value", `${field}.options.timeoutMs`);
+    if (boundedInt("maxOutputTokens", 4_096, 1, 65_536) === null) return reject("config.invalid-value", `${field}.options.maxOutputTokens`);
+    if (boundedInt("maxAdditionalReadBytes", 262_144, 0, 16_777_216) === null) return reject("config.invalid-value", `${field}.options.maxAdditionalReadBytes`);
+    const compaction = options["compaction"] ?? "disabled";
+    if (compaction !== "disabled") return reject("config.invalid-value", `${field}.options.compaction`);
+    const resultMode = options["resultMode"] ?? "structured";
+    if (resultMode !== "structured") return reject("config.invalid-value", `${field}.options.resultMode`);
+    const repairAttempts = options["repairAttempts"] ?? 0;
+    if (repairAttempts !== 0 && repairAttempts !== 1) return reject("config.invalid-value", `${field}.options.repairAttempts`);
+    for (const key of ["extensions", "skills"]) {
+      const list = options[key] ?? [];
+      if (!Array.isArray(list) || list.length > 16 || list.some(entry => typeof entry !== "string")) {
+        return reject("config.invalid-value", `${field}.options.${key}`);
+      }
     }
   } else if (BUILTIN_EVALUATORS.has(use.value)) {
     for (const key of Object.keys(options)) {
