@@ -40,7 +40,7 @@ import type { ModelRegistryPort, ModelUsageSummary } from "./models.js";
 import { createPromptFilesProvider } from "./builtins/prompts.js";
 import { chatEvaluator, classifierEvaluator, piSessionEvaluator, repeatedToolsEvaluator } from "./builtins/evaluators.js";
 import { engineeringPolicy, recordOnlyPolicy } from "./builtins/policies.js";
-import { feedbackAction } from "./builtins/actions.js";
+import { feedbackAction, requestCheckAction } from "./builtins/actions.js";
 import {
   actionCheckpointRecords,
   actionRecordProjection,
@@ -103,7 +103,7 @@ import type {
 } from "./contracts.js";
 
 export const ENGINE_NAME = "pi-quality-engine";
-export const ENGINE_VERSION = "0.4.0";
+export const ENGINE_VERSION = "0.5.0";
 export const ENGINE_BUILD_REF = `${ENGINE_NAME}@${ENGINE_VERSION}`;
 export const DATA_POLICY_REVISION = "o1-1";
 
@@ -455,8 +455,27 @@ function nowIso(clock: EngineClock): string {
   return clock.nowUtc();
 }
 
+/** K07: bounded causal metadata carried by one admitted escalation request. */
+interface EscalationCause {
+  kind: "policy-escalation";
+  rootRunId: string;
+  parentRunId: string;
+  depth: number;
+  findingIds: readonly string[];
+  evidenceIds: readonly string[];
+  /** Bounded preliminary-suspicion text carried by the proposal. */
+  hypothesis: string;
+  /** K07: the eventual run identity reserved for a queued cause. */
+  reservedRunId?: string;
+  /** K07: bounded scope/authority the reservation was admitted under. */
+  episodeId?: string | null;
+  authorizationRevision?: string;
+}
+
 interface PendingIntent {
   intentId: string;
+  /** K07: present only for an admitted policy/operator escalation request. */
+  cause?: EscalationCause;
   reasons: TriggerReason[];
   bindingIds: string[];
   firstDueAt: string;
@@ -604,9 +623,20 @@ interface ActiveRun {
   reviewerSelection: { truncatedItems: number; omittedItems: number };
   /** 201-F4/203: bounded real reviewer tool-operation facts for owner observation. */
   reviewerOps: Array<{ operationId: string; toolRef: string; toolName: string; outcome: string; ordinal: number; bytes?: number; refs?: readonly string[] }>;
+  /** K07: the admitted escalation cause of this run, when it is a causal child. */
+  cause?: EscalationCause;
   /** K06 freshness: the store facts captured when this run assembled its context. */
   assembledEvidenceRevision: number;
   assembledEpisodeId: string | null;
+  /**
+   * K07 A.2: the bounded required-material descriptor captured at assembly. It
+   * preserves the whole declared resource/version set of every source, and an
+   * honest `complete:false` when that set did not fit the bound.
+   */
+  requiredMaterial?: {
+    complete: boolean;
+    entries: Array<{ sourceId: string; evidenceId: string; revision: string }>;
+  };
 }
 
 interface SettledAssessment {
@@ -838,6 +868,9 @@ export class EngineSession {
    * moment - so no late action, stale courier or old scope can wake the primary.
    */
   #interventionRevoked: string | null = null;
+  /** K07: admitted expert escalations of the current observed episode. */
+  #escalationsThisEpisode = 0;
+  #escalationEpisodeId: string | null = null;
   /** K06: actual owned admission counts of the current/last settled run. */
   #actionCounters = { admitted: 0, rejected: 0, uncertain: 0 };
   /** K06 boundary: monotonic count of admitted checks, used to detect late work. */
@@ -1304,6 +1337,7 @@ export class EngineSession {
         recordOnlyPolicy,
         engineeringPolicy,
         feedbackAction,
+        requestCheckAction,
       ],
       resources: {
         "builtin:repetition-v1.md": { uri: "builtin:repetition-v1.md" },
@@ -1746,6 +1780,18 @@ export class EngineSession {
       || previous.value.observability.journal.enabled !== loaded.resolved.value.observability.journal.enabled
       || previous.value.enabled !== loaded.resolved.value.enabled;
     this.#configuration = loaded.resolved;
+    // K07-B.04: the accepted configuration's profiles/grants/limits reach new
+    // work through the existing owner; ledger/receipts/reservations are kept.
+    this.#modelService?.reconfigure(
+      loaded.resolved.value.modelProfiles,
+      loaded.resolved.value.permissions.modelProfiles,
+      {
+        maxRequestsPerSession: loaded.resolved.value.runtime.maxRequestsPerSession,
+        maxOwnedTokensPerSession: loaded.resolved.value.runtime.maxOwnedTokensPerSession,
+        unknownCost: loaded.resolved.value.runtime.unknownCost,
+        maxOwnedCost: loaded.resolved.value.runtime.maxOwnedCost,
+      },
+    );
     this.#control?.setLocalState({
       operatorStopped: this.#store.operatorStopped,
       observerPaused: this.#paused,
@@ -1987,6 +2033,37 @@ export class EngineSession {
       this.#pendingIntents.delete(checkId);
       return;
     }
+    // K07 233-B.4: one deduplicated physical/uncertain operation keeps blocking
+    // dependent work even when total capacity is spare. The barrier is read from
+    // the durable attempt rows (live dispatched transport or restored unknown),
+    // never from a live evaluator or from historical unknown-price rows.
+    // K07 239-B.4: the retired/uncertain bound is scoped to the affected route.
+    // A model-backed check is blocked when an unsettled operation shares its
+    // model profile or the profile is honestly unknown (legacy conservative).
+    // No-model checks are never classified as retired work; unrelated routes
+    // keep passing their real grants/capacity/budget gates.
+    const gateCheck = this.#configuration.value.checks[checkId];
+    const gateProfileId = gateCheck === undefined ? null : (this.#configuration.value.evaluators[gateCheck.evaluator]?.modelProfile ?? null);
+    if (gateProfileId !== null) {
+      const gateProfile = this.#configuration.value.modelProfiles[gateProfileId];
+      // Immutable captured route, never a profile label: a remapped alias is
+      // judged by the provider/model it actually resolves to.
+      const gateRouteKey = gateProfile === undefined ? null : `${gateProfile.provider}|${gateProfile.model}`;
+      const unsettledOperations = this.#modelService?.unsettledOperations() ?? [];
+      const activeRunIds = new Set([...this.#activeRuns.values()].map(run => run.runId));
+      const affected = unsettledOperations
+        .filter(operation => operation.routeKey === null || gateRouteKey === null || operation.routeKey === gateRouteKey)
+        // Ordinary active work of a still-live run is not retired/uncertain; only
+        // a restored/generation-retired operation or a finalized run whose
+        // transport is still unsettled counts against the bound.
+        .filter(operation => operation.restored === true || operation.originRunId === null || !activeRunIds.has(operation.originRunId));
+      if (affected.length > 0 && affected.length >= this.#configuration.value.runtime.maxRetiredUnsettledOperations) {
+        const reasonCode = affected.some(operation => operation.restored) ? "core.retired-unsettled-limit" : "core.unsettled-operation-limit";
+        this.#noteSuppressed(reasonCode);
+        this.#admit(checkId, "denied", [reasonCode], pending);
+        return;
+      }
+    }
     const state = this.#checkStates.get(checkId);
     if (state === undefined || state.state !== "active") {
       this.#noteSuppressed(state?.state === "disabled" ? "core.check-disabled" : "core.waiting-for-component");
@@ -2123,18 +2200,26 @@ export class EngineSession {
   }
 
   #startRun(checkId: string, check: CheckDefinition, pending: PendingIntent): void {
-    this.#runCounter += 1;
-    const runId = `run-${this.#runCounter}`;
+    const reserved = pending.cause?.reservedRunId;
+    let runId: string;
+    if (reserved !== undefined) {
+      runId = reserved;
+    } else {
+      this.#runCounter += 1;
+      runId = `run-${this.#runCounter}`;
+    }
     const run: ActiveRun = {
       runId,
       checkId,
+      ...(pending.cause === undefined ? {} : { cause: pending.cause }),
       runRef: {
         runId,
         checkId,
         checkRevision: this.#configuration.revision,
-        rootRunId: runId,
-        parentRunId: null,
-        escalationDepth: 0,
+        // A causal child inherits its root and parent; an ordinary run is its own root.
+        rootRunId: pending.cause?.rootRunId ?? runId,
+        parentRunId: pending.cause?.parentRunId ?? null,
+        escalationDepth: pending.cause?.depth ?? 0,
         scope: this.#store.view().scope,
       },
       intentRefs: [pending.intentId],
@@ -2161,7 +2246,12 @@ export class EngineSession {
       assembledEvidenceRevision: this.#store.view().counters.primaryEvidenceRevision,
       assembledEpisodeId: this.#store.view().scope.episodeId,
     };
-    beginEpisode(this.#feedbackState, this.#store.view().scope.episodeId);
+    const episodeId = this.#store.view().scope.episodeId;
+    if (this.#escalationEpisodeId !== episodeId) {
+      this.#escalationEpisodeId = episodeId;
+      this.#escalationsThisEpisode = 0;
+    }
+    beginEpisode(this.#feedbackState, episodeId);
     this.#actionCounters = { admitted: 0, rejected: 0, uncertain: 0 };
     this.#physicalState.reserve(this, this.#isReviewerCheck(checkId));
     const timeoutCancel = this.#clock.setTimer(run.configuredTimeoutMs, () => this.#timeoutRun(run.runId));
@@ -2210,7 +2300,35 @@ export class EngineSession {
       });
       return;
     }
-    const assembled = context.value;
+    const assembledWithCause = this.#withCauseHypothesis(run, context.value);
+    const assembled = assembledWithCause;
+    // K07 A.2: preserve this run's bounded required-material descriptor so the
+    // admission owner can revalidate the current declared material before an
+    // equivalent later cause is reported as covered by this input.
+    const requiredMaterial: {
+      complete: boolean;
+      entries: Array<{ sourceId: string; evidenceId: string; revision: string }>;
+    } = { complete: true, entries: [] };
+    let requiredBytes = 0;
+    for (const dependency of assembled.snapshot.dependencies) {
+      if (dependency.check !== "content-fingerprint") continue;
+      const item = assembled.snapshot.items.find(entry => entry.id === dependency.evidenceId);
+      const declared = item === undefined ? null : /^source:([^:]+):/u.exec(item.id)?.[1] ?? null;
+      if (declared === null) continue;
+      const entry = { sourceId: declared, evidenceId: dependency.evidenceId, revision: dependency.revision };
+      const entryBytes = Buffer.byteLength(JSON.stringify(entry), "utf8");
+      if (requiredMaterial.entries.length >= 32 || requiredBytes + entryBytes > 8192) {
+        // The declared set did not fit: never relabel the tail as complete.
+        requiredMaterial.complete = false;
+        break;
+      }
+      requiredBytes += entryBytes;
+      requiredMaterial.entries.push(entry);
+    }
+    if (assembled.snapshot.coverage.state !== "complete" || assembled.issueCodes.length > 0) {
+      requiredMaterial.complete = false;
+    }
+    run.requiredMaterial = requiredMaterial;
     this.#acceptIdentity(assembled.manifest.manifestId);
     this.#acceptIdentity(assembled.snapshot.snapshotId);
     for (const instruction of assembled.resources.instructions) {
@@ -2586,6 +2704,42 @@ export class EngineSession {
   }
 
   /**
+   * K07 A.2: revalidate the active target's captured required material through
+   * the owning evidence reader. An unreadable source is unknown, never covered.
+   */
+  async #requiredMaterialCurrent(target: ActiveRun): Promise<boolean> {
+    const required = target.requiredMaterial;
+    if (required === undefined) return true;
+    // An over-bound or incomplete captured set is unknown, never "current".
+    if (!required.complete) return false;
+    if (required.entries.length === 0) return true;
+    const bySource = new Map<string, Array<{ evidenceId: string; revision: string }>>();
+    for (const entry of required.entries) {
+      const captured = bySource.get(entry.sourceId) ?? [];
+      captured.push({ evidenceId: entry.evidenceId, revision: entry.revision });
+      bySource.set(entry.sourceId, captured);
+    }
+    const controller = new AbortController();
+    try {
+      for (const [sourceId, captured] of bySource) {
+        const batch = await this.#sourceEvidence.readSource(sourceId, controller.signal);
+        if (!batch.ok) return false;
+        // Required omissions/coverage are part of the comparison, not just ok.
+        if (batch.value.coverage.state !== "complete") return false;
+        const current = batch.value.dependencies.filter(dependency => dependency.check === "content-fingerprint");
+        if (current.length !== captured.length) return false;
+        for (const entry of captured) {
+          const match = current.find(dependency => dependency.evidenceId === entry.evidenceId && dependency.revision === entry.revision);
+          if (match === undefined) return false;
+        }
+      }
+    } catch {
+      return false;
+    }
+    return true;
+  }
+
+  /**
    * K06 B.04: recheck the issued material dependencies of the proposed findings
    * through the owning evidence reader immediately before the effect. A cited
    * source whose content fingerprint moved is stale; one that cannot be read
@@ -2697,14 +2851,183 @@ export class EngineSession {
   #pinApprovedActions(): void {
     const granted = this.#configuration.value.permissions.actions;
     for (const actionId of granted.slice(0, 32)) {
-      const resolved = this.#registry.resolve(actionId, {});
-      if (!resolved.ok || resolved.value.kind !== "action") continue;
-      const effectKinds = [...resolved.value.definition.effects];
+      const declared = this.#registry.actionEffects(actionId);
+      if (declared === null) continue;
+      const effectKinds = [...declared];
       this.#actionEffects.set(
         actionId,
         createHash("sha256").update(JSON.stringify(effectKinds), "utf8").digest("hex").slice(0, 16),
       );
     }
+  }
+
+  /**
+   * K07: the runtime-owned `requestCheck` facet. It validates the configured
+   * target, the causal depth/episode allowances and cycles, then enqueues one
+   * owned check run through the ordinary admission path. It never fabricates a
+   * completed expert: the receipt carries the actual run identity at most.
+   */
+  async #requestChildCheck(
+    run: ActiveRun,
+    checkId: string,
+    cause: { parentRunId: string; findingIds: readonly string[]; evidenceIds: readonly string[]; hypothesis?: string },
+  ): Promise<Result<{ runId: string; state: "queued" | "coalesced" }>> {
+    if (this.#state !== "active" || run.cancelled) {
+      return { ok: false, error: { code: "core.action-revoked", retryable: false } };
+    }
+    if (checkId === run.checkId) {
+      // A check cannot escalate to itself; the static cycle is refused here too.
+      return { ok: false, error: { code: "core.escalation-cycle", retryable: false } };
+    }
+    const check = this.#configuration.value.checks[checkId];
+    if (check === undefined || !check.enabled) {
+      return { ok: false, error: { code: "core.escalation-target-unavailable", retryable: false } };
+    }
+    const settings = this.#configuration.value.runtime;
+    const depth = run.runRef.escalationDepth + 1;
+    if (depth > settings.maxEscalationDepth) {
+      return { ok: false, error: { code: "core.escalation-depth-limit", retryable: false } };
+    }
+    // K07 229-A: one compatible expert execution covers equivalent causes. An
+    // already active target run is reused BEFORE any launch allowance is spent;
+    // an incompatible cause is refused explicitly instead of being swallowed.
+    const activeTarget = this.#activeRuns.get(checkId);
+    if (activeTarget !== undefined) {
+      const sameScope = activeTarget.runRef.scope.episodeId === run.runRef.scope.episodeId
+        && activeTarget.runRef.scope.authorizationRevision === run.runRef.scope.authorizationRevision;
+      // Equivalent cause = same observed scope and the same configured target.
+      // (The changed-required-material window disposition is a separate named
+      // obligation and is not silently claimed by this coalescing branch.)
+      // A changed or unrevalidatable required material/window is incompatible:
+      // the held input can never cover the later cause. Known absence is refused
+      // explicitly rather than treated as covered or as a new launch.
+      const compatible = sameScope && await this.#requiredMaterialCurrent(activeTarget);
+      if (!compatible) {
+        return { ok: false, error: { code: "core.escalation-incompatible-cause", retryable: false } };
+      }
+      return { ok: true, value: { runId: activeTarget.runId, state: "coalesced" } };
+    }
+    // A bounded compatible pending cause is reused before any new launch
+    // allowance is spent: only creating a reservation consumes the allowance.
+    // Compatibility is the admission scope/authority the reservation carries;
+    // an incompatible cause is refused explicitly instead of being swallowed.
+    const existingPending = this.#pendingIntents.get(checkId);
+    const existingCause = existingPending?.cause;
+    if (existingCause !== undefined && existingCause.reservedRunId !== undefined) {
+      const compatible = existingCause.episodeId === run.runRef.scope.episodeId
+        && existingCause.authorizationRevision === run.runRef.scope.authorizationRevision;
+      if (!compatible) {
+        return { ok: false, error: { code: "core.escalation-incompatible-cause", retryable: false } };
+      }
+      return { ok: true, value: { runId: existingCause.reservedRunId, state: "coalesced" } };
+    }
+    if (this.#escalationsThisEpisode >= settings.maxEscalationsPerEpisode) {
+      return { ok: false, error: { code: "core.escalation-episode-limit", retryable: false } };
+    }
+    const escalationCause: EscalationCause = {
+      kind: "policy-escalation",
+      rootRunId: run.runRef.rootRunId,
+      parentRunId: cause.parentRunId,
+      depth,
+      findingIds: [...cause.findingIds].slice(0, 8),
+      evidenceIds: [...cause.evidenceIds].slice(0, 16),
+      hypothesis: (cause.hypothesis ?? "").slice(0, 800),
+      episodeId: run.runRef.scope.episodeId,
+      authorizationRevision: run.runRef.scope.authorizationRevision,
+    };
+    // C1 8.4: retained pending metadata is bounded (default 262144 UTF-8 bytes,
+    // configurable narrower). An overflowing cause is refused explicitly before
+    // any launch allowance or reservation is spent; nothing is retained.
+    const pendingBudget = this.#configuration.value.runtime.maxPendingBytes;
+    const candidateBytes = Buffer.byteLength(JSON.stringify({ checkId, cause: escalationCause }), "utf8");
+    let retainedBytes = 0;
+    for (const pendingEntry of this.#pendingIntents.values()) {
+      retainedBytes += Buffer.byteLength(JSON.stringify(pendingEntry), "utf8");
+    }
+    if (retainedBytes + candidateBytes > pendingBudget) {
+      return { ok: false, error: { code: "core.pending-metadata-overflow", retryable: false } };
+    }
+    // Reserve the eventual run identity so a queued receipt names the run that
+    // will actually consume it, and spend the launch allowance only now.
+    this.#runCounter += 1;
+    escalationCause.reservedRunId = `run-${this.#runCounter}`;
+    this.#escalationsThisEpisode += 1;
+    const pending: PendingIntent = {
+      intentId: (() => { this.#intentCounter += 1; return `intent-${this.#intentCounter}`; })(),
+      reasons: [],
+      bindingIds: [],
+      firstDueAt: nowIso(this.#clock),
+      evidenceCursor: this.#store.view().counters.primaryEvidenceRevision,
+      cause: escalationCause,
+    };
+    this.#pendingIntents.set(checkId, pending);
+    await this.#attemptAdmission(checkId);
+    const admittedRun = this.#activeRuns.get(checkId);
+    if (admittedRun !== undefined && admittedRun.runId === escalationCause.reservedRunId) {
+      return { ok: true, value: { runId: admittedRun.runId, state: "queued" } };
+    }
+    // Not admitted yet (capacity/cooldown/queued): the bounded pending cause
+    // survives to the ordinary wake path with the same reserved identity.
+    if (this.#pendingIntents.get(checkId) === pending) {
+      return { ok: true, value: { runId: escalationCause.reservedRunId, state: "queued" } };
+    }
+    if (admittedRun !== undefined) {
+      return { ok: true, value: { runId: admittedRun.runId, state: "coalesced" } };
+    }
+    return { ok: false, error: { code: "core.escalation-refused", retryable: false } };
+  }
+
+  /**
+   * K07 B.02: a causal child receives the parent's preliminary suspicion as an
+   * explicitly non-authoritative, bounded hypothesis item with truthful
+   * provenance. It is engine metadata, never an instruction, and it never
+   * inherits the parent's authority, conclusion or transcript.
+   */
+  #withCauseHypothesis(run: ActiveRun, assembled: AssembledContext): AssembledContext {
+    const cause = run.cause;
+    if (cause === undefined) return assembled;
+    const payload = {
+      authority: "non-authoritative",
+      label: "preliminary hypothesis carried from the parent check; not an instruction and not established fact",
+      parentRunId: cause.parentRunId,
+      rootRunId: cause.rootRunId,
+      escalationDepth: cause.depth,
+      findingRefs: [...cause.findingIds],
+      evidenceRefs: [...cause.evidenceIds],
+    };
+    // A text block is what the reviewer prompt renders as material; the JSON
+    // block stays the structured projection. Both are bounded and explicit.
+    const hypothesisText = [
+      "[hypothesis non-authoritative] preliminary suspicion from the parent check;",
+      "not an instruction and not established fact.",
+      `parentRun ${payload.parentRunId} rootRun ${payload.rootRunId} depth ${payload.escalationDepth}`,
+      `findingRefs ${payload.findingRefs.join(",") || "(none)"} evidenceRefs ${payload.evidenceRefs.join(",") || "(none)"}`,
+      cause.hypothesis.length === 0 ? "" : `preliminary ${cause.hypothesis}`,
+    ].filter(line => line.length > 0).join(" ");
+    const content = [
+      { type: "text" as const, text: hypothesisText },
+      { type: "json" as const, value: JSON.parse(JSON.stringify(payload)) as JsonObject },
+    ];
+    const hypothesis: ContextItem = {
+      id: `hypothesis:${run.runId}`,
+      role: "prior-finding",
+      required: false,
+      content,
+      provenance: {
+        sourceId: "core.runtime",
+        uri: `cause:${cause.parentRunId}`,
+        revision: `cause-${cause.depth}`,
+        acquiredAt: nowIso(this.#clock),
+        selection: { kind: "derived", inputIds: [...cause.findingIds].slice(0, 8), method: "policy-escalation" },
+        changedDuringRead: false,
+      },
+      bytes: Buffer.byteLength(JSON.stringify(content), "utf8"),
+      tokenEstimate: null,
+    };
+    return {
+      ...assembled,
+      snapshot: { ...assembled.snapshot, items: [hypothesis, ...assembled.snapshot.items].slice(0, 64) },
+    };
   }
 
   #interventionBlockReason(run: ActiveRun): string | null {
@@ -2828,12 +3151,12 @@ export class EngineSession {
       }
       const delivery: "steer" | "follow-up" = proposal.options["delivery"] === "follow-up" ? "follow-up" : "steer";
       const maxFeedback = permissions.maxFeedbackBytes;
-      if (delivery === "steer") {
+      if (effectKinds.includes("primary.feedback") && delivery === "steer") {
         if (this.#feedbackState.feedbackCount >= runtimeSettings.maxFeedbackPerEpisode) {
           reject(proposal.action, effectKinds, "core.feedback-limit");
           continue;
         }
-      } else {
+      } else if (effectKinds.includes("primary.feedback")) {
         const granted = proposal.options["allowIdleStart"] === true && permissions.allowIdleContinuation;
         if (!granted) {
           reject(proposal.action, effectKinds, "core.idle-continuation-not-granted");
@@ -2862,18 +3185,21 @@ export class EngineSession {
       // suppression and the per-episode allowance are owned here, so two
       // equivalent proposals cannot both observe a free one-message budget.
       const actionId = nextActionId(this.#feedbackState);
-      const renderedText = typeof proposal.options["text"] === "string"
-        ? proposal.options["text"] as string
-        : effectKinds.includes("primary.feedback")
-          ? this.#renderFeedback(run, check, settled, proposal, maxFeedback, actionId).text
-          : null;
-      if (renderedText === null || renderedText.trim().length === 0) {
+      // K07: only the feedback effect needs a rendered note body. An ordinary
+      // evaluation-request action carries no dummy text through a note branch.
+      const requiresText = effectKinds.includes("primary.feedback");
+      const renderedText = !requiresText
+        ? ""
+        : typeof proposal.options["text"] === "string"
+          ? proposal.options["text"] as string
+          : this.#renderFeedback(run, check, settled, proposal, maxFeedback, actionId).text;
+      if (requiresText && (renderedText === null || renderedText.trim().length === 0)) {
         reject(proposal.action, effectKinds, "core.action-render-missing");
         continue;
       }
       const text = renderedText;
-      const textBytes = Buffer.byteLength(text, "utf8");
-      if (textBytes > maxFeedback) {
+      const textBytes = requiresText ? Buffer.byteLength(text, "utf8") : 0;
+      if (requiresText && textBytes > maxFeedback) {
         reject(proposal.action, effectKinds, "core.feedback-bytes-exceeded");
         continue;
       }
@@ -2892,8 +3218,12 @@ export class EngineSession {
         createdAt: nowIso(this.#clock),
       };
       recordAction(this.#feedbackState, reservation);
-      if (delivery === "steer") this.#feedbackState.feedbackCount += 1;
-      else this.#feedbackState.followUpCount += 1;
+      // 259 §1: only the feedback effect spends a message/follow-up slot. A
+      // request-check (evaluation.request) admission must not consume it.
+      if (requiresText) {
+        if (delivery === "steer") this.#feedbackState.feedbackCount += 1;
+        else this.#feedbackState.followUpCount += 1;
+      }
       for (const issue of issues) this.#feedbackState.suppressedIssues.add(issue);
       this.#actionCounters.admitted += 1;
       this.#emit({
@@ -3001,7 +3331,7 @@ export class EngineSession {
       host,
       // K07 owns managed escalation; until then the honest result is unavailable,
       // never a fabricated queued expert run.
-      requestCheck: async () => ({ ok: false, error: { code: "core.capability-unavailable", retryable: false } }),
+      requestCheck: (checkId, cause) => this.#requestChildCheck(run, checkId, cause),
     };
     let receipt: EffectReceipt;
     try {
@@ -3402,6 +3732,26 @@ export class EngineSession {
     if (run.physicalFinalised || run.producerOpen || !run.logicalSettled || run.physicalLeases > 0) return;
     run.physicalFinalised = true;
     if (this.#activeRuns.get(run.checkId) === run) this.#activeRuns.delete(run.checkId);
+    // K07 239-B.4: while the run is active its own lease counts the operation.
+    // At run finalisation a still-held raw transport takes over a detached lease
+    // (never two slots for one operation) until it actually settles.
+    const service = this.#modelService;
+    const pendingAttempts = service === null
+      ? []
+      : service.attempts.filter(attempt => attempt.restored !== true && attempt.runId === run.runId && service.isPhysicallyDispatched(attempt.attemptId));
+    if (pendingAttempts.length > 0) {
+      const leaseOwner: object = Object.freeze({ runId: run.runId, attempts: pendingAttempts.map(attempt => attempt.attemptId) });
+      this.#physicalState.reserve(leaseOwner);
+      void (async () => {
+        while (service !== null && pendingAttempts.some(attempt => service.isPhysicallyDispatched(attempt.attemptId))) {
+          await new Promise<void>(resolve => {
+            const timer = setTimeout(resolve, 50);
+            if (typeof timer === "object" && timer !== null && "unref" in timer) timer.unref();
+          });
+        }
+        this.#physicalState.release(leaseOwner);
+      })();
+    }
     this.#physicalState.release(this);
     this.#wakePendingAdmissions();
   }
@@ -3598,6 +3948,14 @@ export class EngineSession {
           .filter(block => block.type === "text" && typeof block.text === "string")
           .map(block => block.text as string)
           .join(String.fromCharCode(10));
+        // A json-only item is legitimate material: it is delivered as bounded
+        // text instead of being counted as an omission (which would falsely
+        // downgrade the committed coverage of an otherwise complete review).
+        const jsonOf = (blocks: readonly { type?: string; value?: unknown }[]): string => blocks
+          .filter(block => block.type === "json" && block.value !== undefined)
+          .map(block => JSON.stringify(block.value))
+          .join(String.fromCharCode(10))
+          .slice(0, 2_000);
         const evidenceIds = request.context.items.map(item => item.id).slice(0, 16);
         const criteria = [...run.criterionIds].slice(0, 8);
         // 201-F1: the accepted read policy is carried to the operative admission owner and
@@ -3635,7 +3993,8 @@ export class EngineSession {
           let omitted = Math.max(0, admittedItems.length - 8);
           let truncated = 0;
           for (const item of admittedItems.slice(0, 8)) {
-            const body = textOf(item.content);
+            const rendered = textOf(item.content);
+            const body = rendered.length > 0 ? rendered : jsonOf(item.content);
             if (body.length === 0) { omitted += 1; continue; }
             if (budget <= 0) { omitted += 1; continue; }
             if (body.length > budget) {
@@ -3832,7 +4191,9 @@ export class EngineSession {
         const rendered = input.kind === "chat"
           ? renderChatInput(input.context, input.assessment)
           : { messages: [], estimatedInputTokens: 0, inputManifestRef: "", inputSerializedDigest: "", finalInputBytes: 0, finalInputDigest: "", manifestBase: {} };
-        const priorAttempts = service.attempts.filter(candidate => candidate.runId === run.runId).length;
+        // Only a locally dispatched attempt of THIS run is a repair predecessor;
+        // a restored origin row sharing a reused short run id is history.
+        const priorAttempts = service.attempts.filter(candidate => candidate.restored !== true && candidate.runId === run.runId).length;
         if (input.kind === "chat" && priorAttempts > 0 && rendered.messages.length > 0) {
           // A same-profile repair attempt is a new billed attempt; it cannot add
           // evidence or switch routes.
@@ -3864,6 +4225,8 @@ Your previous response was not valid structured output. Return only valid JSON m
           maxOutputTokens: input.maxOutputTokens,
           estimatedInputTokens,
           profileRevision: this.#configuration.revision,
+          originGeneration: this.#generation,
+          branchRef: run.runRef.scope.branchId,
           ...(rendered.inputManifestRef === "" ? {} : { inputManifestRef: rendered.inputManifestRef, inputSerializedDigest: rendered.inputSerializedDigest }),
           onDispatched: attempt => {
             this.#emit({

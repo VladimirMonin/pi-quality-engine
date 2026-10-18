@@ -61,6 +61,7 @@ export const DEFAULT_RUNTIME_SETTINGS: RuntimeSettings = {
   maxConcurrentEvaluations: 2,
   maxConcurrentReviewers: 1,
   maxPendingChecks: 32,
+  maxPendingBytes: 262_144,
   maxRequestsPerSession: 200,
   maxOwnedTokensPerSession: 400_000,
   unknownCost: "allow-with-token-limits",
@@ -72,6 +73,11 @@ export const DEFAULT_RUNTIME_SETTINGS: RuntimeSettings = {
   componentStopTimeoutMs: 2_000,
   boundaryWaitMs: 0,
   maxFeedbackPerEpisode: 3,
+
+  maxEscalationsPerEpisode: 2,
+  maxEscalationDepth: 1,
+  maxRetiredUnsettledOperations: 1,
+  restore: "reconcile-only",
   maxAutonomousFollowUpsPerEpisode: 1,
 };
 
@@ -85,6 +91,7 @@ const RUNTIME_LIMITS: Record<string, { min: number; max: number }> = {
   maxConcurrentEvaluations: { min: 1, max: 16 },
   maxConcurrentReviewers: { min: 1, max: 16 },
   maxPendingChecks: { min: 1, max: 512 },
+  maxPendingBytes: { min: 1_024, max: 4_194_304 },
   maxRequestsPerSession: { min: 1, max: 10_000 },
   maxOwnedTokensPerSession: { min: 1_000, max: 1_000_000_000 },
   maxEvidenceBytes: { min: 65_536, max: 1_073_741_824 },
@@ -94,6 +101,10 @@ const RUNTIME_LIMITS: Record<string, { min: number; max: number }> = {
   componentStopTimeoutMs: { min: 100, max: 60_000 },
   boundaryWaitMs: { min: 0, max: 60_000 },
   maxFeedbackPerEpisode: { min: 0, max: 16 },
+
+  maxEscalationsPerEpisode: { min: 0, max: 8 },
+  maxEscalationDepth: { min: 0, max: 4 },
+  maxRetiredUnsettledOperations: { min: 0, max: 8 },
   maxAutonomousFollowUpsPerEpisode: { min: 0, max: 8 },
 };
 
@@ -557,6 +568,13 @@ function validateRuntimeSettings(input: unknown): Result<Partial<RuntimeSettings
         return reject("config.invalid-value", "$.runtime.maxOwnedCost.amount");
       }
       settings.maxOwnedCost = { currency, amount };
+      continue;
+    }
+    if (key === "restore") {
+      // K07 C1: only the reconcile-only recovery mode is implemented at this
+      // slice; no replay mode is enabled.
+      if (input[key] !== "reconcile-only") return reject("config.capability-unavailable", "$.runtime.restore");
+      settings.restore = "reconcile-only";
       continue;
     }
     const limits = RUNTIME_LIMITS[key];
@@ -1581,6 +1599,27 @@ function applyProjectLayer(previous: EngineConfiguration, layer: ConfigurationLa
 }
 
 function validateResolvedReferences(configuration: EngineConfiguration): Result<true> {
+  // K07 C1 §14.5: configured escalation targets are static references. A missing
+  // target or a configured cycle is refused at configuration acceptance; dynamic
+  // depth/episode gates still bound contributed causes at run time.
+  const escalationTargets = new Map<string, string>();
+  for (const [checkId, check] of Object.entries(configuration.checks)) {
+    const escalateTo = configuration.policies[check.policy]?.options["escalateTo"];
+    if (typeof escalateTo !== "string") continue;
+    if (!Object.hasOwn(configuration.checks, escalateTo)) {
+      return reject("config.unresolved-reference", `$.checks.${checkId}.policy`);
+    }
+    escalationTargets.set(checkId, escalateTo);
+  }
+  for (const start of escalationTargets.keys()) {
+    const seen = new Set<string>([start]);
+    let cursor = escalationTargets.get(start);
+    while (cursor !== undefined) {
+      if (seen.has(cursor)) return reject("config.invalid-value", `$.checks.${start}.policy`);
+      seen.add(cursor);
+      cursor = escalationTargets.get(cursor);
+    }
+  }
   for (const [planId, plan] of Object.entries(configuration.contexts)) {
     for (const provider of plan.providers) {
       if (provider.use !== "core.files" && provider.use !== "core.changes") continue;

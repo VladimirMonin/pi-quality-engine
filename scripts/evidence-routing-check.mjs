@@ -27,7 +27,7 @@ for (const name of ["PATH", "Path", "SystemRoot", "SYSTEMROOT", "WINDIR", "COMSP
   if (process.env[name] !== undefined) env[name] = process.env[name];
 }
 delete env.QE_EVIDENCE_DIR;
-env.QE_TEST_FILES = "test/pi.test.mjs";
+env.QE_TEST_FILES = process.env.QE_TEST_FILES ?? "test/pi.test.mjs";
 const result = spawnSync(process.execPath, ["scripts/test-isolated.mjs"], {
   cwd: process.cwd(),
   env,
@@ -60,7 +60,7 @@ writeFileSync(join(producerDir, "routing-check.json"), `${JSON.stringify({
     unchanged: before === after,
   },
   producer: {
-    command: "node scripts/test-isolated.mjs (QE_TEST_FILES=test/pi.test.mjs, no explicit QE_EVIDENCE_DIR)",
+    command: `node scripts/test-isolated.mjs (QE_TEST_FILES=${env.QE_TEST_FILES}, no explicit QE_EVIDENCE_DIR)`, 
     directory: producerDir,
     exit: result.status,
     evidenceFiles,

@@ -169,7 +169,7 @@ test("the built package loads in real Pi and starts then retires an inert runtim
     const inactive = await readStatus(host);
     assert.equal(inactive.runtime.state, "inactive");
     assert.equal(inactive.runtime.generation, null);
-    assert.equal(inactive.engine.version, "0.4.0");
+    assert.equal(inactive.engine.version, "0.5.0");
     assert.equal(inactive.configuration.enabled, false);
     assert.equal(inactive.configuration.mode, "observe");
     assert.equal(inactive.configuration.rejection, null);

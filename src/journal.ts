@@ -743,6 +743,7 @@ export class SessionJournal {
   async #rotate(reason: JournalRotationData["reason"], segmentOrdinal = this.#activeOrdinal): Promise<void> {
     if (this.#state === "failed" || this.#activeHandle === null) return;
     const observedBytes = this.#activeBytes;
+    const observedRecords = this.#activeRecords;
     let flushState: "written" | "failed" = "written";
     try {
       await this.#activeHandle.sync();
@@ -784,7 +785,7 @@ export class SessionJournal {
         closedAt: this.#options.clock.nowUtc(),
         bytes: archiveBytes,
         compressed: archiveCompression === "gzip",
-        recordCount: this.#activeRecords,
+        recordCount: observedRecords,
       });
       this.#closedSegments = this.#index.size;
       await this.#saveIndex();
@@ -820,7 +821,7 @@ export class SessionJournal {
       logicalJournalId: this.#logicalJournalId,
       segmentOrdinal,
       closeReason: reason,
-      recordCount: 0,
+      recordCount: observedRecords,
       serializedBytes: observedBytes,
       flushState,
       historyCoverage: this.#historyPartial || this.#lostRecords > 0 ? "partial" : "complete",
@@ -970,15 +971,24 @@ export class SessionJournal {
     };
     const candidates = discovery.filter(file => !file.active && file.known && file.closedAtMs !== null && !isProtected(file));
     eligibleFiles = candidates.length;
-    const remove = async (file: OwnedFile): Promise<void> => {
+    // Age, count and directory pressure share one finite attempt per path in
+    // this pass. A failed/changed candidate is not a reason to busy-retry it.
+    const attempted = new Set<string>();
+    const remove = async (file: OwnedFile): Promise<boolean> => {
+      if (attempted.has(file.path)) return false;
+      attempted.add(file.path);
       // Revalidate before unlinking: the file must still be a closed owned
       // segment and no resumed session may have taken ownership meanwhile.
-      if (file.key !== this.#key && existsSync(join(this.#directory, `${file.key}.lock`))) return;
+      if (file.key !== this.#key && existsSync(join(this.#directory, `${file.key}.lock`))) return false;
       try {
         const stats = await stat(file.path);
-        if (!stats.isFile()) return;
+        if (!stats.isFile()) {
+          this.#historyPartial = true;
+          return false;
+        }
       } catch {
-        return;
+        this.#historyPartial = true;
+        return false;
       }
       try {
         await unlink(file.path);
@@ -988,8 +998,10 @@ export class SessionJournal {
         if (file.key === this.#key && file.ordinal !== null) {
           this.#index.delete(file.ordinal);
         }
+        return true;
       } catch {
         this.#historyPartial = true;
+        return false;
       }
     };
     const nowMs = Date.parse(this.#options.clock.nowUtc());
@@ -1014,11 +1026,12 @@ export class SessionJournal {
       if (oldest === undefined) break;
       const file = discovery.find(entry => entry.key === this.#key && entry.ordinal === oldest.ordinal);
       if (file === undefined) {
-        this.#index.delete(oldest.ordinal);
-        this.#closedSegments = this.#index.size;
-        continue;
+        // Discovery/revalidation was inconclusive: preserve the index rather
+        // than inventing a deletion to make the count appear satisfied.
+        this.#historyPartial = true;
+        break;
       }
-      await remove(file);
+      if (!await remove(file)) break;
     }
     if (occupied > retention.maxStorageBytes) {
       const ordered = [...candidates]
@@ -1052,7 +1065,11 @@ export class SessionJournal {
   async #detectUnknownOwnedFiles(): Promise<void> {
     try {
       const files = await this.#discoverOwnedFiles();
-      if (files.some(file => !file.active && !file.known)) this.#historyPartial = true;
+      const presentOrdinals = new Set(files.filter(file => file.key === this.#key && !file.active).map(file => file.ordinal));
+      // The index can outlive deleted diagnostics. Missing indexed segments are
+      // history loss, not a fresh complete journal or a new financial scope.
+      if (files.some(file => !file.active && !file.known)
+        || [...this.#index.keys()].some(ordinal => !presentOrdinals.has(ordinal))) this.#historyPartial = true;
     } catch {
       this.#historyPartial = true;
     }

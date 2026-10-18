@@ -126,10 +126,17 @@ export const engineeringPolicy: PolicyDefinition = {
 function escalationProposal(checkId: string, findings: readonly Finding[]): PolicyDecision["actions"][number] {
   const findingIds = findings.slice(0, 8).map(finding => finding.id);
   const evidenceIds = [...new Set(findings.flatMap(finding => finding.evidenceIds))].slice(0, 16);
+  // The expert receives the parent's preliminary suspicion as bounded text,
+  // explicitly labeled non-authoritative - never as an instruction or a fact.
+  const hypothesis = findings
+    .slice(0, 8)
+    .map(finding => `${finding.criterion}/${finding.defectCode}: ${finding.explanation}`)
+    .join(" | ")
+    .slice(0, 800);
   return {
     localId: "escalate-1",
     action: "core.request-check",
-    options: { checkId } as JsonObject,
+    options: { checkId, hypothesis } as JsonObject,
     findingIds,
     evidenceIds,
     reasonCode: "core.escalation-requested",

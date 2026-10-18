@@ -77,6 +77,12 @@ export interface FinancialSnapshot {
     reservedTokens?: number;
     reservedCostAmount?: string | null;
     reservedCostCurrency?: string | null;
+    /** K07 B.4: bounded known origin/route attribution; absent means honestly unknown. */
+    originRunId?: string | null;
+    originGeneration?: string | null;
+    branchRef?: string | null;
+    requestedRoute?: { provider: string; model: string } | null;
+    actualRoute?: { provider: string; model: string; revision?: string | null } | null;
   }>;
 }
 
@@ -213,6 +219,15 @@ export function parseFinancialSnapshot(value: unknown): FinancialSnapshot | null
       ...(cacheWrite === undefined ? {} : { cacheWritePerMillion: cacheWrite }),
     };
   };
+  const boundedString = (value: unknown): string | null => (typeof value === "string" && value.length > 0 && value.length <= 128 ? value : null);
+  const boundRoute = (value: unknown): { provider: string; model: string; revision?: string | null } | null => {
+    if (!isPlainObject(value)) return null;
+    const provider = boundedString(value["provider"]);
+    const model = boundedString(value["model"]);
+    if (provider === null || model === null) return null;
+    const revision = boundedString(value["revision"]);
+    return { provider, model, ...(revision === null ? {} : { revision }) };
+  };
   const parsedAttempts = attemptsInput.flatMap(entry => {
     if (!isPlainObject(entry) || typeof entry["attemptId"] !== "string" || typeof entry["state"] !== "string") return [];
     return [{
@@ -229,6 +244,11 @@ export function parseFinancialSnapshot(value: unknown): FinancialSnapshot | null
       ...(typeof entry["reservedTokens"] === "number" ? { reservedTokens: entry["reservedTokens"] } : {}),
       reservedCostAmount: typeof entry["reservedCostAmount"] === "string" ? entry["reservedCostAmount"] : null,
       reservedCostCurrency: typeof entry["reservedCostCurrency"] === "string" ? entry["reservedCostCurrency"] : null,
+      originRunId: boundedString(entry["originRunId"]),
+      originGeneration: boundedString(entry["originGeneration"]),
+      branchRef: boundedString(entry["branchRef"]),
+      requestedRoute: boundRoute(entry["requestedRoute"]),
+      actualRoute: boundRoute(entry["actualRoute"]),
     }];
   });
   const finalizedState = (state: string): boolean => state === "settled" || state === "cancelled" || state === "released";

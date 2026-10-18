@@ -421,6 +421,17 @@ export class ComponentRegistry {
   }
 
   /** True when the component declared this diagnostic/reason code (O1 §6.2). */
+  /**
+   * K07: the accepted effect declaration of a registered action component. The
+   * approval pin needs the declaration itself, not option-dependent resolution
+   * of a concrete proposal.
+   */
+  actionEffects(componentId: string): readonly string[] | null {
+    const component = this.#components.get(componentId);
+    if (component === undefined || component.definition.kind !== "action") return null;
+    return [...component.definition.effects];
+  }
+
   acceptsDiagnosticCode(componentId: string, code: string): boolean {
     return this.#components.get(componentId)?.declaredCodes.has(code) ?? false;
   }

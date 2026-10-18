@@ -520,6 +520,8 @@ export interface ActionContext extends LifecycleContext {
     parentRunId: string;
     findingIds: readonly string[];
     evidenceIds: readonly string[];
+    /** Bounded preliminary-suspicion text, always non-authoritative. */
+    hypothesis?: string;
   }): Promise<Result<{ runId: string; state: "queued" | "coalesced" }>>;
 }
 
@@ -640,6 +642,8 @@ export interface RuntimeSettings {
   /** C1 reviewer sublimit: concurrent run-bound Pi reviewer sessions. */
   maxConcurrentReviewers: number;
   maxPendingChecks: number;
+  /** C1: bounded serialized pending metadata retained by the queue. */
+  maxPendingBytes: number;
   maxRequestsPerSession: number;
   maxOwnedTokensPerSession: number;
   unknownCost: "allow-with-token-limits" | "deny";
@@ -654,6 +658,15 @@ export interface RuntimeSettings {
   boundaryWaitMs: number;
   /** K06 feedback: hard per-episode message allowance, never reset by input/reload. */
   maxFeedbackPerEpisode: number;
+
+  /** K07 C1: bounded ordinary expert escalation per observed episode. */
+  maxEscalationsPerEpisode: number;
+  /** K07 C1: bounded causal escalation depth below the root run. */
+  maxEscalationDepth: number;
+  /** K07 C1: retired physically unsettled owned operations tolerated. */
+  maxRetiredUnsettledOperations: number;
+  /** K07 C1: recovery mode for a restored generation. */
+  restore: "reconcile-only";
   /** K06 feedback: at most one granted follow-up after natural completion per episode. */
   maxAutonomousFollowUpsPerEpisode: number;
 }

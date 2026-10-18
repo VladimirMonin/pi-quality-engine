@@ -61,3 +61,65 @@ export const feedbackAction: ActionDefinition = {
     }), ctx.signal);
   },
 };
+
+/**
+ * K07 C1 `core.request-check`: the ordinary expert escalation action. It asks the
+ * runtime for one owned check run of the configured target and reports the actual
+ * resulting run identity; it never claims that the expert completed.
+ */
+export const requestCheckAction: ActionDefinition = {
+  id: "core.request-check",
+  apiMajor: 1,
+  kind: "action",
+  effects: ["evaluation.request"],
+  optionsSchema: {
+    type: "object",
+    additionalProperties: false,
+    required: ["checkId"],
+    properties: {
+      checkId: { type: "string", minLength: 1, maxLength: 128 },
+      hypothesis: { type: "string", maxLength: 800 },
+    },
+  },
+  requiredCapabilities: [],
+  diagnosticCodes: ["core.escalation-requested", "core.escalation-refused"],
+  async execute(admitted, ctx): Promise<EffectReceipt> {
+    const checkId = typeof admitted.proposal.options["checkId"] === "string"
+      ? admitted.proposal.options["checkId"] as string
+      : "";
+    if (checkId.length === 0) {
+      return {
+        actionId: admitted.actionId,
+        state: "rejected",
+        destinationId: null,
+        evidenceIds: [],
+        error: { code: "core.escalation-target-missing", retryable: false },
+      };
+    }
+    const requested = await ctx.requestCheck(checkId, {
+      parentRunId: admitted.run.runId,
+      findingIds: [...admitted.proposal.findingIds],
+      evidenceIds: [...admitted.proposal.evidenceIds],
+      ...(typeof admitted.proposal.options["hypothesis"] === "string"
+        ? { hypothesis: (admitted.proposal.options["hypothesis"] as string).slice(0, 800) }
+        : {}),
+    });
+    if (!requested.ok) {
+      return {
+        actionId: admitted.actionId,
+        state: "rejected",
+        destinationId: null,
+        evidenceIds: [],
+        error: requested.error,
+      };
+    }
+    // A queue/coalescing receipt carries the actual resulting run identity; the
+    // expert's own conclusion arrives later through its normal assessment.
+    return {
+      actionId: admitted.actionId,
+      state: "queued",
+      destinationId: requested.value.runId,
+      evidenceIds: [],
+    };
+  },
+};

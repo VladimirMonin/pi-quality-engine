@@ -338,8 +338,10 @@ export class ObservationStore {
         const text = typeof facts["text"] === "string" ? facts["text"].slice(0, MAX_TASK_CHARACTERS) : null;
         if (this.#episodeId === null) {
           this.#episodeId = `ep-${observation.sequence}`;
-          this.#authorizationRevision += 1;
         }
+        // C1 4.2: a distinct accepted operator amendment advances the authorization
+        // revision of the still-open task; it never starts a new episode.
+        this.#authorizationRevision += 1;
         if (text !== null) this.#taskText = text;
         break;
       }

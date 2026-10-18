@@ -60,6 +60,11 @@ export interface ModelAttemptRecord {
   cost: ModelCostObservation | null;
   actualModel: { provider: string; id: string; revision: string | null } | null;
   visibility: "attempt-level" | "partial";
+  /** K07 B.4: this row was restored from protected state (retired generation). */
+  restored: boolean;
+  /** K07 B.4: bounded known origin generation/branch of the owned operation. */
+  originGeneration: string | null;
+  branchRef: string | null;
   stopReason: string | null;
   errorCode: string | null;
   /** Bounded submitted-input manifest identity; never a body. */
@@ -156,6 +161,9 @@ export interface ModelDispatchInput {
   inputSerializedDigest?: string;
   /** Accepted configuration revision captured with the validated profile. */
   profileRevision?: string;
+  /** K07 B.4: bounded origin generation/branch of the owning run. */
+  originGeneration?: string;
+  branchRef?: string;
   onDispatched?: (attempt: ModelAttemptRecord) => void;
   /**
    * Protected intent boundary. Called after reservation and before any actual
@@ -509,10 +517,10 @@ export function costFromUsage(raw: Record<string, unknown> | null, usage: ModelA
 }
 
 export class ModelService {
-  readonly #profiles: Readonly<Record<string, ModelProfileDefinition>>;
-  readonly #approved: ReadonlySet<string>;
+  #profiles: Readonly<Record<string, ModelProfileDefinition>>;
+  #approved: ReadonlySet<string>;
   readonly #registry: ModelRegistryPort;
-  readonly #budget: ModelServiceBudget;
+  #budget: ModelServiceBudget;
   readonly #now: () => string;
   readonly #attempts = new Map<string, ModelAttemptRecord>();
   #attemptCounter = 0;
@@ -520,6 +528,9 @@ export class ModelService {
   #reservedTokens = 0;
   #dispatchedCount = 0;
   #reservedCostByCurrency: Record<string, string> = {};
+  /** Aggregate reservation liability of rows outside the bounded window. */
+  #hiddenReservedTokens = 0;
+  #hiddenReservedCost: Record<string, string> = {};
   #hidden: FinancialAggregate = emptyAggregate();
   #hiddenCost: Record<string, string> = emptyCostMap();
   readonly #feed: SessionFeedState | null;
@@ -677,6 +688,9 @@ export class ModelService {
     const attempt: ModelAttemptRecord = {
       attemptId,
       runId: input.runId,
+      restored: false,
+      originGeneration: input.originGeneration ?? null,
+      branchRef: input.branchRef ?? null,
       profileId: input.profileId,
       kind: input.kind,
       purpose: input.purpose ?? "direct",
@@ -1069,12 +1083,75 @@ export class ModelService {
   }
 
   /** Restores bounded protected financial facts; restored values may only constrain. */
+  /**
+   * K07: retired physically unsettled owned operations. A restored row carries
+   * the explicit `restored` placeholder rather than invented original
+   * attribution; while its state is unresolved it keeps blocking dependent work.
+   */
+  /**
+   * K07 233-B.4: one deduplicated physical/uncertain operation count. A live
+   * attempt whose raw transport is still dispatched counts once (its own row);
+   * a restored unknown row counts once. The same operation never counts twice.
+   */
+  /**
+   * K07 B.4: physically/uncertain unsettled operations with their bounded known
+   * attribution. One row is one operation; an unknown origin/profile stays null.
+   */
+  unsettledOperations(): Array<{ profileId: string | null; originRunId: string | null; restored: boolean; routeKey: string | null }> {
+    const result: Array<{ profileId: string | null; originRunId: string | null; restored: boolean; routeKey: string | null }> = [];
+    for (const attempt of this.#attempts.values()) {
+      const restoredUnknown = attempt.runId === "restored" && (attempt.state === "reserved" || attempt.state === "dispatched" || attempt.state === "unresolved");
+      const liveUnsettled = attempt.state === "dispatched" || attempt.state === "unresolved";
+      if (!liveUnsettled && !restoredUnknown) continue;
+      const profileId = typeof attempt.profileId === "string" && attempt.profileId !== "restored" ? attempt.profileId : null;
+      const route = attempt.actualRoute ?? attempt.requestedRoute;
+      const routeKey = route === null ? null : `${route.provider}|${route.model}`;
+      result.push({ profileId, originRunId: attempt.runId === "restored" ? null : attempt.runId, restored: attempt.restored, routeKey });
+    }
+    return result;
+  }
+
+  physicalUnsettledCount(): number {
+    let count = 0;
+    for (const attempt of this.#attempts.values()) {
+      // One row is one physical/uncertain operation. A live transport whose
+      // dispatch returned by timeout stays `unresolved` (reservations retained);
+      // a restored unknown row may still be reserved/dispatched/unresolved. The
+      // same operation is never counted twice, and settled/cancelled/released
+      // rows release the barrier.
+      const restoredUnknown = attempt.runId === "restored" && attempt.state === "reserved";
+      const liveUnsettled = attempt.state === "dispatched" || attempt.state === "unresolved";
+      if (liveUnsettled || restoredUnknown) count += 1;
+    }
+    return count;
+  }
+
+  /** True while this attempt's raw transport is physically unsettled. */
+  isPhysicallyDispatched(attemptId: string): boolean {
+    const state = this.#attempts.get(attemptId)?.state;
+    return state === "dispatched" || state === "unresolved";
+  }
+
+  unsettledRetiredCount(): number {
+    return [...this.#attempts.values()].filter(attempt =>
+      attempt.runId === "restored"
+      && (attempt.state === "reserved" || attempt.state === "dispatched" || attempt.state === "unresolved")).length;
+  }
+
+  /**
+   * K07-B.04: an accepted configuration reload must reach new work through the
+   * CURRENT owner without resetting ledger, receipts, reservations or origin.
+   */
+  reconfigure(profiles: Readonly<Record<string, ModelProfileDefinition>>, approved: ReadonlySet<string> | readonly string[], budget: ModelServiceBudget): void {
+    this.#profiles = profiles;
+    this.#approved = approved instanceof Set ? approved : new Set(approved);
+    this.#budget = budget;
+  }
+
   restore(snapshot: FinancialSnapshot | null): number {
     if (snapshot === null) return 0;
     this.#ledgerRevision = Math.max(this.#ledgerRevision, snapshot.ledgerRevision);
     this.#dispatchedCount = Math.max(this.#dispatchedCount, snapshot.ownedRequestCount);
-    this.#reservedTokens = Math.max(this.#reservedTokens, snapshot.reservedTokens);
-    this.#reservedCostByCurrency = { ...snapshot.reservedCostByCurrency, ...this.#reservedCostByCurrency };
     // Session-wide aggregates are preserved independently of the bounded
     // receipt details: hidden facts are the aggregate minus the rows it also
     // carries, so nothing known is dropped merely to fit 32 details.
@@ -1088,8 +1165,49 @@ export class ModelService {
     for (const entry of snapshot.attempts) {
       if (this.#applyReceiptRow(entry)) applied += 1;
     }
+    // Equal-ledger snapshots can be ordered only by their rows: reconcile the
+    // aggregate reservation from the current row facts plus the honest hidden
+    // liability (aggregate minus what its own rows carried), so a stale
+    // pre-settlement copy cannot resurrect a reservation while real unresolved
+    // work and out-of-window liabilities stay reserved.
+    this.#reconcileReservations(snapshot);
     this.#pinFeed();
     return applied;
+  }
+
+  #reconcileReservations(snapshot: FinancialSnapshot): void {
+    let visibleTokens = 0;
+    let snapshotVisibleTokens = 0;
+    const visibleCost: Record<string, string> = {};
+    const snapshotVisibleCost: Record<string, string> = {};
+    for (const attempt of this.#attempts.values()) visibleTokens += attempt.reservedTokens;
+    for (const entry of snapshot.attempts) snapshotVisibleTokens += Number(entry.reservedTokens ?? 0);
+    for (const attempt of this.#attempts.values()) {
+      const reserved = attempt.reservedCost;
+      if (reserved === null) continue;
+      const current = microUnits(visibleCost[reserved.currency] ?? "0") ?? 0n;
+      visibleCost[reserved.currency] = fromMicroUnits(current + (microUnits(reserved.amount) ?? 0n));
+    }
+    for (const entry of snapshot.attempts) {
+      if (entry.reservedCostAmount === null || entry.reservedCostAmount === undefined) continue;
+      if (entry.reservedCostCurrency === null || entry.reservedCostCurrency === undefined) continue;
+      const current = microUnits(snapshotVisibleCost[entry.reservedCostCurrency] ?? "0") ?? 0n;
+      snapshotVisibleCost[entry.reservedCostCurrency] = fromMicroUnits(current + (microUnits(entry.reservedCostAmount) ?? 0n));
+    }
+    this.#hiddenReservedTokens = Math.max(this.#hiddenReservedTokens, Math.max(0, Number(snapshot.reservedTokens) - snapshotVisibleTokens));
+    this.#reservedTokens = visibleTokens + this.#hiddenReservedTokens;
+    for (const [currency, amount] of Object.entries(snapshot.reservedCostByCurrency)) {
+      const hiddenRaw = (microUnits(amount) ?? 0n) - (microUnits(snapshotVisibleCost[currency] ?? "0") ?? 0n);
+      const hidden = hiddenRaw > 0n ? hiddenRaw : 0n;
+      const known = microUnits(this.#hiddenReservedCost[currency] ?? "0") ?? 0n;
+      this.#hiddenReservedCost[currency] = fromMicroUnits(hidden > known ? hidden : known);
+    }
+    this.#reservedCostByCurrency = {};
+    for (const [currency, amount] of Object.entries(visibleCost)) this.#reservedCostByCurrency[currency] = amount;
+    for (const [currency, amount] of Object.entries(this.#hiddenReservedCost)) {
+      const current = microUnits(this.#reservedCostByCurrency[currency] ?? "0") ?? 0n;
+      this.#reservedCostByCurrency[currency] = fromMicroUnits(current + (microUnits(amount) ?? 0n));
+    }
   }
 
   /**
@@ -1144,11 +1262,19 @@ export class ModelService {
     const existing = this.#attempts.get(entry.attemptId);
     if (existing !== undefined) {
       if (entry.usageRevision < existing.usageRevision) return false;
+      // Dispatched and unresolved are one functional uncertainty: the receiver
+      // normalizes them on admission, so an identical replay must compare
+      // through the same normalization instead of reporting a false advance.
+      const replayStateMap: Record<string, ModelAttemptState> = {
+        reserved: "reserved", dispatched: "unresolved", settled: "settled",
+        unresolved: "unresolved", released: "released", cancelled: "cancelled",
+      };
+      const entryState = replayStateMap[entry.state] ?? entry.state;
       const same = entry.usageRevision === existing.usageRevision
         && (existing.usage?.totalTokens ?? null) === entry.totalTokens
         && (existing.cost?.amount ?? null) === entry.costAmount
         && (existing.cost?.currency ?? null) === entry.costCurrency
-        && existing.state === entry.state;
+        && existing.state === entryState;
       if (same) return false;
       // Replacement, not addition: an admissible correction atomically
       // replaces the functional aggregate for this identity.
@@ -1193,11 +1319,23 @@ export class ModelService {
       if (entry.state === "settled" && entry.totalTokens !== null) existing.errorCode = null;
       if (typeof entry.profileId === "string" && entry.profileId !== "restored") existing.profileId = entry.profileId;
       if (entry.price !== undefined) existing.capturedPrice = entry.price;
+      // Known immutable attribution is retained (never rebuilt from current config).
+      if (existing.requestedRoute === null && entry.requestedRoute !== undefined) existing.requestedRoute = entry.requestedRoute;
+      if (existing.actualRoute === null && entry.actualRoute !== undefined && entry.actualRoute !== null) {
+        existing.actualRoute = { provider: entry.actualRoute.provider, model: entry.actualRoute.model, revision: entry.actualRoute.revision ?? null };
+      }
+      if (existing.originGeneration === null && typeof entry.originGeneration === "string") existing.originGeneration = entry.originGeneration;
+      if (existing.branchRef === null && typeof entry.branchRef === "string") existing.branchRef = entry.branchRef;
       return true;
     }
     this.#attempts.set(entry.attemptId, {
       attemptId: entry.attemptId,
-      runId: "restored",
+      restored: true,
+      // Known original attribution survives; only a genuinely unknown row falls
+      // back to the explicit placeholder.
+      runId: entry.originRunId ?? "restored",
+      originGeneration: entry.originGeneration ?? null,
+      branchRef: entry.branchRef ?? null,
       profileId: entry.profileId ?? "restored",
       kind: "chat",
       purpose: entry.purpose === "repair" ? "repair" : "direct",
@@ -1226,8 +1364,10 @@ export class ModelService {
       inputManifestRef: null,
       inputSerializedDigest: null,
       profileRevision: null,
-      requestedRoute: null,
-      actualRoute: null,
+      requestedRoute: entry.requestedRoute ?? null,
+      actualRoute: entry.actualRoute === undefined || entry.actualRoute === null
+        ? null
+        : { provider: entry.actualRoute.provider, model: entry.actualRoute.model, revision: entry.actualRoute.revision ?? null },
       destinationRef: null,
       retryVisibility: "attempt-level",
       priceBasisRef: null,
@@ -1416,6 +1556,11 @@ export class ModelService {
         reservedTokens: attempt.reservedTokens,
         reservedCostAmount: attempt.reservedCost?.amount ?? null,
         reservedCostCurrency: attempt.reservedCost?.currency ?? null,
+        originRunId: attempt.runId,
+        originGeneration: attempt.originGeneration,
+        branchRef: attempt.branchRef,
+        requestedRoute: attempt.requestedRoute,
+        actualRoute: attempt.actualRoute,
       })),
     };
   }

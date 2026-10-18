@@ -98,6 +98,8 @@ function consumerEnvironment() {
   env.TEMP = temp;
   env.TMP = temp;
   env.TMPDIR = temp;
+  env.PI_CODING_AGENT_DIR = join(consumer, "fixture", "agent");
+  env.GIT_CEILING_DIRECTORIES = consumer;
   return env;
 }
 
@@ -106,7 +108,7 @@ try {
   const packResult = runNpm(["pack", "--json", "--pack-destination", packDir], { cwd: packageRoot });
   const packInfo = JSON.parse(packResult.stdout)[0];
   assert.equal(packInfo.name, "pi-quality-engine");
-  assert.equal(packInfo.version, "0.4.0");
+  assert.equal(packInfo.version, "0.5.0");
   const paths = packInfo.files.map(file => file.path);
   for (const required of ["package.json", "README.md", "THIRD_PARTY_NOTICES.md", "dist/index.js", "dist/contracts.js", "resources/prompts/repetition-v1.md", "resources/prompts/progress-v1.md", "resources/prompts/progress-v1.questions.json", "resources/prompts/engineering-v1.md", "resources/prompts/evaluation-v1.schema.json", "resources/prompts/feedback-v1.md"]) {
     assert.ok(paths.includes(required), `packed artifact is missing ${required}`);
@@ -148,7 +150,7 @@ try {
   assert.ok(markerLine, `consumer report missing from stdout:\n${consumerResult.stdout}\n${consumerResult.stderr}`);
   const report = JSON.parse(markerLine.slice("QE_CONSUMER_REPORT=".length));
   assert.equal(report.ok, true);
-  assert.equal(report.packageVersion, "0.4.0");
+  assert.equal(report.packageVersion, "0.5.0");
   assert.equal(report.hostVersion, "1.1.0");
   assert.equal(report.peerRange, "*");
   assert.deepEqual(report.loadErrors, []);
@@ -165,7 +167,7 @@ try {
 ${consumerResult.stdout}
 ${consumerResult.stderr}`);
   const k05 = JSON.parse(k05Line.slice("QE_CONSUMER_K05=".length));
-  assert.equal(k05.version, "0.4.0");
+  assert.equal(k05.version, "0.5.0");
   assert.equal(k05.entryIsolated, true, "the reviewer ran from the installed artifact inside the consumer root");
   assert.equal(k05.arrivals, 2, "the installed reviewer used the scripted provider for its read and result turns");
   assert.equal(k05.bodyDelivered, true, "the installed reviewer's permitted read reached a later provider input");
@@ -219,15 +221,23 @@ ${consumerResult.stderr}`);
             return rev.status === 0 ? rev.stdout.trim() : null;
           } catch { return null; }
         })(),
-        // HEAD alone cannot identify a dirty candidate: retain the byte
-        // identities of every dirty path in the candidate checkout.
+        // HEAD alone cannot identify a dirty candidate. Bind only published
+        // payloads and explicit candidate inputs; other dirt is path/status-only.
+        // Never open unrelated receipts, credentials or operator files.
         dirtyFiles: (() => {
           try {
             const diff = spawnSync("git", ["status", "--porcelain"], { cwd: packageRoot, encoding: "utf8" });
             const lines = (diff.status === 0 ? diff.stdout : "")
               .split(String.fromCharCode(10)).filter(line => line.trim().length > 0);
+            const identityPaths = new Set([...paths,
+              "src/journal.ts", "src/checkpoint.ts", "src/runtime.ts", "src/models.ts", "src/diagnostics.ts",
+              "test/k07-host.test.mjs", "test/k07-storage.test.mjs", "test/k07-recovery.test.mjs",
+              "package-lock.json", "tsconfig.json", "tsconfig.test.json",
+              "scripts/test-package.mjs", "scripts/evidence-routing-check.mjs",
+            ]);
             return lines.map(line => {
               const path = line.slice(3).trim();
+              if (!identityPaths.has(path)) return { status: line.slice(0, 2).trim(), path, contentIdentity: "not-inspected" };
               try {
                 const bytes = readFileSync(join(packageRoot, path));
                 return { status: line.slice(0, 2).trim(), path, sha256: createHash("sha256").update(bytes).digest("hex") };
