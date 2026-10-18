@@ -37,20 +37,23 @@ The project is specified as a standalone Pi extension for evidence-based assessm
 
 ### Current accepted checkpoint 📍
 
-K01–K03 close bounded S1; K05 closes its qualified mechanical S2 scope.
-**K06 /0.4.0 is independently ACCEPTED by Astra221 and locally released** at
-`40bcce3e0f2d2f3b62f1d3ca2a6873670957a7c1`, annotated `v0.4.0` targeting that
-implementation rather than later documentation. Read the
-[K06 decision and exact representation qualification](08-development-checkpoints-and-release-checklists.md#k06)
-and the [existing canonical K06 handoff](../verification/K06/author/implementation-20261017-212/handoff.md).
-Only native SDK print/scripted feedback is qualified; installed loading/K05
-consumer plus precise final tar/input equivalence is not observed installed K06
-feedback, TUI/RPC parity, semantic clearance or live judgment/billing.
-The next canonical implementation locator is [K07 — escalation/recovery and S3 exit](08-development-checkpoints-and-release-checklists.md#k07).
-Sol222 owns its source-bound SAME-DeepSeek preparation for Hermes dispatch;
-this documentation update launches nobody or claims K07 implemented. Polza/Jev,
-OpenRouter/Jev and local d3-mini Q8 each remain UNVERIFIED. Git delivery is
-separately recorded; a tag grants neither package publication nor spending.
+K01–K03 close bounded S1; K05 closes qualified mechanical S2.
+**K07 /0.5.0 closes the qualified local S3 scope, independently ACCEPTED by
+Astra314 and locally released** at `cea8c878ee2955c0b8115fd5ada508baef4a8a8b`.
+Unsigned annotated `v0.5.0` targets that tested implementation, not later docs.
+Read [K07's original33 decision, exact committed/EOL/artifact qualification and
+limits](08-development-checkpoints-and-release-checklists.md#k07).
+The scope is controlled native SDK/filesystem mechanics on Windows/NTFS and
+SDK1.1.0, with truthful uncertainty and physical cleanup. Clean installed loading,
+resources/K05 behavior and identical59-payload tar are not a newly observed
+installed-K07 feedback, TUI/RPC, semantic accuracy or usefulness claim.
+The next implementation boundary is [K08 — public packaged recombination](08-development-checkpoints-and-release-checklists.md#k08),
+starting with one independent packed trigger/context path, not a new scheduler.
+This documentation update dispatches nobody. Current role defaults are in
+[WORKFLOW](../Инструкции/WORKFLOW.orchestration.instructions.md).
+Polza/Jev, OpenRouter/Jev and local d3-mini Q8 remain individually UNVERIFIED;
+remaining finite allowance is UNKNOWN. No push/publication or spending renewal
+follows from this local tag.
 
 <a id="first-reading"></a>
 

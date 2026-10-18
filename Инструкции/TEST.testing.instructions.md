@@ -36,8 +36,12 @@ behavior or adding variants. Reuse unaffected candidate-bound evidence; compare
 actual payloads and run the applicable existing final-byte gates in disposable
 state. A default host run's skipped reviewer cases remain skipped even when its
 exit is zero; retain separately invoked preload-dependent witnesses accurately.
-The common host set also excludes `test/k06-host.test.mjs`; use the existing
-`QE_TEST_FILES` selector explicitly. A retained material-change control removed
+The common host set also excludes `test/k06-host.test.mjs` and the K07
+host/recovery/storage files; use the existing `QE_TEST_FILES` selector explicitly
+or the exact accepted bounded direct invocation. Name separately selected scopes
+and required preload/child-environment support; wrapper0 does not replace inner
+native exit/count/pipe readback. Source-only, exact tar/native-input equivalence
+and actual installed feedback remain different observations. A retained material-change control removed
 from the current owner file remains separate case-bound evidence, never silently
 part of the current suite count. Reuse its exact accepted body/support with fresh
 contained output allocation, not a reconstructed oracle or restored product test.

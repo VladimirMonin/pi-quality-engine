@@ -507,6 +507,21 @@ A journal failure remains diagnostic degradation. A control checkpoint failure p
 
 The bundle must include an authorized short-check-to-expert-to-feedback trace, an expert rejection of an incorrect preliminary suspicion, an operator-stop trace, and a crash-window recovery trace. Every action has a strongest demonstrated receipt, not a blanket success label. The report states whether the host-mode idle-start gate has passed and which modes remain observational only.
 
+**Accepted local S3 exit:** Astra314 accepted K07's complete original33 at their
+qualified scopes (32 PASS_SCOPED, X.04 downstream representation). Sol315 closed
+that local representation/tag step at implementation
+`cea8c878ee2955c0b8115fd5ada508baef4a8a8b` / `v0.5.0`.
+See [the candidate-bound decision and evidence index](08-development-checkpoints-and-release-checklists.md#k07).
+Exact committed build/common/package and affected EOL checks are qualification,
+not a second acceptance campaign. The retained three crash windows prove actual
+child termination, queued receipt identity and receiver counts0/1/1, not completed
+input inclusion or remote exactly-once. Native checkpoint failures remain failed
+operations; conservative liabilities/Stop and dependent-admission denial qualify
+the permitted degradation, not error-free I/O. Native natural-idle evidence remains
+K06's inherited mode scope, not TUI/RPC certification. Installed loading/resources/
+K05 execution and identical tar do not establish new installed-K07 feedback or
+live judgment/usefulness; S4 and route-specific finite allowances remain separate.
+
 <a id="section-9"></a>
 
 ## 9. Stage S4 — Extensibility, usefulness, and a release candidate 📦

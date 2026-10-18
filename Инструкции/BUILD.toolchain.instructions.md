@@ -39,8 +39,8 @@ inside a fresh owned candidate mirror, trace nested producers and preserve real
 prior-stage byte controls. Keep prior results immutable and retain the actual
 installed/tested tarball; compare payload bytes, not version strings alone.
 Avoid composing Windows paths from POSIX `$PWD`.
-The default `test:pi` list is the common host regression set, not the K05 reviewer
-or K06 feedback host file. Use `QE_TEST_FILES=test/k06-host.test.mjs` with the
+The default `test:pi` list is the common host regression set, not the K05 reviewer,
+K06 feedback or K07 host/recovery/storage files. Use `QE_TEST_FILES=test/k06-host.test.mjs` with the
 existing isolation wrapper for K06; aggregate `check` does not implicitly run it.
 K05 held-operation cases separately need actual supported `--import` preload and
 `QE_HOLD_READ_PRELOAD`; that variable is not forwarded by the wrapper. Record
@@ -50,6 +50,11 @@ Installed loading/resources/earlier consumer behavior and byte-identical final
 artifact/native-input equivalence are distinct from actually observed installed
 feedback. Keep the exact accepted alternative and limitation; do not promote a
 version match or prior consumer label into a new end-to-end observation.
+Select K07 files deliberately with the existing `QE_TEST_FILES` wrapper or a
+bounded direct `node --test --test-name-pattern` invocation on compiled code.
+Carry the exact accepted selectors, required preload and owned child environment;
+selecting a file does not make its nonselected definitions pass. Retained crash
+custody support and actual inner routing/common exits are separate evidence.
 `node scripts/collect-evidence.mjs` collects identities, not proof of passing gates;
 independently bind all packed payloads/resources to actual commit/build bytes.
 When Git EOL normalization changes bytes, build/test/pack exact committed source

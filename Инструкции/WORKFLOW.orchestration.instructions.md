@@ -16,15 +16,16 @@ remain in [Document 08](../docs/08-development-checkpoints-and-release-checklist
 - **Hermes is a thin upper-level orchestrator.** It assigns coherent medium
   slices, relays bounded handoffs and receives verified outcomes. It does not
   read source, implement, review code or commit.
-- **Pi implementer — DeepSeek:** native Pi, `ollama-cloud/deepseek-v4.1-flash`,
-  thinking `xhigh`. The same saved implementer owns code/tests and author evidence;
+- **Pi implementer — Sol:** native Pi, `openai-codex/gpt-6.1-sol`,
+  thinking `max`. The same saved implementer owns code/tests and author evidence;
   it does not commit or maintain release-owned project instructions.
 - **Pi final independent accepting owner — Astra:** native Pi,
   `openai-codex/gpt-6-astra`, thinking `xhigh`. Inspect the actual frozen candidate
   and required evidence; issue a candidate-bound acceptance/rejection and release.
-  A bounded oracle consultation is a separate explicit assignment, not acceptance.
-- **Pi control/docs/local-release owner — Sol:** native Pi,
-  `openai-codex/gpt-6.1-sol`, thinking `high`. Consolidate canonical evidence and,
+  A bounded oracle consultation uses Astra/xhigh under a separate explicit
+  read-only assignment; it is not acceptance or runtime ownership.
+- **Pi checker/control/docs/local-release owner — Sol:** native Pi,
+  `openai-codex/gpt-6.1-sol`, thinking `medium`. Consolidate canonical evidence and,
   only after actual independent acceptance/release, qualify committed/EOL/artifact
   agreement and own authorized local English commits/tags and necessary separate
   instruction synchronization under
@@ -34,6 +35,10 @@ remain in [Document 08](../docs/08-development-checkpoints-and-release-checklist
 - Ordinary reproducible defects return to the same implementer. A serious unresolved
   architectural dilemma receives the original references, concrete alternatives
   and actual failing evidence; consultation does not replace the final gate.
+
+The latest direct operator assignment overrides these defaults. Preserve exact
+saved role/session identities; never substitute a retired historical implementer
+or retroactively relabel an earlier run's actual model/thinking level.
 
 These roles do not themselves authorize new workers or internal readers. When
 explicitly authorized, each Pi worker owns its internal children and completion;

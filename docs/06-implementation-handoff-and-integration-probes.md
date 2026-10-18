@@ -1339,6 +1339,16 @@ Add policy proposals, feedback admission, current-scope freshness, expert-check 
 
 A planned expert check and a policy-requested expert check use the same evaluator runner. Do not introduce a separate “subagent system” for escalation or a second financial ledger for it.
 
+The qualified local S3 increment is now [K07 /0.5.0](08-development-checkpoints-and-release-checklists.md#k07),
+accepted by Astra314 and locally tagged after Sol315's exact committed/EOL/artifact
+qualification. Reuse its declared native-input, uncertainty, storage and cleanup
+scopes; do not reopen closed B.02/retention/crash findings or promote scripted
+mechanics into live judgment. The common `test:pi` command does not select the
+K07 host/recovery/storage files; their actual selected case receipts are separately
+bound in that release record. Next is K08's first independent packed trigger/context
+check through public registration, with actual input/output and disposal evidence.
+This navigation update starts no K08 code or workers and grants no live trials.
+
 ### 21.4 S4 completion and independent review 📦
 
 Complete advertised component conformance, installed-artifact and native-platform tests, profile usefulness evidence, local inspection/export, and predeclared performance bounds. Run the P-10 composed path and affected regressions. Release only the capability/mode/platform/route scope demonstrated by the evidence.

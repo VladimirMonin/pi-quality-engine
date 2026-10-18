@@ -13,7 +13,7 @@ source_baseline_date: "2026-10-12"
 prepared_date: "2026-10-13"
 planned_project_version_range: "0.0.1 through 1.0.0"
 language: "en"
-status: "K01–K05 accepted at their recorded local tags; bounded S1 and qualified S2 complete; K06–K13 and S3/S4 remain not-run; live routes unverified"
+status: "K01–K07 accepted at recorded local tags; bounded S1, qualified S2 and local S3 complete; K08–K13/S4 not-run; live routes unverified"
 ---
 
 ## Pi Quality Engine — Development Checkpoints and Release Checklists 🧭
@@ -27,7 +27,7 @@ This workbook turns the four delivery stages already defined in [Document 04](04
 > [!important] What a checked box means
 > A checked box means there is evidence for **this candidate commit and the stated scope**: an executed case, a concrete assertion, and a retained artifact or an explicit documented non-artifact reason. The box does not mean that an implementing model is confident, that a source file exists, or that a helper returned `success`.
 >
-> Boxes started unchecked. Checked items apply only to the recorded accepted K01–K05 candidates and their stated qualifications. Bounded S1 and K05's mechanical/integration S2 exit are accepted; K04 alone was not full S2. K06–K13 and S3/S4 remain unproved. The three live routes remain separately UNVERIFIED. Evidence reuse is explicitly scoped, never an assertion that every mapped subcase was freshly run.
+> Boxes started unchecked. Checked items apply only to the recorded accepted K01–K07 candidates and their stated qualifications. Bounded S1, qualified mechanical/integration S2 and local S3 are accepted; K04 alone was not full S2. K08–K13/S4 remain unproved. The three live routes remain separately UNVERIFIED and remaining finite allowance UNKNOWN. Evidence reuse is explicitly scoped, never an assertion that every mapped subcase was freshly run.
 
 ### Authority and use 📑
 
@@ -713,7 +713,46 @@ The table describes tests to execute, not results already obtained. Each row mus
 
 ## 11. 0.5.0 — Bounded escalation, recovery, and state — S3 complete 🏁
 
-**Checkpoint K07 · D1 S3 exit · Candidate tag `v0.5.0` · Initial state: not-run**
+**Checkpoint K07 · D1 S3 exit · Independently ACCEPTED / local `v0.5.0` verified**
+
+Astra314 accepted the exact corrected working-source/compiled/new-tar candidate;
+311-F1 is closed. Its complete original33 has32 PASS_SCOPED and1 downstream
+X.04 PARTIAL_RELEASE. Sol315's actual committed/EOL/artifact qualification and
+local annotated tag below complete that local release step, not another review.
+
+| Record | Exact identity / retained evidence |
+|---|---|
+| Implementation | `cea8c878ee2955c0b8115fd5ada508baef4a8a8b`, parent `e3c28cdbb742748a1a4037a68539a4d81df7e852` |
+| Tested tree | `c38ed8d98b1239d78013f3bfdf6f71a003aae966`;92 blob/mode identities,22 explicit changed paths; inherited env template body excluded |
+| Annotated unsigned local tag | `v0.5.0`, object `515faa3f7333d372a0cd5a709e137457caa5e957`, targets implementation, not later documentation |
+| Tested tar |211926 bytes/59 payloads; SHA256 `b73725bd0aeb4e2e1960c4a843cf80942e7edffe7f160d0080f02f7e43b9f39c`, identical to Astra314's accepted new artifact |
+| Independent acceptance / original33 | [Astra314 FINAL](file:///C:/Users/User/AppData/Local/hermes/cache/scratch/qe-k07-final-acceptance-314-astra/FINAL.md), [complete original33](file:///C:/Users/User/AppData/Local/hermes/cache/scratch/qe-k07-final-acceptance-314-astra/original33-adjudication.json) |
+| Exact local qualification | [Sol315 implementation gate](file:///C:/Users/User/AppData/Local/hermes/cache/scratch/qe-k07-local-release-315-sol/implementation-gate.json), [sealed qualification manifest](file:///C:/Users/User/AppData/Local/hermes/cache/scratch/qe-k07-local-release-315-sol/qualification-manifest.json), [tag readback](file:///C:/Users/User/AppData/Local/hermes/cache/scratch/qe-k07-local-release-315-sol/tag-readback.json) |
+
+Git converted15 CRLF inputs to LF (6 changed/9 inherited), with no semantic
+source/test change. Exact committed `npm run check` exits0: unit164, actual
+routing5/commonPi26 and clean package consumer0. The same accepted T01, T03
+and12 storage assertions pass14/14 on the affected LF representation; no new
+variants or second acceptance. All59 rebuilt payloads and the actual tested tar
+remain byte-identical to the accepted new artifact. Two accepted trailing-space
+warnings remain disclosed; `git diff --check` exit2 was not relabeled passed.
+
+Qualified Windows/NTFS/SDK1.1.0 scope retains current expert task/requirements/
+source input, bounded escalation, Stop/financial/effect uncertainty and physical
+cleanup. Actual T03 child termination and queued receipt/receiver counts0/1/1 are
+not completed MAIN inclusion or remote exactly-once. Failed native checkpoints
+remain failures; the uncaptured306/307 errno/cause remains UNKNOWN. Retention's
+real EBUSY failure now closes physically with lock released before reader release,
+while retaining truthful archive/index/partial state; healthy deletion separately
+works. Native natural-idle scope is inherited from K06, not TUI/RPC parity.
+
+Clean installed loading/resources/K05 execution is observed, but post-cleanup
+physical installed59 readback is unavailable and no newly observed installed-K07
+feedback is claimed. No live judgment/usefulness/billing, universal peer/platform/
+power-loss guarantee, spending renewal, remote push or publication follows. Old
+83837716…c23 tar and all RED/incident evidence remain historical, not this repair.
+Later documentation does not move the tag or establish an identical repack from
+docs HEAD. Next is [K08](#k08), not additional K07 acceptance.
 
 Escalation now requests another configured check, which may use the clean Pi reviewer already proved in S2. The same increment closes the dangerous boundaries around late results, unknown spending, crash windows, and session-journal lifecycle. It does not add a second launcher or make diagnostic files authoritative state.
 
@@ -725,21 +764,21 @@ Escalation now requests another configured check, which may use the clean Pi rev
 
 ### Construction and behavior checklist 🛠️
 
-- [ ] **K07-B.01** Route an expert request through the ordinary `check.run` operation with root/parent identities. There is no separate subagent-only scheduler.
-- [ ] **K07-B.02** Pass the preliminary finding as a hypothesis together with original task/requirements and source evidence, not as an authoritative verdict.
-- [ ] **K07-B.03** Enforce finite escalation depth, episode limits, deduplication, and shared model/check budgets.
-- [ ] **K07-B.04** Keep a logically cancelled but physically unsettled request identified and capacity-bounded. Late billing can arrive without late action authority.
-- [ ] **K07-B.05** Persist action intent, unresolved attempts, current ceilings, stop state, and ledger revisions in functional checkpoints independent of logging verbosity/retention.
-- [ ] **K07-B.06** Restore only compatible session/generation/branch/authority state. Abandoned task history cannot restore new permission or erase session-wide spending.
-- [ ] **K07-B.07** Reconcile uncertain paid dispatches and effects before retry. Do not automatically recreate expert sessions after a lost local completion.
-- [ ] **K07-B.08** Complete the one-logical-journal model with safe append, physical segment rotation, configurable elapsed rotation, and retention ownership.
-- [ ] **K07-B.09** Keep the file-destination implementation behind O1. If RFS cannot satisfy the interval contract, replace that internal destination rather than rounding the setting.
-- [ ] **K07-B.10** Implement built-in gzip without shell compression commands and preserve the last complete source on interruption.
-- [ ] **K07-B.11** Bound all sink queues and implement visible degradation/gaps. A logger failure does not rerun evaluation or crash primary work.
-- [ ] **K07-B.12** Distinguish diagnostic sink failure from control-checkpoint failure: the latter suspends new dependent paid work/effects rather than resetting state.
-- [ ] **K07-B.13** Revalidate active ownership before retention deletion. Preserve files with uncertain ownership or unrelated content.
-- [ ] **K07-B.14** Test one logical journal and functional accounting across observer reload/resume and branch navigation.
-- [ ] **K07-B.15** Complete the previously deferred storage behavior before claiming it, while native-platform breadth remains an S4 gate.
+- [x] **K07-B.01** Route an expert request through the ordinary `check.run` operation with root/parent identities. There is no separate subagent-only scheduler.
+- [x] **K07-B.02** Pass the preliminary finding as a hypothesis together with original task/requirements and source evidence, not as an authoritative verdict.
+- [x] **K07-B.03** Enforce finite escalation depth, episode limits, deduplication, and shared model/check budgets.
+- [x] **K07-B.04** Keep a logically cancelled but physically unsettled request identified and capacity-bounded. Late billing can arrive without late action authority.
+- [x] **K07-B.05** Persist action intent, unresolved attempts, current ceilings, stop state, and ledger revisions in functional checkpoints independent of logging verbosity/retention.
+- [x] **K07-B.06** Restore only compatible session/generation/branch/authority state. Abandoned task history cannot restore new permission or erase session-wide spending.
+- [x] **K07-B.07** Reconcile uncertain paid dispatches and effects before retry. Do not automatically recreate expert sessions after a lost local completion.
+- [x] **K07-B.08** Complete the one-logical-journal model with safe append, physical segment rotation, configurable elapsed rotation, and retention ownership.
+- [x] **K07-B.09** Keep the file-destination implementation behind O1. If RFS cannot satisfy the interval contract, replace that internal destination rather than rounding the setting.
+- [x] **K07-B.10** Implement built-in gzip without shell compression commands and preserve the last complete source on interruption.
+- [x] **K07-B.11** Bound all sink queues and implement visible degradation/gaps. A logger failure does not rerun evaluation or crash primary work.
+- [x] **K07-B.12** Distinguish diagnostic sink failure from control-checkpoint failure: the latter suspends new dependent paid work/effects rather than resetting state.
+- [x] **K07-B.13** Revalidate active ownership before retention deletion. Preserve files with uncertain ownership or unrelated content.
+- [x] **K07-B.14** Test one logical journal and functional accounting across observer reload/resume and branch navigation.
+- [x] **K07-B.15** Complete the previously deferred storage behavior before claiming it, while native-platform breadth remains an S4 gate.
 
 ### Pragmatic checkpoint tests 🧪
 
@@ -759,18 +798,18 @@ The table describes tests to execute, not results already obtained. Each row mus
 
 ### Evidence to retain 🔍
 
-- [ ] **K07-E.01** Retain expert-confirmed and expert-rejected paths with original-source manifests and exact reviewer counts.
-- [ ] **K07-E.02** Retain small crash-window reports naming which external effects may have happened and how uncertainty was preserved.
-- [ ] **K07-E.03** Retain segment/retention/gzip actual filesystem assertions and bounded-sink pressure evidence.
-- [ ] **K07-E.04** Retain ledger invariance after diagnostic loss/rotation/branch movement plus checkpoint-failure denial proof.
-- [ ] **K07-E.05** Retain the S3 stage report and its affected S1/S2 regressions at the current candidate.
+- [x] **K07-E.01** Retain expert-confirmed and expert-rejected paths with original-source manifests and exact reviewer counts.
+- [x] **K07-E.02** Retain small crash-window reports naming which external effects may have happened and how uncertainty was preserved.
+- [x] **K07-E.03** Retain segment/retention/gzip actual filesystem assertions and bounded-sink pressure evidence.
+- [x] **K07-E.04** Retain ledger invariance after diagnostic loss/rotation/branch movement plus checkpoint-failure denial proof.
+- [x] **K07-E.05** Retain the S3 stage report and its affected S1/S2 regressions at the current candidate.
 
 ### Exit and tag decision ✅
 
-- [ ] **K07-X.01** All mandatory S3 effects, escalation, and recovery behaviors pass without another plugin launcher.
-- [ ] **K07-X.02** No unknown operation was relabeled complete or free to make restart appear clean.
-- [ ] **K07-X.03** The supported local storage path meets exact O1 semantics; no unsupported private library call is treated as a stable contract.
-- [ ] **K07-X.04** Approve S3 and tag `v0.5.0` at the accepted candidate.
+- [x] **K07-X.01** All mandatory S3 effects, escalation, and recovery behaviors pass without another plugin launcher.
+- [x] **K07-X.02** No unknown operation was relabeled complete or free to make restart appear clean.
+- [x] **K07-X.03** The supported local storage path meets exact O1 semantics; no unsupported private library call is treated as a stable contract.
+- [x] **K07-X.04** Approve S3 and tag `v0.5.0` at the accepted candidate.
 
 **The accepted tag may claim:** A complete bounded feedback loop with own expert review, safe uncertainty handling, and tested local storage/recovery.
 
@@ -1596,7 +1635,7 @@ The row groupings do not waive individual D/O obligations. The candidate manifes
 |---|---|---|---|---|---|
 | S1 — Observable standalone runtime | 0.1.0 | Bounded exit ACCEPTED; K01–K03 | K03 `035aaa3fe767c62cd16b962cf06012e2bb37f480` / `v0.1.0` | [K03 gate](../verification/K03/reviewer/20261014202738294-p53924-b2973cbe/implementation-gate.json) | No broader platform/usefulness claim |
 | S2 — Real evidence and owned evaluators | 0.3.0 | Qualified mechanical/integration exit ACCEPTED; local release verified | K05 `731b68f3ab59f2c890437a9242479a6c8607a3c5` / `v0.3.0` | [K05 exact-tree gate](file:///C:/Users/User/AppData/Local/hermes/cache/scratch/qe-k05-release-210-sol/implementation-gate.json) | No mandatory mechanical repair remains; three real routes UNVERIFIED; no live quality/billing claim |
-| S3 — Bounded feedback and recovery | 0.5.0 | K06 feedback subset ACCEPTED; S3 exit pending K07 | K06 `40bcce3e0f2d2f3b62f1d3ca2a6873670957a7c1` / `v0.4.0` | [K06 exact-tree gate](file:///C:/Users/User/AppData/Local/hermes/cache/scratch/qe-k06-release-k07-222-sol/implementation-gate.json) | Existing K07 escalation/recovery/storage obligations; no live/usefulness or broader mode claim |
+| S3 — Bounded feedback and recovery | 0.5.0 | Qualified local S3 exit ACCEPTED; local release verified | K07 `cea8c878ee2955c0b8115fd5ada508baef4a8a8b` / `v0.5.0` | [K07 exact-tree gate](file:///C:/Users/User/AppData/Local/hermes/cache/scratch/qe-k07-local-release-315-sol/implementation-gate.json) | No mandatory local S3 blocker; live/usefulness, installed-K07 feedback and broader modes/platforms remain unclaimed |
 | S4 — Public extensibility and release validation | 1.0.0 | Not run | — | — | Not assessed |
 
 Fill this board only from executed checkpoint decisions. It is not a separate source of approval. A failed later regression can reopen a previously accepted behavior for the new candidate without rewriting the historical meaning of the old tag.
