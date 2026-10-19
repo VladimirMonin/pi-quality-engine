@@ -114,3 +114,26 @@ part of the default common host set. K05/K06/K07 specialized host/storage/recove
 families likewise require explicit selectors and their recorded support.
 Generated verification output stays under ignored `verification/` or the explicitly
 owned external qualification root.
+
+## K09 offline preparation (not a version release)
+
+The [K09/v1 fixture guide](test/fixtures/k09/v1/README.md) links the frozen corpus,
+separate labels, grouped split, candidate resources and acceptance plan. Astra347
+accepted these exact offline inputs,42 labels and bounded pilot policy; they are
+saved in `3ffcf3ecc0938e347f2e9f106a7753fe401d3060`. This is not model accuracy,
+profile promotion, whole K09 acceptance or a new package/tag. The runtime remains
+`0.6.0`; the offline family is outside the published files allowlist.
+
+```sh
+node scripts/validate-k09.mjs --plan-only
+node --test test/k09-offline.test.mjs
+```
+
+These are existing standalone offline commands, not a new npm/live command.
+The validator reports the frozen historical input state: proposed/unadjudicated
+strings intentionally remain unchanged despite external347 admission. Do not edit
+or reseal them to record approval. See the [accepted offline scope and remaining
+K09 gates](docs/08-development-checkpoints-and-release-checklists.md#k09-offline-preparation).
+Actual C1/SDK input and issued-reference delivery, semantic T01–T07, route/usage/cost,
+per-domain promotion and D-39 usefulness remain pending. No live-study spending
+or product-model execution follows from these commands or this local save.

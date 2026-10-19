@@ -951,6 +951,46 @@ The table describes tests to execute, not results already obtained. Each row mus
 
 The runtime can be mechanically correct while the model gives poor advice. This checkpoint tests the actual assessment profiles against requirements and near-misses. The implementing model cannot certify its own judgments. At least one explicitly approved real route must be exercised for any live-route claim.
 
+<a id="k09-offline-preparation"></a>
+
+### Accepted offline preparation — stage remains open 📍
+
+Astra347 issued **ACCEPTED_OFFLINE_INPUT_LABEL_PLAN** for the exact nine345/346
+files;348 saved them at `3ffcf3ecc0938e347f2e9f106a7753fe401d3060` in a local
+offline preparation/test commit, not a version release. Start with the
+[fixture guide](../test/fixtures/k09/v1/README.md),
+[acceptance plan](../test/fixtures/k09/v1/acceptance-plan.json) and
+[freeze](../test/fixtures/k09/v1/freeze.json). The freeze remains7286B/SHA256
+`090ff2451d0e120e83d6c68e27025511e606a82255978dc109de083b58acdeb3`.
+All nine accepted raw/indexed/committed bodies agree; corpus/labels retain their
+accepted CRLF. Default Git EOL conversion was rejected before commit, not used to
+silently rebaseline the freeze. Unchanged346 authored14 + independent6 checks
+are reused;348 adds syntax and exact-storage plan-only checks, not model outcomes.
+
+The42 labels,14 whole task groups/21 calibration +21 held-out cases, selection
+policy and numerical/categorical pilot gates are externally admitted at this
+scope. Historical proposed/unadjudicated strings stay frozen; the validator is
+not an approval registry. The group/sample/chronology limits still apply.014's
+task intent is supplied but production origin is uncertain;010/018 do not compel
+categorical condemnation.037/040 require missing-image coverage;040 supports
+only supplied right/bottom comparisons, not unseen left/top, full containment or
+rendered quality. No image capability or measured model accuracy is established.
+
+Useful existing commands are `node scripts/validate-k09.mjs --plan-only` and
+`node --test test/k09-offline.test.mjs`. The selection builder is not a C1 context,
+runtime-issued evidence namespace or final SDK delivery proof. A concrete remaining
+offline boundary, under `K09-B.01` and D1 section20.1, is proving that only the
+selected public sources/resources reach the existing managed C1/SDK path with
+actual issued references and no grader discovery. This save neither executes nor
+dispatches that proof and requires no new evaluation platform.
+
+Semantic T01–T07, actual route/model/revision/input/usage/cost, profile/domain
+promotion, D-39 closed-loop usefulness and whole K09/release remain pending. All
+original checkpoint boxes below remain unchanged; package version stays0.6.0,
+with no new tag or publication. Proposed42 requests/USD2.10 grant no allowance.
+The separate original USD1 three-case/nine-request pilot remains unspent here and
+billable-input/safe-provisioning-blocked, without renewal or reassignment.
+
 | Gate input | Required reference |
 |---|---|
 | Existing obligations | D-16/D-17/D-18/D-29, D-38 and the one-shot portion of D-39; O-11/O-18/O-30; P-05/P-06/P-10 live subsets. |
