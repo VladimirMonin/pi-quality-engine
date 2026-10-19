@@ -106,7 +106,7 @@ const npmCommand = (...args) => {
 
 async function packageInputs(source) {
   const manifest = await json(join(source, "package.json"));
-  assert.deepEqual(manifest.files, ["dist", "resources", "README.md", "THIRD_PARTY_NOTICES.md"], "copy only the declared public package surface, never a checkout snapshot");
+  assert.deepEqual(manifest.files, ["dist", "resources", "examples", "README.md", "THIRD_PARTY_NOTICES.md"], "copy only the declared public package surface, never a checkout snapshot");
   const payload = {};
   const visit = async name => {
     for (const entry of await readdir(join(source, name), { withFileTypes: true })) {
@@ -117,7 +117,7 @@ async function packageInputs(source) {
     }
   };
   for (const name of ["package.json", "README.md", "THIRD_PARTY_NOTICES.md"]) payload[name] = await identity(join(source, name));
-  await visit("dist"); await visit("resources");
+  await visit("dist"); await visit("resources"); await visit("examples");
   const peer = await realpath(join(source, "node_modules", "@earendil-works", "pi-coding-agent"));
   const yaml = await realpath(join(source, "node_modules", "yaml"));
   const sdkManifest = await json(join(peer, "package.json")), yamlManifest = await json(join(yaml, "package.json"));

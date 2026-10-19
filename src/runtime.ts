@@ -85,6 +85,7 @@ import type {
   HostFeedback,
   JsonObject,
   LifecycleContext,
+  ModelProfileDefinition,
   Observation,
   ObservationContext,
   ObservationDraft,
@@ -106,7 +107,7 @@ import type {
 } from "./contracts.js";
 
 export const ENGINE_NAME = "pi-quality-engine";
-export const ENGINE_VERSION = "0.5.0";
+export const ENGINE_VERSION = "0.6.0";
 export const ENGINE_BUILD_REF = `${ENGINE_NAME}@${ENGINE_VERSION}`;
 export const DATA_POLICY_REVISION = "o1-1";
 
@@ -166,7 +167,7 @@ export interface EngineSessionInput {
    * Builds the production reviewer host for the resolved approved model. The
    * composition root supplies it from the host's public SDK registry.
    */
-  reviewHostFactory?: (model: Record<string, unknown>) => Promise<ReviewerHost>;
+  reviewHostFactory?: (model: Record<string, unknown>, reasoning: ModelProfileDefinition["reasoning"]) => Promise<ReviewerHost>;
   /** Registry availability notification sink used by the composition root. */
   publishRegistryEndpoint?: (endpoint: ComponentRegistry["endpoint"]) => void;
   /** Same-session control state; the composition root preserves it across reload. */
@@ -4047,7 +4048,7 @@ export class EngineSession {
     };
     let factoryOutcome: Promise<ReviewerHost>;
     try {
-      factoryOutcome = factory(model);
+      factoryOutcome = factory(model, profile.reasoning);
     } catch (error) {
       settleFactory();
       throw error;
@@ -4247,6 +4248,7 @@ export class EngineSession {
         const service = this.#modelService;
         if (service === null) return { ok: false, error: { code: "core.review-unavailable", retryable: false } };
         let nativeStream: unknown = null;
+        let admittedOutputLimit = 0;
         const admitted = await service.dispatchReviewTurn({
           runId: run.runId,
           profileId: request.profileId,
@@ -4261,6 +4263,8 @@ export class EngineSession {
           // every canonical dispatched field, so the engine's own attribution
           // record is retained instead of being dropped as an unclosed payload.
           onDispatched: attempt => {
+            // Bind this exact reserved turn, not a later configuration snapshot.
+            admittedOutputLimit = attempt.effectiveMaxOutputTokens;
             this.#emit({
               event: "quality.model.dispatched",
               level: "info",
@@ -4293,6 +4297,11 @@ export class EngineSession {
           onIntent: async () => this.#commitControl(),
           revoked: () => this.#store.operatorStopped || this.#state !== "active" || turnSignal.aborted || this.#clock.nowMonoMs() >= reviewDeadlineMonoMs,
         }, async (modelRecord) => {
+          if (admittedOutputLimit <= 0) return { ok: false, error: { code: "core.review-unavailable", retryable: false } };
+          const streamOptions = isPlainRecord(options) ? options : {};
+          const explicitLimit = streamOptions["maxTokens"];
+          const maxTokens = typeof explicitLimit === "number" && Number.isSafeInteger(explicitLimit) && explicitLimit > 0
+            ? Math.min(explicitLimit, admittedOutputLimit) : admittedOutputLimit;
           // B.10/T06 physical lifetime: the actual provider stream is an owned operation. Its
           // lease is acquired before the stream starts and released only at its genuine native
           // settlement (resolution or rejection), including synchronous start failure. Logical
@@ -4306,7 +4315,7 @@ export class EngineSession {
           };
           let stream: unknown;
           try {
-            stream = port.streamSimple === undefined ? undefined : port.streamSimple(modelRecord, context, options);
+            stream = port.streamSimple === undefined ? undefined : port.streamSimple(modelRecord, context, { ...streamOptions, maxTokens });
           } catch (error) {
             settleStream();
             throw error;

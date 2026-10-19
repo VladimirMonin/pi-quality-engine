@@ -37,7 +37,7 @@ function sessionInput(ctx: ExtensionContext, courier?: FeedbackCourier, lastSign
     projectTrusted: ctx.isProjectTrusted(),
     projectRoot: ctx.cwd,
     modelRegistry: piModelRegistryPort(ctx.modelRegistry),
-    reviewHostFactory: model => createPiReviewerHost(ctx.modelRegistry, { model }),
+    reviewHostFactory: (model, reasoning) => createPiReviewerHost(ctx.modelRegistry, { model, reasoning }),
     hostVersion: VERSION,
     hostMode: ctx.mode,
     resourcesDir: packageResourcesDir(),

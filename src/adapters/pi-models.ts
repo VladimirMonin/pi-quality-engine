@@ -12,6 +12,7 @@ import { basename, join, resolve, sep } from "node:path";
 
 import type { ModelRegistry } from "@earendil-works/pi-coding-agent";
 import type { ChatTransportResult, ClassifierTransportResult, ModelRegistryPort } from "../models.js";
+import type { ModelProfileDefinition } from "../contracts.js";
 
 function asRecord(value: unknown): Record<string, unknown> | null {
   return typeof value === "object" && value !== null && !Array.isArray(value) ? value as Record<string, unknown> : null;
@@ -28,6 +29,33 @@ function extractText(message: unknown): string {
     if (entry["type"] === "text" && typeof entry["text"] === "string") parts.push(entry["text"]);
   }
   return parts.join("\n");
+}
+
+// The pinned OpenAI-compatible serializer merges sampling parameters last.
+// Bound their cap aliases on request-local copies so model/thinking defaults
+// cannot widen an admitted SDK maxTokens (and smaller defaults stay smaller).
+function boundedSdkSampling(model: Record<string, unknown>, options: Record<string, unknown>): { model: Record<string, unknown>; options: Record<string, unknown> } {
+  const limit = options["maxTokens"];
+  if (model["api"] !== "openai-completions" || typeof limit !== "number" || !Number.isSafeInteger(limit) || limit <= 0) return { model, options };
+  const bound = (value: unknown): unknown => {
+    const record = asRecord(value);
+    if (record === null) return value;
+    const copy = { ...record };
+    for (const key of ["max_tokens", "max_completion_tokens"]) {
+      const cap = copy[key];
+      if (typeof cap === "number" && Number.isFinite(cap) && cap > 0) copy[key] = Math.min(cap, limit);
+    }
+    return copy;
+  };
+  const levels = asRecord(model["samplingParamsByThinkingLevel"]);
+  return {
+    model: {
+      ...model,
+      ...(model["samplingParams"] === undefined ? {} : { samplingParams: bound(model["samplingParams"]) }),
+      ...(levels === null ? {} : { samplingParamsByThinkingLevel: Object.fromEntries(Object.entries(levels).map(([level, value]) => [level, bound(value)])) }),
+    },
+    options: { ...options, ...(options["samplingParams"] === undefined ? {} : { samplingParams: bound(options["samplingParams"]) }) },
+  };
 }
 
 export function piModelRegistryPort(registry: ModelRegistry): ModelRegistryPort {
@@ -52,7 +80,8 @@ export function piModelRegistryPort(registry: ModelRegistry): ModelRegistryPort 
       if (options["reasoning"] !== undefined && options["reasoning"] !== "off") {
         requestOptions["reasoning"] = options["reasoning"];
       }
-      const assistant = await registry.complete(model as never, context as never, requestOptions as never);
+      const bounded = boundedSdkSampling(model, requestOptions);
+      const assistant = await registry.complete(bounded.model as never, context as never, bounded.options as never);
       const record = asRecord(assistant);
       return {
         text: extractText(assistant),
@@ -67,7 +96,8 @@ export function piModelRegistryPort(registry: ModelRegistry): ModelRegistryPort 
       };
     },
     streamSimple(model, context, options) {
-      return registry.streamSimple(model as never, context as never, options as never);
+      const bounded = boundedSdkSampling(model, asRecord(options) ?? {});
+      return registry.streamSimple(bounded.model as never, context as never, bounded.options as never);
     },
     async classify(model, state, questions, options, _signal): Promise<ClassifierTransportResult> {
       const result = await registry.classify(
@@ -123,6 +153,8 @@ import type { ReviewerHost, ReviewerSession, ReviewerSessionHooks } from "../bui
 export interface PiReviewerHostOptions {
   /** Resolved approved chat model object from the host registry. */
   model: Record<string, unknown>;
+  /** Selected profile, never the SDK or primary session's ambient default. */
+  reasoning?: ModelProfileDefinition["reasoning"];
 }
 
 function toolResultBytes(event: unknown, argsOf?: (toolCallId: string) => Record<string, unknown> | undefined): {
@@ -786,6 +818,7 @@ export async function createPiReviewerHost(registry: ModelRegistry, options: PiR
         agentDir,
         modelRuntime,
         model: options.model as never,
+        thinkingLevel: options.reasoning ?? "off",
         tools: [...tools, "submit_result"],
         customTools: [resultTool as never, ...wrappedTools],
         resourceLoader,
