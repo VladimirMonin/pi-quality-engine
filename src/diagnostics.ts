@@ -41,6 +41,8 @@ export interface DiagnosticHistoryContext {
    * authority (restored or advanced), not the constructor snapshot.
    */
   currentScope?: () => DiagnosticScope;
+  /** Runtime-owned event revision; an active run keeps its admitted snapshot. */
+  currentConfigRevision?: (runId: string | null) => string;
 }
 
 export interface DiagnosticAppendInput {
@@ -50,6 +52,8 @@ export interface DiagnosticAppendInput {
   data: JsonObject;
   ownerId?: string;
   correlation?: Partial<DiagnosticCorrelation>;
+  /** Internal producer snapshot when the run has already left the active table. */
+  configRevision?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -652,6 +656,7 @@ export class DiagnosticHistory {
       dataPolicyRevision: context.dataPolicyRevision,
       ownerId: context.ownerId,
       ...(context.currentScope === undefined ? {} : { currentScope: context.currentScope }),
+      ...(context.currentConfigRevision === undefined ? {} : { currentConfigRevision: context.currentConfigRevision }),
     };
     this.#limits = { ...limits, detail: limits.detail ?? "standard" };
   }
@@ -743,7 +748,7 @@ export class DiagnosticHistory {
         correlation,
         level: input.level,
         detail: "standard",
-        configRevision: this.#context.configRevision,
+        configRevision: input.configRevision ?? this.#context.currentConfigRevision?.(correlation.runId) ?? this.#context.configRevision,
         dataPolicyRevision: this.#context.dataPolicyRevision,
         reasonCodes: [...input.reasonCodes],
         data: closed.data,

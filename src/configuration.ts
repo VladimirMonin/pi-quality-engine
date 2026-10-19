@@ -1641,9 +1641,11 @@ function validateResolvedReferences(configuration: EngineConfiguration): Result<
       if (evaluator.modelProfile === undefined) {
         return reject("config.invalid-value", `$.evaluators.${evaluatorId}.modelProfile`);
       }
-    } else if (evaluator.modelProfile !== undefined) {
+    } else if (BUILTIN_EVALUATORS.has(evaluator.use) && evaluator.modelProfile !== undefined) {
       return reject("config.invalid-value", `$.evaluators.${evaluatorId}.modelProfile`);
     }
+    // A contribution's mechanism is known only at ready-definition resolution.
+    // Supplied routes still require the same existence and operator approval.
     if (evaluator.modelProfile === undefined) continue;
     if (!Object.hasOwn(configuration.modelProfiles, evaluator.modelProfile)) {
       return reject("config.unresolved-reference", `$.evaluators.${evaluatorId}.modelProfile`);

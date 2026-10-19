@@ -967,6 +967,12 @@ export class EngineSession {
       dataPolicyRevision: DATA_POLICY_REVISION,
       ownerId: RUNTIME_OWNER_ID,
       currentScope: () => this.#store.view().scope,
+      currentConfigRevision: runId => {
+        for (const run of this.#activeRuns.values()) {
+          if (run.runId === runId) return run.configRevision;
+        }
+        return this.#configuration.revision;
+      },
     }, {
       maxEvents: configuration.value.observability.recentHistory.maxEvents,
       maxBytes: configuration.value.observability.recentHistory.maxBytes,
@@ -1420,6 +1426,12 @@ export class EngineSession {
     }
   }
 
+  #invalidEvaluatorBinding(mechanism: string, modelProfile: string | undefined): boolean {
+    return mechanism === "deterministic"
+      ? modelProfile !== undefined
+      : (mechanism === "direct-model" || mechanism === "pi-session") && modelProfile === undefined;
+  }
+
   #missingComponents(check: CheckDefinition, checkId: string): string[] {
     const missing: string[] = [];
     const plan = this.#configuration.value.contexts[check.context];
@@ -1432,7 +1444,12 @@ export class EngineSession {
     const prompt = this.#configuration.value.prompts[check.prompt];
     if (prompt === undefined || !this.#registry.resolve(prompt.use, prompt.options).ok) missing.push(`prompt:${check.prompt}`);
     const evaluator = this.#configuration.value.evaluators[check.evaluator];
-    if (evaluator === undefined || !this.#registry.resolve(evaluator.use, evaluator.options).ok) missing.push(`evaluator:${check.evaluator}`);
+    const resolvedEvaluator = evaluator === undefined ? null : this.#registry.resolve(evaluator.use, evaluator.options);
+    if (resolvedEvaluator === null || !resolvedEvaluator.ok || resolvedEvaluator.value.kind !== "evaluator") {
+      missing.push(`evaluator:${check.evaluator}`);
+    } else if (this.#invalidEvaluatorBinding(resolvedEvaluator.value.definition.mechanism, evaluator?.modelProfile)) {
+      missing.push(`evaluator-model:${check.evaluator}`);
+    }
     const policy = this.#configuration.value.policies[check.policy];
     if (policy === undefined || !this.#registry.resolve(policy.use, policy.options).ok) missing.push(`policy:${check.policy}`);
     for (const trigger of check.triggers) {
@@ -1760,19 +1777,32 @@ export class EngineSession {
       projectConfigDir: this.#input.projectConfigDir,
       projectTrusted: this.#input.projectTrusted,
     });
-    if (loaded.rejection !== null) {
+    let bindingField: string | null = null;
+    if (loaded.rejection === null) {
+      for (const [id, profile] of Object.entries(loaded.resolved.value.evaluators)) {
+        const resolved = this.#registry.resolve(profile.use, profile.options);
+        if (resolved.ok && resolved.value.kind === "evaluator"
+          && this.#invalidEvaluatorBinding(resolved.value.definition.mechanism, profile.modelProfile)) {
+          bindingField = `$.evaluators.${id}.modelProfile`;
+          break;
+        }
+      }
+    }
+    const rejectedError = loaded.rejection?.error
+      ?? (bindingField === null ? null : { code: "config.invalid-value", field: bindingField });
+    if (rejectedError !== null) {
       this.#emit({
         event: "quality.config.rejected",
         level: "warn",
         reasonCodes: [],
         data: {
-          candidateRevision: loaded.rejection.candidateRevision,
-          fieldPaths: [loaded.rejection.error.field ?? "$"],
-          errorCodes: [loaded.rejection.error.code],
+          candidateRevision: loaded.rejection?.candidateRevision ?? "rejected-binding-" + randomBytes(16).toString("hex"),
+          fieldPaths: [rejectedError.field ?? "$"],
+          errorCodes: [rejectedError.code],
           runtimeUnchanged: true,
         },
       });
-      return { ok: false, errorCode: loaded.rejection.error.code };
+      return { ok: false, errorCode: rejectedError.code };
     }
     const previous = this.#configuration;
     const changedFieldPaths = this.#changedFieldPaths(previous, loaded.resolved);
@@ -2548,6 +2578,14 @@ export class EngineSession {
         result: invalidAssessmentResult(code),
         validationState: "valid",
         terminalReason: code,
+        findingCount: 0,
+      };
+    }
+    if (this.#invalidEvaluatorBinding(resolvedEvaluator.value.definition.mechanism, profile.modelProfile)) {
+      return {
+        result: invalidAssessmentResult("core.evaluator-profile-invalid"),
+        validationState: "valid",
+        terminalReason: "core.evaluator-profile-invalid",
         findingCount: 0,
       };
     }
@@ -3779,6 +3817,8 @@ export class EngineSession {
     }
     this.#emit({
       event: "quality.check.settled",
+      // Physical finalisation above may have removed this run from the table.
+      configRevision: run.configRevision,
       level: settled.result.operational === "failed" ? "warn" : "info",
       reasonCodes: [settled.terminalReason],
       data: {
@@ -4182,8 +4222,15 @@ export class EngineSession {
   }
 
   #modelsFacet(run: ActiveRun): Pick<EvaluationServices, "request"> {
+    const check = this.#configuration.value.checks[run.checkId];
+    const selectedProfile = check === undefined ? undefined : this.#configuration.value.evaluators[check.evaluator]?.modelProfile;
     return {
       request: async (input, signal) => {
+        // Bind before rendering, reservations, attempt issuance or transport.
+        // Global approval of a route never widens this run's selected route.
+        if (input.runId !== run.runId || selectedProfile === undefined || input.profileId !== selectedProfile) {
+          return { ok: false, error: { code: "core.model-request-scope-mismatch", retryable: false } };
+        }
         const service = this.#modelService;
         if (service === null) {
           return { ok: false, error: { code: "core.capability-unavailable", retryable: false } };

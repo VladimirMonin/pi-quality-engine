@@ -13,6 +13,35 @@ import {
 
 const SENTINEL = "k01-private-fixture-sentinel-7f3a";
 
+test("K08 selected contribution profiles retain cold reference and approval safeguards", async () => {
+  const selected = { provider: "qe-k08-config", model: "scripted", price: "unknown" };
+  const cases: Array<{ name: string; evaluator: Record<string, unknown>; profiles: Record<string, unknown>; approved: string[]; error: string | null }> = [
+    { name: "approved contribution", evaluator: { use: "example.direct", modelProfile: "selected" }, profiles: { selected }, approved: ["selected"], error: null },
+    { name: "unknown definition defers mechanism", evaluator: { use: "example.pending" }, profiles: {}, approved: [], error: null },
+    { name: "missing known model route", evaluator: { use: "core.chat" }, profiles: { selected }, approved: ["selected"], error: "config.invalid-value" },
+    { name: "unknown selected route", evaluator: { use: "example.direct", modelProfile: "absent" }, profiles: { selected }, approved: ["selected"], error: "config.unresolved-reference" },
+    { name: "unapproved selected route", evaluator: { use: "example.direct", modelProfile: "selected" }, profiles: { selected }, approved: [], error: "config.capability-unavailable" },
+    { name: "known deterministic forbids model route", evaluator: { use: "core.repeated-tools", modelProfile: "selected" }, profiles: { selected }, approved: ["selected"], error: "config.invalid-value" },
+    { name: "typed route identity", evaluator: { use: "example.direct", modelProfile: 7 }, profiles: { selected }, approved: ["selected"], error: "config.invalid-value" },
+  ];
+  for (const entry of cases) await withFixture(async paths => {
+    await writeConfig(join(paths.agentDir, "quality", "config.json"), {
+      schemaVersion: 1, enabled: true, modelProfiles: entry.profiles,
+      permissions: { modelProfiles: entry.approved }, evaluators: { selected: entry.evaluator },
+    });
+    const loaded = await loadEffectiveConfiguration({ ...paths, projectTrusted: true });
+    assert.equal(loaded.rejection?.error.code ?? null, entry.error, entry.name);
+    if (entry.error === null) {
+      assert.equal(loaded.resolved.value.enabled, true, entry.name);
+      assert.deepEqual(loaded.resolved.value.permissions.modelProfiles, entry.approved);
+    } else {
+      assert.equal(loaded.resolved.value.enabled, false, "invalid cold apply remains inactive: " + entry.name);
+      assert.deepEqual(loaded.resolved.value.permissions.modelProfiles, [], "invalid apply grants nothing");
+      assert.equal(loaded.rejection?.error.field, "$.evaluators.selected.modelProfile");
+    }
+  });
+});
+
 interface FixturePaths {
   agentDir: string;
   projectConfigDir: string;

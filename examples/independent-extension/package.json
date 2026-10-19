@@ -4,6 +4,11 @@
   "private": true,
   "type": "module",
   "description": "Independent C1 contribution used by real-boundary integration tests.",
+  "files": [
+    "extension.mjs",
+    "resources/k08-context.md",
+    "resources/k08-prompt.md"
+  ],
   "pi": {
     "extensions": [
       "./extension.mjs"
