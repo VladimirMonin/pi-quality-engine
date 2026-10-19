@@ -122,18 +122,35 @@ separate labels, grouped split, candidate resources and acceptance plan. Astra34
 accepted these exact offline inputs,42 labels and bounded pilot policy; they are
 saved in `3ffcf3ecc0938e347f2e9f106a7753fe401d3060`. This is not model accuracy,
 profile promotion, whole K09 acceptance or a new package/tag. The runtime remains
-`0.6.0`; the offline family is outside the published files allowlist.
+`0.6.0`; those nine corpus/preparation files are outside the published files allowlist.
+
+`node scripts/validate-k09.mjs --plan-only` and
+`node --test test/k09-offline.test.mjs` are historical-v1 entry points for an
+exact source-bound v1 copy. That freeze binds OLD adapter/runtime bytes and
+intentionally does not qualify the repaired implementation. Its historical
+proposed/unadjudicated strings remain unchanged despite external347 admission;
+do not rewrite or reseal v1 to record later approval.
+
+Astra351 separately accepted the offline input-delivery repair, saved in
+`54758d0cad3ef9e25ea373b7e6d1a4f1329e686b` (post-K08, not a version release):
+direct instructions reach the native SDK system prompt and serialized request;
+the clean reviewer receives its admitted result schema. Actual source/tool
+references, missing/partial/refusal controls and finite grader exclusion are
+mechanically qualified, not model judgment or a universal sandbox.
+
+After `npm run build`, set `QE_EVIDENCE_DIR` to a fresh absolute disposable output
+using the platform's environment syntax, then run:
 
 ```sh
-node scripts/validate-k09.mjs --plan-only
-node --test test/k09-offline.test.mjs
+node --test test/k09-input-delivery.test.mjs
 ```
 
-These are existing standalone offline commands, not a new npm/live command.
-The validator reports the frozen historical input state: proposed/unadjudicated
-strings intentionally remain unchanged despite external347 admission. Do not edit
-or reseal them to record approval. See the [accepted offline scope and remaining
+`QE_K09_ENGINE_ROOT` may select a coherent owned build or extracted package;
+otherwise this test uses the checkout build. The two pure mapping regressions
+are in `test/k09-sdk-input.test.ts` for the existing compiled unit-test path.
+These are not new npm/live commands. See the [accepted offline scope and remaining
 K09 gates](docs/08-development-checkpoints-and-release-checklists.md#k09-offline-preparation).
-Actual C1/SDK input and issued-reference delivery, semantic T01–T07, route/usage/cost,
-per-domain promotion and D-39 usefulness remain pending. No live-study spending
-or product-model execution follows from these commands or this local save.
+A new actual evaluation-tuple binding, semantic T01–T07, exact route/model/usage,
+billable-input cost/provisioning, per-domain promotion and D-39 usefulness remain
+pending. No whole-K09 acceptance, live-study spending or product-model execution
+follows from this local save.

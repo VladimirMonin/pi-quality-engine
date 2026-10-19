@@ -976,13 +976,46 @@ categorical condemnation.037/040 require missing-image coverage;040 supports
 only supplied right/bottom comparisons, not unseen left/top, full containment or
 rendered quality. No image capability or measured model accuracy is established.
 
-Useful existing commands are `node scripts/validate-k09.mjs --plan-only` and
-`node --test test/k09-offline.test.mjs`. The selection builder is not a C1 context,
-runtime-issued evidence namespace or final SDK delivery proof. A concrete remaining
-offline boundary, under `K09-B.01` and D1 section20.1, is proving that only the
-selected public sources/resources reach the existing managed C1/SDK path with
-actual issued references and no grader discovery. This save neither executes nor
-dispatches that proof and requires no new evaluation platform.
+The historical-v1 entry points are `node scripts/validate-k09.mjs --plan-only`
+and `node --test test/k09-offline.test.mjs` in an exact v1 source-bound copy.
+That selection builder was not C1/SDK delivery proof. Its immutable freeze still
+binds OLD adapter/runtime bytes; it must not be run or described as current
+repaired-source acceptance. No freeze/label/split/policy rewrite accompanies the
+following separate repair.
+
+**Astra351 accepted the scoped offline input-delivery family**, closing F1/F2;
+352 saved its exact four source/test paths in
+`54758d0cad3ef9e25ea373b7e6d1a4f1329e686b`. The existing adapter now uses the
+pinned SDK `Context.systemPrompt` for direct instructions, and the ordinary clean
+reviewer prompt carries its already admitted result-schema resource. No new
+permissions, C1 fields, fixture-aware production or SDK patch were introduced.
+Direct/clean real managed checks carry complete selected bodies/resources through
+C1, the SDK and controlled serialized requests. A genuine read body and separate
+new-ref announcement share the later input and canonical submission; the body was
+also initially supplied. Missing/partial/refusal/unissued-ref/grader controls are
+owner-bound finite checks, not a universal sandbox. Cutoff is validator-only;
+a denied reviewer read ends after two requests, not a fictitious third turn.
+
+352 qualified raw/index/commit identity with no EOL conversion,50 emitted files
+against350, a63-payload224013B local test tar and its extracted consumer. The tar
+SHA256 is `2d1f06698baa0f9291e183b8e0f7cbb587d5121f5eaeae9b6a9af1fc9b053894`.
+The existing consumer plus installed delivery8/8 passed without dependency installs;
+350's accepted8/49/6 are reused, not additional semantic outcomes. Indexed and
+committed builds/packs produce identical tar bytes. This is a post-K08 test
+artifact at unchanged0.6.0, NOT a new release or the old K08 tar. Its README is
+pre-documentation; the later factual docs are not repacked or retagged. Full
+`test:package`/`check` and fresh dependency resolution were not executed or claimed.
+
+After building, select `node --test test/k09-input-delivery.test.mjs` with a fresh
+absolute `QE_EVIDENCE_DIR`; optional `QE_K09_ENGINE_ROOT` selects a coherent owned
+build/extracted package. `test/k09-sdk-input.test.ts` supplies the two pure mapping
+regressions through the existing compiled test path. No new npm/live command.
+Before semantic requests, bind the NEW actual implementation/rendering, corpus,
+labels/group split, selection/C1 context/resources/schema/evaluator, actual
+route/model/profile/revision/caps/reasoning, score/reaction policy and pre-run gates.
+Keep unknowns unknown. Exact route/data/billable-input cost/provisioning and
+execution authority remain prerequisites; this save creates no semantic freeze,
+model plan, successor dispatch or new evaluation platform.
 
 Semantic T01–T07, actual route/model/revision/input/usage/cost, profile/domain
 promotion, D-39 closed-loop usefulness and whole K09/release remain pending. All
