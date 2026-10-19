@@ -51,6 +51,15 @@ context preparation/queue acknowledgment is not input inclusion. Actual installe
 loading and exact artifact/input equivalence do not become an installed-feedback
 observation; preserve the accepting owner's disclosed distinction.
 
+Select `test/k08-role-neutrality.test.mjs` for current connected installed public
+roles/admission/lifecycle/sink/prompt checks and
+`test/k08-output-cap.test.mjs` for ordinary SDK cap/reasoning serialization. They
+are explicit checkpoint families, not default common-host coverage. Count their
+reporter parent separately from logical cases. Inspect actual packed/installed
+bytes and inner native exit/pipe receipts; registration alone is not contribution
+behavior. Static public-file prompt deployment does not qualify protected
+package-directory reads, and role labels do not certify cross-process discovery.
+
 Ordinary tests run offline without billable credentials. Never silently replay a
 stored answer on a failed live route. Paid experiments require explicit approval,
 exact route, inputs, request/spend/time limits and actual termination conditions.

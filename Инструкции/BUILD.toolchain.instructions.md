@@ -55,6 +55,15 @@ bounded direct `node --test --test-name-pattern` invocation on compiled code.
 Carry the exact accepted selectors, required preload and owned child environment;
 selecting a file does not make its nonselected definitions pass. Retained crash
 custody support and actual inner routing/common exits are separate evidence.
+K08 public installed families are `test/k08-role-neutrality.test.mjs` and
+`test/k08-output-cap.test.mjs`; build first and select explicitly through the
+comma-separated `QE_TEST_FILES` wrapper. The default common set does not include
+these families. They pack actual public payloads, extract into fresh consumers
+and reuse the existing pinned host SDK; this is not fresh dependency resolution.
+The ordinary `test:package` wrapper performs dependency acquisition, so when
+installation is prohibited, retain the exact packed inventories and execute the
+existing installed consumer/assertions separately. Name that alternative and do
+not claim the aggregate/install wrapper was executed.
 `node scripts/collect-evidence.mjs` collects identities, not proof of passing gates;
 independently bind all packed payloads/resources to actual commit/build bytes.
 When Git EOL normalization changes bytes, build/test/pack exact committed source

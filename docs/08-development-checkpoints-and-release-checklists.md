@@ -13,7 +13,7 @@ source_baseline_date: "2026-10-12"
 prepared_date: "2026-10-13"
 planned_project_version_range: "0.0.1 through 1.0.0"
 language: "en"
-status: "K01–K07 accepted at recorded local tags; bounded S1, qualified S2 and local S3 complete; K08–K13/S4 not-run; live routes unverified"
+status: "K01–K08 accepted at recorded local tags; qualified S1/S2/S3 and S4 contributor preview; K09–K13 not-run; live usefulness unverified"
 ---
 
 ## Pi Quality Engine — Development Checkpoints and Release Checklists 🧭
@@ -27,7 +27,7 @@ This workbook turns the four delivery stages already defined in [Document 04](04
 > [!important] What a checked box means
 > A checked box means there is evidence for **this candidate commit and the stated scope**: an executed case, a concrete assertion, and a retained artifact or an explicit documented non-artifact reason. The box does not mean that an implementing model is confident, that a source file exists, or that a helper returned `success`.
 >
-> Boxes started unchecked. Checked items apply only to the recorded accepted K01–K07 candidates and their stated qualifications. Bounded S1, qualified mechanical/integration S2 and local S3 are accepted; K04 alone was not full S2. K08–K13/S4 remain unproved. The three live routes remain separately UNVERIFIED and remaining finite allowance UNKNOWN. Evidence reuse is explicitly scoped, never an assertion that every mapped subcase was freshly run.
+> Boxes started unchecked. Checked items apply only to the recorded accepted K01–K08 candidates and their stated qualifications. Bounded S1, qualified mechanical/integration S2, local S3 and the K08 contributor preview are accepted; K04 alone was not full S2. K09–K13 and remaining S4 obligations stay unproved. The three older live routes remain separately UNVERIFIED with remaining finite allowance UNKNOWN. The separate USD1 native-pilot grant persists subject to its technical gate, not a renewal here. Evidence reuse is explicitly scoped, never an assertion that every mapped subcase was freshly run.
 
 ### Authority and use 📑
 
@@ -157,6 +157,8 @@ Historical K01 common-gate acceptance at `7efe1ff097319b741423c92cd327abb4c9633b
 **K05 local release, 2026-10-17:** Astra209 independently accepted frozen111's original31 predicates/12 variants. Sol's exact indexed-tree qualification binds implementation `731b68f3ab59f2c890437a9242479a6c8607a3c5` and the same tested52-payload artifact; see [K05's release record](#k05). This qualifies the implemented S2 subset, not live judgment/billing, S3 effects or universal host termination.
 
 **K06 local release, 2026-10-17:** Astra221 accepted frozen220's original28 at qualified working/tar scopes. Exact index/EOL/package qualification now binds implementation `40bcce3e0f2d2f3b62f1d3ca2a6873670957a7c1` and annotated `v0.4.0`; see [K06](#k06). This closes only the implemented feedback subset, not K07/S3 exit or live/installed-feedback/TUI/RPC claims.
+
+**K08 local release, 2026-10-19:** Astra342 accepted exact frozen339/341 with27 scoped passes and X.03 downstream. Sol344 qualified indexed/committed0.6.0, public installed families and the fresh63-payload tar before local annotated `v0.6.0`; see [K08](#k08). This is a contributor preview, not whole S4, live usefulness or fresh dependency-resolution certification.
 
 ### Candidate and scope checklist 📌
 
@@ -819,7 +821,71 @@ The table describes tests to execute, not results already obtained. Each row mus
 
 ## 12. 0.6.0 — Public extension contracts and packaged recombination 🏁
 
-**Checkpoint K08 · D1 S4 · Candidate tag `v0.6.0` · Initial state: not-run**
+**Checkpoint K08 · D1 S4 · Local annotated `v0.6.0` · ACCEPTED342 / exact local release344**
+
+### Accepted scope and exact local release — 2026-10-19 📍
+
+Astra342 issued the actual whole-checkpoint decision on frozen339/341: original28
+=27 `PASS_SCOPED` + X.03 `PARTIAL_RELEASE`, no mandatory behavioral repair.
+Sol344 now closes X.03 with the actual versioned/committed/packed installed gates
+and local tag. Earlier scoped controls/commits were not substituted for acceptance.
+
+- Tested implementation **`b0873d1972e842e0bbd04a36996b22400602ac35`**,
+  parent `794a0cd95684bb4a8f5e75a881a1b764e436092b`, tree
+  `9cb7cf351a615db3573dfc64ddc1fd9b1cad61ea`;13 explicit implementation/version paths.
+- Unsigned annotated **`v0.6.0` object `8eed32b7e60fa5064d375b4420a4916c86a88c88`**
+  peels to that implementation. Seven older tags remain unchanged. Later docs do
+  not move this tag, repack its README or accept later documentation-head artifacts.
+- Fresh committed engine **222750B /63 payloads / SHA256
+  `c399590c5b20e2ca5daea1362fb5b3e3b1a58520689bee99ccfaab055f640623`**.
+  It is not accepted raw0.5.0/c9d0d8b8… . Three actual role/cap/committed packs
+  agree. Versus raw acceptance,59 shipped bodies are unchanged; package.json and
+  runtime JS/declaration change version identity, and the example extension is
+  exact CRLF→LF. No behavioral repair was mixed into finishing.
+- 99 admitted public modes/blobs bind the indexed tested representation to the
+  actual commit.15 other raw-to-Git EOL conversions are explicit; the selected
+  mixed-EOL lifecycle driver was additionally normalized by CRLF→LF only. Excluded
+  environment/foreign/root bodies were not acquired or staged.
+- Fresh build; **173 unit**, **common26**, routing with genuine copied K07
+  byte control; **38 installed logical cases** (12 T07 +26 recombinations),
+  **13 ordinary cap/reasoning logical cases**. Reporter totals39/14 include their
+  parents.57 inner pack/SDK returns separately prove exit/close/pipe completion;
+  counts are not added to a fictional historical suite.
+- Actual ordinary installed consumer runs before and after commit pass on0.6.0,
+  including resource resolution and read→later input→valid canonical/owned ledger.
+  Existing package-consumer assertions were executed. Consumers use regular tar
+  extraction and existing pinned SDK1.1.0/YAML2.9.0; **no dependency install**.
+  `npm run check`/the install portion of `test:package` were not run or labeled green.
+  Build/unit/routing/common/public-boundary and installed-driver gates are explicit.
+
+The current38 cover trigger/context positive/omitted/absent (T01), resource pair
+(T02), request/effect admission (T03), sink mutation/pressure (T04), lifecycle and
+readiness (T05), actual installed/no-source-copy operation (T06), and supported
+role labels/reviewer-origin cadence (T07). The same four-payload example is one
+package, not four independent applications. Static prompt coverage is explicit
+public-file deployment:338's protected dependency-root failures remain failures.
+335-CAP-F1 and336-REASONING-F1 were closed scoped by341 and accepted342; final
+installed13 preserves that normal route, not a wrapper clamp or catalog shrink.
+
+Reuse is scoped to accepted317/321/330/333/338/341 inputs judged by342 and current
+byte affinity, not a new broad audit. Windows/NTFS and SDK1.1.0 are the supported
+footing. Scripted protocol/physical cleanup is not live judgment, universal peers,
+fleet discovery, remote termination or a malicious same-process sandbox. Reviewer
+canonical `attemptRefs` remain empty; separate ledger/request joins stay separate.
+K07/historical RED/UNKNOWN and earlier installed-feedback limitations remain intact.
+
+Canonical external packet:
+`C:/Users/User/AppData/Local/hermes/cache/scratch/qe-k08-accepted-local-release-344-sol/`
+(`release.json`, `index-binding.json`, `package-qualification.json`,
+`committed-artifact.json`, `local-tag.json`, native executions and sealed readback).
+Original acceptance remains in `qe-k08-final-acceptance-342-astra/`; no old report
+was rewritten. Preparation mistakes remain in344 incidents, not relabeled tests.
+
+**First remaining K09 action:** freeze requirement-anchored cases/resources/profile,
+held-out membership and numerical thresholds before profile evaluation. The separate
+USD1 native-pilot grant persists, but343 still lacks a qualified whole billable-input
+ceiling; K08 is not blocked by that separate experiment, and no live/push/publication
+operation is authorized or performed by this release.
 
 The core must now prove that modularity is more than a configurable set of built-ins. Independently installed contributions must supply new behavior while using the same scheduling, context, accounting, authority, and diagnostic boundaries. One fixture package can cover several roles; eight packages are not required.
 
@@ -831,20 +897,20 @@ The core must now prove that modularity is more than a configurable set of built
 
 ### Construction and behavior checklist 🛠️
 
-- [ ] **K08-B.01** Keep exactly the eight C1 contribution kinds: observation, trigger, context, prompt, evaluator, policy, action, and sink.
-- [ ] **K08-B.02** Provide public contracts and validation for each advertised kind without requiring private engine imports.
-- [ ] **K08-B.03** Install a real independent package from its packaged resources. It must not resolve the engine through an accidental monorepo path.
-- [ ] **K08-B.04** Contribute a new trigger and a new context provider which participate in an actual configured check.
-- [ ] **K08-B.05** Contribute or substitute an evaluator, policy, and action through normal registration and common effect/request admission.
-- [ ] **K08-B.06** Contribute a sink that receives only permitted projected records and cannot mutate another destination or functional state.
-- [ ] **K08-B.07** Exercise static prompt replacement through a file/resource alone. Dynamic preparation, when shipped, uses the owned request service for any paid work.
-- [ ] **K08-B.08** Validate late readiness, duplicate IDs, unsupported contract versions, missing dependencies, unload, and re-registration after generation replacement.
-- [ ] **K08-B.09** Package built-in prompts, typed questions, schemas, feedback resources, examples, and notices in the actual tarball.
-- [ ] **K08-B.10** Keep imports of the public contract surface inert and Pi SDK packages host-provided as required.
-- [ ] **K08-B.11** Expose component/configuration provenance and capability status without implicit assessment or external retrieval.
-- [ ] **K08-B.12** Use role-neutral observed-session identity. Relabeling a supported observed worker as a sub-session must not create another hardcoded scheduler, billing scope, or authority rule.
-- [ ] **K08-B.13** Keep optional cross-process/session integrations absent unless separately implemented and probed. Role neutrality is not automatic fleet discovery.
-- [ ] **K08-B.14** Inspect the core for special cases keyed to the fixture package, a provider name, or a programming language; remove unjustified ones.
+- [x] **K08-B.01** Keep exactly the eight C1 contribution kinds: observation, trigger, context, prompt, evaluator, policy, action, and sink.
+- [x] **K08-B.02** Provide public contracts and validation for each advertised kind without requiring private engine imports.
+- [x] **K08-B.03** Install a real independent package from its packaged resources. It must not resolve the engine through an accidental monorepo path.
+- [x] **K08-B.04** Contribute a new trigger and a new context provider which participate in an actual configured check.
+- [x] **K08-B.05** Contribute or substitute an evaluator, policy, and action through normal registration and common effect/request admission.
+- [x] **K08-B.06** Contribute a sink that receives only permitted projected records and cannot mutate another destination or functional state.
+- [x] **K08-B.07** Exercise static prompt replacement through a file/resource alone. Dynamic preparation, when shipped, uses the owned request service for any paid work.
+- [x] **K08-B.08** Validate late readiness, duplicate IDs, unsupported contract versions, missing dependencies, unload, and re-registration after generation replacement.
+- [x] **K08-B.09** Package built-in prompts, typed questions, schemas, feedback resources, examples, and notices in the actual tarball.
+- [x] **K08-B.10** Keep imports of the public contract surface inert and Pi SDK packages host-provided as required.
+- [x] **K08-B.11** Expose component/configuration provenance and capability status without implicit assessment or external retrieval.
+- [x] **K08-B.12** Use role-neutral observed-session identity. Relabeling a supported observed worker as a sub-session must not create another hardcoded scheduler, billing scope, or authority rule.
+- [x] **K08-B.13** Keep optional cross-process/session integrations absent unless separately implemented and probed. Role neutrality is not automatic fleet discovery.
+- [x] **K08-B.14** Inspect the core for special cases keyed to the fixture package, a provider name, or a programming language; remove unjustified ones.
 
 ### Pragmatic checkpoint tests 🧪
 
@@ -862,16 +928,16 @@ The table describes tests to execute, not results already obtained. Each row mus
 
 ### Evidence to retain 🔍
 
-- [ ] **K08-E.01** Retain the independent contribution tarball/source revision, dependency inventory, and registration/recombination results.
-- [ ] **K08-E.02** Retain actual prompt/resource loading paths from the installed artifact and a no-source-checkout test.
-- [ ] **K08-E.03** Retain cross-sink mutation/pressure evidence and component disposal counts.
-- [ ] **K08-E.04** Retain a scoped role-neutrality fixture; state explicitly that it is not a cross-process topology certification.
+- [x] **K08-E.01** Retain the independent contribution tarball/source revision, dependency inventory, and registration/recombination results.
+- [x] **K08-E.02** Retain actual prompt/resource loading paths from the installed artifact and a no-source-checkout test.
+- [x] **K08-E.03** Retain cross-sink mutation/pressure evidence and component disposal counts.
+- [x] **K08-E.04** Retain a scoped role-neutrality fixture; state explicitly that it is not a cross-process topology certification.
 
 ### Exit and tag decision ✅
 
-- [ ] **K08-X.01** Every advertised component role has contract coverage and at least one meaningful integration path, with shared controls intact.
-- [ ] **K08-X.02** The separate contribution does more than register: it affects a check and then disposes cleanly.
-- [ ] **K08-X.03** Tag `v0.6.0` only after the packed candidate passes the public extension boundary tests.
+- [x] **K08-X.01** Every advertised component role has contract coverage and at least one meaningful integration path, with shared controls intact.
+- [x] **K08-X.02** The separate contribution does more than register: it affects a check and then disposes cleanly.
+- [x] **K08-X.03** Tag `v0.6.0` only after the packed candidate passes the public extension boundary tests.
 
 **The accepted tag may claim:** An externally usable component system and resource-complete package for the demonstrated standalone paths.
 

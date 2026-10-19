@@ -25,6 +25,10 @@ Roles are boundaries, not mandatory classes or folders. Create only exercised mo
   reviewer host. `src/builtins/pi-reviewer.ts` owns the bounded reviewer execution
   contract, tool/result authority and once-owned lifecycle; the ordinary
   `core.pi-session` evaluator uses the run-bound review service in `src/runtime.ts`.
+  Carry the exact admitted turn's output cap and selected profile reasoning through
+  the composition root/public SDK boundary; never fall back to ambient primary/SDK
+  defaults. Supported OpenAI-compatible sampling is bounded on request-local copies,
+  preserving smaller limits and the unchanged model catalog.
   `src/feedback.ts` owns bounded issue/effect state, receipt reconciliation and
   note rendering; `src/builtins/actions.ts` uses the ordinary admitted action path.
   `src/adapters/pi-feedback.ts` is the narrow current-generation Pi boundary courier,
@@ -52,15 +56,19 @@ Roles are boundaries, not mandatory classes or folders. Create only exercised mo
   requires both grants and current supported work. Context preparation is not
   provider inclusion; native receipts stay at their evidenced strength. Bounded
   protected intent/tombstones preserve unknown effects rather than evicting them.
-  Expert `core.request-check`/full S3 recovery remain K07 work; capture/export and
-  later bindings stay unavailable. Scripted support is not live quality/billing,
+  Expert `core.request-check` uses ordinary child-check admission with protected
+  functional recovery and preserved uncertainty. Capture/export and later bindings
+  stay unavailable. Scripted support is not live quality/billing,
   observed installed K06 feedback or universal platform/TUI/RPC/ACL/power-loss
-  certification. Read [K06's qualified scope](../docs/08-development-checkpoints-and-release-checklists.md#k06).
+  certification. Read the current [qualified checkpoint scope](../docs/08-development-checkpoints-and-release-checklists.md#k08).
 - Configuration validates before activation; cold invalid configuration remains inactive.
 - The runtime owns each observed session generation, admission and effect authority.
 - Trigger/policy decisions do not perform direct host effects, network calls or hidden timers.
 - Concrete Pi/filesystem/model adapters implement real external boundaries. Inspect the
   pinned host types instead of guessing APIs or importing donor private internals.
+- All eight contribution roles use current-owner validation, acknowledged readiness
+  and generation-bound disposal. Supported observation labels do not create another
+  scheduler or billing scope; reviewer-origin work never advances primary cadence.
 - Built-ins use the same admitted path as contributions; do not hardcode privileged shortcuts.
   Bind check-owned criteria and all selected assessment resources before measurement;
   dispatch that exact normalized object without post-admission enlargement. Literal

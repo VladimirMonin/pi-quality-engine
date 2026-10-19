@@ -37,18 +37,19 @@ The project is specified as a standalone Pi extension for evidence-based assessm
 
 ### Current accepted checkpoint 📍
 
-K01–K03 close bounded S1; K05 closes qualified mechanical S2.
-**K07 /0.5.0 closes the qualified local S3 scope, independently ACCEPTED by
-Astra314 and locally released** at `cea8c878ee2955c0b8115fd5ada508baef4a8a8b`.
-Unsigned annotated `v0.5.0` targets that tested implementation, not later docs.
-Read [K07's original33 decision, exact committed/EOL/artifact qualification and
-limits](08-development-checkpoints-and-release-checklists.md#k07).
-The scope is controlled native SDK/filesystem mechanics on Windows/NTFS and
-SDK1.1.0, with truthful uncertainty and physical cleanup. Clean installed loading,
-resources/K05 behavior and identical59-payload tar are not a newly observed
-installed-K07 feedback, TUI/RPC, semantic accuracy or usefulness claim.
-The next implementation boundary is [K08 — public packaged recombination](08-development-checkpoints-and-release-checklists.md#k08),
-starting with one independent packed trigger/context path, not a new scheduler.
+K01–K03 close bounded S1; K05 closes qualified mechanical S2; K07 closes the
+qualified local S3 scope. **K08 /0.6.0 contributor preview is independently
+ACCEPTED by Astra342 and locally released by344** at
+`b0873d1972e842e0bbd04a36996b22400602ac35`. Unsigned annotated `v0.6.0`
+targets that tested implementation, not later docs. Read [K08's original28
+judgment and exact committed/EOL/63-payload qualification](08-development-checkpoints-and-release-checklists.md#k08).
+The scope is Windows/NTFS, SDK1.1.0 and actual public packaged recombination,
+including separately owned reviewer work. Role labels do not certify a fleet;
+controlled protocols do not prove live usefulness or all remaining S4 obligations.
+The next boundary is [K09 — engineering judgment and profile promotion](08-development-checkpoints-and-release-checklists.md#k09):
+freeze synthetic cases/resources, held-out separation and numerical thresholds
+before evaluating a profile. The separate approved native pilot still requires a
+qualified whole billable-input ceiling; K08 acceptance does not authorize its execution.
 This documentation update dispatches nobody. Current role defaults are in
 [WORKFLOW](../Инструкции/WORKFLOW.orchestration.instructions.md).
 Polza/Jev, OpenRouter/Jev and local d3-mini Q8 remain individually UNVERIFIED;

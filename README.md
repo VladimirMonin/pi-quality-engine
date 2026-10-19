@@ -1,10 +1,10 @@
 # Pi Quality Engine
 
 Standalone evidence-based quality assessment for Pi, developed as one small
-modular extension. **K06 / `0.4.0` is independently accepted and locally released**:
-S1/S2 footing plus opt-in bounded feedback on the tested native SDK print route.
-K07 / `0.5.0` is the next existing roadmap slice; general escalation/recovery is
-not claimed complete.
+modular extension. **K08 / `0.6.0` is independently accepted and locally released**:
+qualified S1–S3 mechanics plus public packaged contribution/recombination on
+Windows and Pi SDK `1.1.0`. This contributor preview is not completion of all S4,
+live engineering judgment or universal provider/platform compatibility.
 
 ## What this version actually does
 
@@ -43,26 +43,37 @@ not claimed complete.
   from diagnostics. Unresolved action identity survives uncertainty; capacity
   refusal does not evict it. Pause/resume/reload cannot clear Stop; control failure
   suspends dependent unsafe admission. Logical retirement is not physical drain.
+- Routes bounded expert `core.request-check` work through ordinary check admission,
+  with original-source hypotheses, protected recovery and honest unresolved work.
 - Exposes an acknowledged C1 registry on `quality.registry.available.v1` /
-  `quality.registry.query.v1`; independently loaded extensions can register
-  triggers, context providers, prompts, evaluators, policies and actions, wait for
-  acknowledged readiness, and dispose cleanly.
+  `quality.registry.query.v1` for all eight roles, including observation and sink.
+  Independent packed contributions affect real checks and lawful receivers;
+  readiness, validation, generation ownership and once-only disposal stay shared.
+  The four-payload example is one package, not four applications.
+- Carries each admitted reviewer turn's output cap and selected profile reasoning
+  through the normal SDK path. Supported serializer sampling cannot widen the
+  admitted cap; a smaller supported limit is preserved. This is not a billing or
+  universal provider-reasoning guarantee.
 
 ## What is deliberately unavailable
 
-`core.request-check` expert escalation and complete S3 recovery remain K07 work;
-capture/export and later bindings remain unavailable. No actual installed K06
-feedback observation, live model judgment/billing, TUI/RPC parity or automatic
-semantic finding-clearance classifier is claimed. Native Windows fixtures do not
-certify all platforms, ACLs or power-loss durability; directory sync is best-effort.
+Capture/export and later bindings remain unavailable. No live model judgment or
+billing guarantee, TUI/RPC parity, automatic semantic finding-clearance classifier
+or cross-process fleet discovery is claimed. Static prompt proof uses explicit
+public-file deployment, not reads from protected dependency directories. Installed
+K08 recombination does not retroactively create an installed K06 feedback witness.
+Native Windows fixtures do not certify all platforms, ACLs or power-loss durability; directory sync is best-effort.
 Polza/Jev, OpenRouter/Jev and local d3-mini remain individually UNVERIFIED.
 
-Unsigned annotated `v0.4.0` targets tested implementation
-`40bcce3e0f2d2f3b62f1d3ca2a6873670957a7c1`. This later README maintenance does not
-repack that artifact or move the tag. Use the qualified
-[K06 decision/release record](docs/08-development-checkpoints-and-release-checklists.md#k06),
-including separate retained T05c proof and the exact tar/native-input equivalence.
-Installed loading/K05 consumer evidence is not an installed K06 feedback claim.
+Unsigned annotated `v0.6.0` targets tested implementation
+`b0873d1972e842e0bbd04a36996b22400602ac35`, not this later documentation commit.
+The tested engine tar has63 payloads and SHA256
+`c399590c5b20e2ca5daea1362fb5b3e3b1a58520689bee99ccfaab055f640623`.
+Use the [K08 acceptance and exact release record](docs/08-development-checkpoints-and-release-checklists.md#k08).
+The release used fresh tar extraction with existing pinned dependencies; no fresh
+package-manager dependency-resolution claim is made. This README update neither
+repacks the accepted artifact nor moves its tag; packing later docs creates a
+different artifact requiring qualification.
 Remote Git delivery is recorded separately; no package/Release publication or
 live-provider spending follows from the tag.
 
@@ -91,12 +102,15 @@ npm ci --ignore-scripts
 npm run check          # build, unit, evidence routing, real Pi host, package test
 npm run build          # tsc
 npm test                # deterministic contract/runtime/loop tests
-npm run test:pi         # common isolated Pi set; excludes K05/K06 host files
+npm run test:pi         # common isolated Pi set; checkpoint families selected separately
 npm run test:package    # pack, clean install and load the installed artifact
 ```
 
 Tests never use operator Pi settings, credentials or live model routes.
-Select K06 host coverage with `QE_TEST_FILES=test/k06-host.test.mjs` using the
-platform's environment syntax; it is not part of the default aggregate host set.
+Select checkpoint files with `QE_TEST_FILES` using the platform's environment
+syntax (comma-separated paths). After building, the K08 installed families are
+`test/k08-role-neutrality.test.mjs` and `test/k08-output-cap.test.mjs`; they are not
+part of the default common host set. K05/K06/K07 specialized host/storage/recovery
+families likewise require explicit selectors and their recorded support.
 Generated verification output stays under ignored `verification/` or the explicitly
 owned external qualification root.

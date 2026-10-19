@@ -11,7 +11,7 @@ handoff_baseline: "H1"
 source_baseline_date: "2026-10-12"
 prepared_date: "2026-10-13"
 language: "en"
-status: "Implementation handoff and proposed probe procedures; no runtime, provider, filesystem, or release acceptance is claimed"
+status: "Original H1 probe procedures with current K08 release handoff per Document08; unexecuted procedures remain not-run"
 ---
 
 ## Pi Quality Engine — Implementation Handoff and Integration Probes 🧭
@@ -22,12 +22,14 @@ This is the practical entry point for implementing Pi Quality Engine. It identif
 
 The target remains one standalone Pi package. Short assessments, ordinary model judgments, and fresh tool-assisted Pi reviewers share one managed check-execution path. Existing project documents supply requirements. Engine-owned requests have a single accounting owner. Standard diagnostics describe the work without retaining raw project or model content.
 
-**The original starting deliverable below was S1, not the complete product.** Its work order is retained as a baseline, not a reset instruction. Qualified K07/S3 and the local `v0.5.0` release are accepted; read the [current checkpoint and evidence](00-document-catalog-and-reading-guide.md#current-checkpoint). The next acceptance locator is [K08 — public extensibility](08-development-checkpoints-and-release-checklists.md#k08). A committed K08 source slice is not whole-K08 acceptance, a new version/tag, or authorization for live evaluation or consequential feedback.
+**The original starting deliverable below was S1, not the complete product.** Its work order is retained as a baseline, not a reset instruction. Qualified K07/S3 is preserved; Astra342 accepted the original K08 scope and344 completed local `v0.6.0` at `b0873d1972e842e0bbd04a36996b22400602ac35`. See [K08's original28 decision and exact committed artifact](08-development-checkpoints-and-release-checklists.md#k08). This is a contributor preview, not all S4, live evaluation or new consequential authority.
 
-For the current connected installed contribution family, first build current source with `npm run build`, then select `QE_TEST_FILES=test/k08-installed-roles-lifecycle.test.mjs` when running `npm run test:pi` (set the environment variable using the shell's syntax). This family packs the complete four-payload example and shares its consumer with the trigger/context, admission, sink and static-prompt regressions. It exercises documented public observation publication, lawful policy/action receivers, opposite load order, readiness, validation, unload/re-registration and generation-owned cleanup. Prompt coverage remains the configured public-file path; logical revocation of a noncooperative source is not physical termination. Effective/admitted-run diagnostic revision ownership remains qualified. The default common selection is separate; T07 and whole-K08 acceptance remain open.
+Build with `npm run build`, then select `test/k08-role-neutrality.test.mjs` and/or `test/k08-output-cap.test.mjs` through the existing comma-separated `QE_TEST_FILES` when running `npm run test:pi` (use the shell's environment syntax). The first executes12 local role-label cases plus26 connected contribution/admission/lifecycle/sink/prompt cases; the second executes13 ordinary cap/reasoning cases. Reporter parent tests are separate from these logical counts. The default common26 selection is separate. The four-payload example is one package. Static prompt proof uses explicit public-file deployment, not protected dependency-root reads; logical revocation is not physical termination. Prior effective/admitted-run diagnostic revision ownership and K07 uncertainty/storage limitations remain preserved.
+
+**Next existing medium boundary: K09-B.01/B.04/B.05.** Freeze requirement-anchored synthetic violations, near-misses and insufficient-evidence cases, exact resources/profile/reaction inputs, calibration versus held-out membership and numerical thresholds/denominators before profile evaluation. Do not build another scheduler or approval platform. The separately approved native Pi/Ollama pilot retains its USD1 grant but is technically blocked by the unqualified whole billable-input ceiling established in343; no live request, account probe or spending re-ask is indicated here. Hermes routes the next assignment.
 
 > [!important] Read this as an execution plan, not an executed report
-> The source observations below come from the frozen repositories and the five companion documents. Every probe procedure is initially **not-run**. Nothing in this document asserts that a candidate package has been installed, a clean reviewer has been exercised, a provider has been billed, or a filesystem guarantee has passed. A generated report must contain actual evidence before its state changes.
+> The original source observations and probe procedures below come from frozen repositories and companion documents. Every proposed procedure starts **not-run**; the current checkpoint locator above links actual reports rather than claiming every historical recipe was executed. A generated report must contain actual evidence before a procedure's state changes. A proposed recipe alone proves no provider billing, filesystem guarantee or runtime behavior.
 
 ### Authority and the complete document set 📑
 

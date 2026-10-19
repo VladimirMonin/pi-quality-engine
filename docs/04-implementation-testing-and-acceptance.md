@@ -8,7 +8,7 @@ observability_baseline: "O1"
 delivery_baseline: "D1"
 configuration_schema_version: 1
 diagnostic_schema_version: 1
-status: "D1 delivery specification; bounded S1 accepted in 6.7 and K04 local release in 7.7; later stages and live usefulness remain unclaimed"
+status: "D1 delivery specification; K08 contributor preview accepted/local0.6.0 per Document08; remaining S4 and live usefulness unclaimed"
 source_baseline_date: "2026-10-12"
 language: "en"
 ---
@@ -34,6 +34,11 @@ The central acceptance question is not whether all planned files exist. It is wh
 | **04 — Implementation, Testing, and Acceptance** | D1 development stages, executable proof obligations, evidence requirements, model-quality evaluation, and acceptance decisions. |
 
 D1 does not introduce a second runtime configuration format, new public component kinds, or competing event names. Development task examples are repository tooling, not commands supplied by Pi; only the implemented commands in [BUILD.toolchain](../Инструкции/BUILD.toolchain.instructions.md) are active. Internal file organization may change without a contract revision; externally observable C1/O1 behavior may not.
+
+Current checkpoint evidence and exact release scope are recorded in
+[Document08 K08](08-development-checkpoints-and-release-checklists.md#k08).
+Its mechanical contributor preview does not accept the whole S4 stage or change
+any D1 requirement below.
 
 “Must” identifies an acceptance requirement. “Should” identifies a default approach with a recorded, evidence-based exception. “May” identifies an optional implementation choice. A test plan is not a test result. A source-inspection observation is not proof that the local integration works.
 
