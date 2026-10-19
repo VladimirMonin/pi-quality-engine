@@ -1,0 +1,135 @@
+{
+  "schemaVersion": 1,
+  "revision": "k09-freeze-v1",
+  "candidate": "k09-engineering-text-observe-v1",
+  "baseHead": "6ae7f99065f4daae19e2b987a99a5111080bbcb3",
+  "files": {
+    "corpus.json": {
+      "bytes": 119879,
+      "sha256": "ebb4356b73b9601737279d4f19c3ad2514460c5607fd9a3ece94adccad1c12cc",
+      "semanticSHA256": "981764bbf271c7887c4fe5e6c212a52a618b76eb6da92d95af7cacd11c093176"
+    },
+    "labels.json": {
+      "bytes": 54796,
+      "sha256": "6eeb4da2b57b73f62b4765685848044c0cd4bcecd36d53366e612e8fd984bc31",
+      "semanticSHA256": "afb0080524fe343a04ad88893059dbc8588595488980e133f13b78618902a352"
+    },
+    "split.json": {
+      "bytes": 3167,
+      "sha256": "f21edb3a0bde86a2ba38d606e405c4380f8856282296be1cefa00c48929eaece",
+      "semanticSHA256": "666787a0e955d109bb0438b56208e12d6a8fbf97b809fdc2fa9108e7a0bff62a"
+    },
+    "acceptance-plan.json": {
+      "bytes": 16516,
+      "sha256": "759b4868e9ce73190e238ffe51b6bca76acac765a2f750e2df0cc489bb52ef6d",
+      "semanticSHA256": "a6dc7b4f0b6f405a122b81c5669daf049b320bf2becc19291eef7e0edabbceec"
+    },
+    "review-instructions.md": {
+      "bytes": 2688,
+      "sha256": "6d8e26b36d8cde6c45fbe76df5022098683816f2d4d78e47bd5f16f3f0f9924f",
+      "semanticSHA256": "6d8e26b36d8cde6c45fbe76df5022098683816f2d4d78e47bd5f16f3f0f9924f"
+    },
+    "README.md": {
+      "bytes": 6949,
+      "sha256": "efaffdc819ba14720db2749ba537fbc51dde5ace503510cd3e8df8ac81170f75",
+      "semanticSHA256": "efaffdc819ba14720db2749ba537fbc51dde5ace503510cd3e8df8ac81170f75"
+    }
+  },
+  "boundFiles": {
+    "package.json": {
+      "bytes": 1626,
+      "sha256": "0045ccbd5872c6dbc94fa830f1f0f0372122a8d3725e9a624e9ceb495ab7bc72"
+    },
+    "src/builtins/evaluators.ts": {
+      "bytes": 13223,
+      "sha256": "5058c00cb3a78e32a91457c00215034dd9b116e31141d043eed24d24bf0cc70b"
+    },
+    "src/builtins/prompts.ts": {
+      "bytes": 9247,
+      "sha256": "8886cd471bd394ec86e00fc2cca9abf0b1e42c89b502dfd000128c6696b0d0b9"
+    },
+    "src/contracts.ts": {
+      "bytes": 36676,
+      "sha256": "c83bcdd228c16edfb3cd55240f6e6ce0c60bb047d7ca4d87d06206c998055c8a"
+    },
+    "src/models.ts": {
+      "bytes": 80356,
+      "sha256": "e63eb050b6be95d25cb5aec25511afb5b34f80e470cddcf148c8135b462dfa87"
+    },
+    "src/runtime.ts": {
+      "bytes": 244718,
+      "sha256": "9ae2a04781a2edf0f51332a5e38687e094b2731089d3aadfd10732498122c929"
+    },
+    "src/context.ts": {
+      "bytes": 43480,
+      "sha256": "0297c4b1b51eeaebcae3ee82c761d50f492f37043eaa39dce354040c4c931345"
+    },
+    "src/adapters/pi-models.ts": {
+      "bytes": 59856,
+      "sha256": "593cefe65a21572194b40d00f93557ac31dd17d3d211215cd27eca13b545af86"
+    },
+    "resources/prompts/engineering-v1.md": {
+      "bytes": 983,
+      "sha256": "9f47073078f680907f984ed1ad6e7b8bf43d8abb0afb05e1248d0daf0ec01aec"
+    },
+    "resources/prompts/evaluation-v1.schema.json": {
+      "bytes": 597,
+      "sha256": "8a1e6a40c81e2935e2e89da65ed5c8c4b073d5aab5d942b97fee9316657ab2c4"
+    },
+    "scripts/validate-k09.mjs": {
+      "bytes": 19312,
+      "sha256": "1e1c001470fe761e3e6078cc5f4b7a98673aaaf1f3e331036b349a499fed0077"
+    },
+    "test/k09-offline.test.mjs": {
+      "bytes": 8989,
+      "sha256": "75ddc2f6743528ad9ed2b74f9da6f31ea4f51b9daa5f5a128b9a8716d9766577"
+    }
+  },
+  "selectedInputs": {
+    "case-001": "2b6869fdcd3daeeaad910170bc09c2745c18491736c6862673c13851ef1ede09",
+    "case-002": "c6e5a42c51e9b95d269989f837d5533d3eac48473dce1541206130029664b84e",
+    "case-003": "705daa45ce5df791009e281849872002bbeb5f1c1473b4a3c6556247faa34577",
+    "case-004": "5876c72d23f7e65b5f33047623e520e13fa8f5d4e6af09f3296d4c1adb989cc5",
+    "case-005": "bd818f610e4303b4bf72d5aba0000afd92321c6c528f9cb7e680e83cd21bbe8e",
+    "case-006": "9cdccb96b1374e8c5c8a0915857c2232e5a9bb0cad4e62ae9054d6adfc1239fa",
+    "case-007": "002a556d0f4b581217f96289290de520c1673da67ec39be338cd2aca56ca2fc6",
+    "case-008": "665f474ea04f20a097d78cd6e1bb45b713444230fc6ebf9815777548794c2d08",
+    "case-009": "2322103cca0a7c017547dc73f243f9669c0c5ad223fb7f5123f5d77f48891746",
+    "case-010": "f357619c29e4974a6cd7121d0423c5c879ccf66f98b60f08544e12a88a45741c",
+    "case-011": "cbaa1b7856918635a8283a30f808c8019dab1146927bfa4c5d24579366ee1cc4",
+    "case-012": "ce63a4e49aa37437755f27dac8064a2d6306faf9479884b59f029aff1dad4968",
+    "case-013": "03e5e6c234b0027a3c443bd727ee5de36e1d36d61dc248630dadb82bd231648b",
+    "case-014": "28fa476a06e18274084bc12cab69b55851e413bc4510b6aed07b3af667a6a5b4",
+    "case-015": "0edaf38f9d4f6ea02055562964bfa98e6948508c6371d05ca0a7a0c3285f2403",
+    "case-016": "a907ed37fbe3d6a04d63aaaf34132aa5e7622d8dcc2e579a69490d1432afe498",
+    "case-017": "719725e1899e3d191f6a36eee8e279db3265505003f33614b95f29e5e1bc2116",
+    "case-018": "cc2d9b9b630592c88861a731f30b95aecb217affd657a2846b10bb1a746db53a",
+    "case-019": "f5541f80904bd860af002110498f48574326d15cf7050dd85529fb27e6e303c6",
+    "case-020": "1957f5da7e79b01bb5eb135a04e866e6abac540e11902d07604f6e496b48faaa",
+    "case-021": "6aa7e77aed4a4001aa4276d85783ce036a254187ffc1be6097404c56a061972b",
+    "case-022": "5c0875c9511c5619d9ece7de214d0c97f71dc614007a48267673ac42a7026d2c",
+    "case-023": "a7bd983958e62e956e6634c3db0c965376eb986093b8a14e931b045a8e5718cf",
+    "case-024": "c672f514da8bcc0af59c3c47b258e25953a747d8cf0fee0d105055a6972ca453",
+    "case-025": "7641c4588f375d7829aac278d9d2a69b1d5658012e143ba8fedebfd570737906",
+    "case-026": "38e0df4220d72e71f6ac2ac937571da8226238099fa4eb9d52b952aeeb612367",
+    "case-027": "b6378ba39fb2a1a627472de3da4d85bbdee2acea99a4b8ee01f3f0620efdab82",
+    "case-028": "37ad169520ff5c34679031454c1adae11b81ef5c4e6b8554bbb069ee1b22b63e",
+    "case-029": "08b226afea9f7a5c986f4a58485913d046f016836c20e2d76c9a81e6b1ab3401",
+    "case-030": "2f3c72910cd209f131955fb6b9fe1e09136413799a7817836a630a3afcdcb778",
+    "case-031": "3cdc3e734944d902e114ea00bf7908055d9918bd1744787e6cfb274c1ab2f25c",
+    "case-032": "8ea51a62da61214c1062791cee130c2b4c5dd2b674058f4d7f821500bca5fb15",
+    "case-033": "ff1338775557a2b9b9c69bb5e13a7a3e15cd87c71379abcc733ed374b63deb5b",
+    "case-034": "9455721ac87b06bfbe60ac5d2579c4b3e8b83e13b7f39871db8071d121d34bcb",
+    "case-035": "e4c843bd95f905a3499fc2ea9a71267855a7a620f2f25ee5f96206845c1ece7f",
+    "case-036": "fec7c7ca39f07e92555329e2dec19af95a50962badddd0a6646aed3b8759961f",
+    "case-037": "5b29c35f20a0c6640ae945219237e39914f1c02a1d1897dd91700b9f04fc4ca5",
+    "case-038": "2042c912f0ee999c2bf087c88acfce42bc9d7c0757dce09adf0ea88458a19524",
+    "case-039": "5a564895bb9b2bf6ff4877268e3be25afae6c0dcb5d316a91d306348fe96865e",
+    "case-040": "e0a87f275ec926ec7d64d47a414b1edec334bfd89edd5ec3b479c184ea3f27fa",
+    "case-041": "f44c05c0b01eeb9cb769af2ccf435afe9d43bbc622253a08f4e7613f71ea7ff9",
+    "case-042": "a3d09fba1943d70320ba5bf83ad5283f83fa737aaca6f23477dda54848a5128f"
+  },
+  "scope": "Author-frozen OFFLINE inputs only. No semantic results, independent label admission, policy approval or promotion.",
+  "splitAssignment": "split.json was assigned before prompt/resource authoring; no evaluated-profile output or tuning occurred in345.",
+  "digestBoundary": "Exact UTF-8 file bytes plus JSON.stringify parsed meaning and offline selected input. Neither a runtime manifest nor provider tokenizer/wire proof."
+}

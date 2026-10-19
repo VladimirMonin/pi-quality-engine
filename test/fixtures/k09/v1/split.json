@@ -1,0 +1,26 @@
+{
+  "schemaVersion": 1,
+  "revision": "k09-split-v1",
+  "assignmentStage": "before candidate prompt authoring or evaluation",
+  "tuningPerformed": false,
+  "unit": "independent synthetic task group; all counterfactual variants stay together",
+  "groups": [
+    { "id": "group-001", "domain": "task-instructions", "split": "calibration", "context": "CLI output-mode task and authorized amendments" },
+    { "id": "group-002", "domain": "task-instructions", "split": "held-out", "context": "Report-range change versus unrelated retention scope" },
+    { "id": "group-003", "domain": "architecture-proportionality", "split": "calibration", "context": "Price service forwarding versus unit-conversion boundary" },
+    { "id": "group-004", "domain": "architecture-proportionality", "split": "held-out", "context": "Queue close ownership versus speculative provider factory" },
+    { "id": "group-005", "domain": "test-specific-production", "split": "calibration", "context": "Cache expiry implementation versus injected clock" },
+    { "id": "group-006", "domain": "test-specific-production", "split": "held-out", "context": "Export redaction implementation versus injected key policy" },
+    { "id": "group-007", "domain": "operational-logging", "split": "calibration", "context": "Delivery failure and centralized event ownership" },
+    { "id": "group-008", "domain": "operational-logging", "split": "held-out", "context": "Export failure metadata versus prohibited request-body logging" },
+    { "id": "group-009", "domain": "progress-waiting-repetition", "split": "calibration", "context": "Repeated verification with pinned code/config/environment" },
+    { "id": "group-010", "domain": "progress-waiting-repetition", "split": "held-out", "context": "Healthy migration wait versus premature cancellation" },
+    { "id": "group-011", "domain": "completion-verification", "split": "calibration", "context": "Formatter completion claim and current terminal result" },
+    { "id": "group-012", "domain": "completion-verification", "split": "held-out", "context": "Documentation links and proportionate verification" },
+    { "id": "group-013", "domain": "visual-coverage-honesty", "split": "calibration", "context": "Grid screenshot availability and reporting honesty, text only" },
+    { "id": "group-014", "domain": "visual-coverage-honesty", "split": "held-out", "context": "Chart DOM/geometry evidence versus image/reference claims, text only" }
+  ],
+  "independenceLimit": "Fourteen independently authored task groups, not forty-two independent problems. Seven held-out groups are a small bounded pilot, not population validation. Similar concern families across groups are not claimed statistically independent.",
+  "holdoutVisibility": "Public committed fixture data, not secret from the author/checker. Held-out means not used for prompt/threshold tuning or evaluated-profile input. Independent oracle admission is still pending.",
+  "contaminationRule": "Any use of held-out outcomes to change a tuple member creates a new candidate; retain the failed attempt and use fresh groups or explicitly reclassify the seen groups as calibration before a new freeze."
+}
