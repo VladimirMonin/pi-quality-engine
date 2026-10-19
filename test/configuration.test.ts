@@ -13,6 +13,27 @@ import {
 
 const SENTINEL = "k01-private-fixture-sentinel-7f3a";
 
+test("K08 observation source references use the existing bounded C1 map and defaults", () => {
+  const accepted = validateConfiguration({ schemaVersion: 1, observationSources: { feed: { use: "example.source" } } });
+  assert.equal(accepted.ok, true);
+  if (accepted.ok) assert.deepEqual(accepted.value.observationSources, { feed: { use: "example.source", options: {} } });
+  for (const observationSources of [[], { feed: { use: "example.source", unexpected: true } }, { feed: { use: 5 } }, { feed: { use: "example.source", options: { body: "x".repeat(65_537) } } }]) {
+    assert.equal(validateConfiguration({ schemaVersion: 1, observationSources }).ok, false);
+  }
+});
+
+test("K08 project observation sources cannot replace a user-owned binding", async () => {
+  await withFixture(async paths => {
+    await writeConfig(join(paths.agentDir, "quality", "config.json"), { schemaVersion: 1, observationSources: { feed: { use: "example.source" } } });
+    await writeConfig(join(paths.projectConfigDir, "quality.json"), { schemaVersion: 1, observationSources: { feed: { use: "other.source" } } });
+    const loaded = await loadEffectiveConfiguration({ ...paths, projectTrusted: true });
+    assert.equal(loaded.rejection?.error.code, "config.project-redefinition");
+    assert.equal(loaded.rejection?.error.field, "$.observationSources.feed");
+    assert.equal(loaded.resolved.value.observationSources["feed"]?.use, "example.source");
+    assert.equal(loaded.resolved.value.enabled, false);
+  });
+});
+
 test("K08 selected contribution profiles retain cold reference and approval safeguards", async () => {
   const selected = { provider: "qe-k08-config", model: "scripted", price: "unknown" };
   const cases: Array<{ name: string; evaluator: Record<string, unknown>; profiles: Record<string, unknown>; approved: string[]; error: string | null }> = [

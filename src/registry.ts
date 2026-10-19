@@ -14,8 +14,11 @@ import type {
   ContextDefinition,
   ContractError,
   EvaluatorDefinition,
+  Json,
   JsonObject,
+  JsonSchema,
   LifecycleContext,
+  ObservationDefinition,
   PackageDefinition,
   PackageRegistration,
   ActionDefinition,
@@ -29,6 +32,7 @@ import type {
 } from "./contracts.js";
 
 export type ResolvedComponent =
+  | { kind: "observation"; registrationId: string; componentId: string; definition: ObservationDefinition; lifecycle(): LifecycleContext }
   | { kind: "trigger"; registrationId: string; componentId: string; definition: TriggerDefinition; lifecycle(): LifecycleContext }
   | { kind: "context"; registrationId: string; componentId: string; definition: ContextDefinition; lifecycle(): LifecycleContext }
   | { kind: "prompt"; registrationId: string; componentId: string; definition: PromptDefinition; lifecycle(): LifecycleContext }
@@ -84,7 +88,7 @@ interface RegisteredComponent {
 }
 
 const SUPPORTED_KINDS: ReadonlySet<ResolvedComponent["kind"]> = new Set([
-  "trigger", "context", "prompt", "evaluator", "policy", "action", "sink",
+  "observation", "trigger", "context", "prompt", "evaluator", "policy", "action", "sink",
 ]);
 
 /** Stable bounded counter vocabulary for component notes (O1 §6.2). */
@@ -220,6 +224,48 @@ export function compileOptionsSchema(schema: unknown): Result<Validator> {
 }
 
 /** Reads an own data property without invoking accessors. */
+/** Copy bounded JSON data without invoking accessors/toJSON or retaining caller aliases. */
+export function copyJsonData(input: unknown, maxBytes = 65_536): Result<Json> {
+  let nodes = 0, bytes = 0;
+  const seen = new Set<object>();
+  const charge = (size: number): void => { bytes += size; if (bytes > maxBytes) throw new Error("bounded-json"); };
+  const copy = (value: unknown, depth: number): Json => {
+    if (++nodes > 4096 || depth > 32) throw new Error("bounded-json");
+    if (value === null || typeof value === "boolean" || typeof value === "string" || (typeof value === "number" && Number.isFinite(value))) {
+      charge(Buffer.byteLength(JSON.stringify(value), "utf8")); return value;
+    }
+    if (typeof value !== "object" || value === null || seen.has(value)) throw new Error("bounded-json");
+    const array = Array.isArray(value), prototype = Object.getPrototypeOf(value);
+    if (prototype !== (array ? Array.prototype : Object.prototype) && prototype !== null) throw new Error("bounded-json");
+    const keys = Reflect.ownKeys(value); if (keys.length > 4096) throw new Error("bounded-json");
+    seen.add(value); charge(2);
+    let result: Json;
+    if (array) {
+      const length = readDataProperty(value, "length");
+      if (typeof length !== "number" || keys.length !== length + 1) throw new Error("bounded-json");
+      const entries: Json[] = [];
+      for (let index = 0; index < length; index += 1) {
+        const descriptor = Object.getOwnPropertyDescriptor(value, String(index));
+        if (descriptor === undefined || !("value" in descriptor)) throw new Error("bounded-json");
+        charge(1); entries.push(copy(descriptor.value, depth + 1));
+      }
+      result = entries;
+    } else {
+      const object: { [key: string]: Json } = Object.create(null) as { [key: string]: Json };
+      for (const key of keys) {
+        if (typeof key !== "string") throw new Error("bounded-json");
+        const descriptor = Object.getOwnPropertyDescriptor(value, key);
+        if (descriptor === undefined || !("value" in descriptor)) throw new Error("bounded-json");
+        charge(Buffer.byteLength(JSON.stringify(key), "utf8") + 2); object[key] = copy(descriptor.value, depth + 1);
+      }
+      result = object;
+    }
+    seen.delete(value); return result;
+  };
+  try { return { ok: true, value: copy(input, 0) }; }
+  catch { return { ok: false, error: { code: "core.invalid-json", retryable: false } }; }
+}
+
 function readDataProperty(target: object, key: string): unknown {
   const descriptor = Object.getOwnPropertyDescriptor(target, key);
   if (descriptor === undefined || !("value" in descriptor)) return undefined;
@@ -247,6 +293,19 @@ function validateComponentShape(component: unknown): { ok: true; kind: ResolvedC
     return { ok: false, error: { code: "core.invalid-component", retryable: false, field: "diagnosticCodes" } };
   }
   switch (kind) {
+    case "observation": {
+      const schemas = copyJsonData(readDataProperty(record, "observationSchemas"));
+      if (!isFunctionProperty(record, "start") || !schemas.ok || typeof schemas.value !== "object" || schemas.value === null || Array.isArray(schemas.value)
+        || Object.keys(schemas.value).length > 256) {
+        return { ok: false, error: { code: "core.invalid-component", retryable: false, field: "observationSchemas" } };
+      }
+      for (const [name, schema] of Object.entries(schemas.value)) {
+        if (name.length > 128 || !/^[^.\s]+\.[^\s]+$/u.test(name) || name.startsWith("core.") || !compileOptionsSchema(schema).ok) {
+          return { ok: false, error: { code: "core.invalid-component", retryable: false, field: "observationSchemas" } };
+        }
+      }
+      break;
+    }
     case "trigger":
       if (!isFunctionProperty(record, "initialState") || !isFunctionProperty(record, "update")) {
         return { ok: false, error: { code: "core.invalid-component", retryable: false, field: "update" } };
@@ -348,7 +407,30 @@ export class ComponentRegistry {
     const declaredCodes = new Set<string>();
     const prepared: Array<{ id: string; component: ResolvedComponent; declaredCodes: Set<string> }> = [];
     const seen = new Set<string>();
-    for (const component of componentsInput) {
+    for (const original of componentsInput) {
+      let component = original;
+      if (typeof original === "object" && original !== null && readDataProperty(original, "kind") === "observation") {
+        const copied = copyJsonData({
+          id: readDataProperty(original, "id"), apiMajor: readDataProperty(original, "apiMajor"), kind: "observation",
+          optionsSchema: readDataProperty(original, "optionsSchema"), observationSchemas: readDataProperty(original, "observationSchemas"),
+          requiredCapabilities: readDataProperty(original, "requiredCapabilities"), diagnosticCodes: readDataProperty(original, "diagnosticCodes"),
+        });
+        const start = readDataProperty(original, "start");
+        if (!copied.ok || typeof copied.value !== "object" || copied.value === null || Array.isArray(copied.value) || typeof start !== "function") {
+          return { ok: false, error: { code: "core.invalid-component", retryable: false } };
+        }
+        const snapshot = copied.value;
+        if (!Array.isArray(snapshot["requiredCapabilities"]) || snapshot["requiredCapabilities"].some(value => typeof value !== "string")
+          || !Array.isArray(snapshot["diagnosticCodes"]) || snapshot["diagnosticCodes"].some(value => typeof value !== "string")) {
+          return { ok: false, error: { code: "core.invalid-component", retryable: false } };
+        }
+        component = {
+          id: snapshot["id"] as string, kind: "observation", apiMajor: snapshot["apiMajor"] as 1,
+          optionsSchema: snapshot["optionsSchema"] as JsonSchema, observationSchemas: snapshot["observationSchemas"] as Record<string, JsonSchema>,
+          requiredCapabilities: snapshot["requiredCapabilities"] as string[], diagnosticCodes: snapshot["diagnosticCodes"] as string[],
+          start: (options, context) => (start as ObservationDefinition["start"]).call(original, options, context),
+        } satisfies ObservationDefinition;
+      }
       const shape = validateComponentShape(component);
       if (!shape.ok) return { ok: false, error: shape.error };
       const meta = component as Record<string, unknown>;
@@ -363,7 +445,10 @@ export class ComponentRegistry {
       if (this.#components.has(id)) {
         return { ok: false, error: { code: "core.duplicate-component", retryable: false, details: { componentId: id } } };
       }
-      const compiled = compileOptionsSchema(readDataProperty(meta, "optionsSchema"));
+      const optionsSchema = readDataProperty(meta, "optionsSchema");
+      const copiedOptions = shape.kind === "observation" ? copyJsonData(optionsSchema) : { ok: true as const, value: optionsSchema };
+      if (!copiedOptions.ok) return { ok: false, error: { code: "core.invalid-component", retryable: false, field: "optionsSchema" } };
+      const compiled = compileOptionsSchema(copiedOptions.value);
       if (!compiled.ok) {
         return { ok: false, error: { code: compiled.error.code, retryable: false, details: { componentId: id } } };
       }
@@ -377,10 +462,12 @@ export class ComponentRegistry {
           }
         }
       }
+      if (shape.kind === "observation" && id.length > 128) return { ok: false, error: { code: "core.invalid-component", retryable: false, field: "id" } };
+      const admitted = component as ResolvedComponent["definition"];
       componentIds.push(id);
       prepared.push({
         id,
-        component: { kind: shape.kind, registrationId: "", componentId: id, definition: component as ResolvedComponent["definition"], lifecycle: () => this.#lifecycle(id) } as ResolvedComponent,
+        component: { kind: shape.kind, registrationId: "", componentId: id, definition: admitted, lifecycle: () => this.#lifecycle(id) } as ResolvedComponent,
         declaredCodes: componentCodes,
       });
     }
@@ -481,7 +568,8 @@ export class ComponentRegistry {
 
   inventory(): PackageInventoryEntry[] {
     return [...this.#registrations.values()].map(record => {
-      const components = record.componentIds.map(id => this.#components.get(id));
+      const components = record.componentIds.map(id => this.#components.get(id))
+        .filter(component => component?.registrationId === record.registrationId);
       const ready = components.filter(component => component?.status === "ready").length;
       const failed = components.filter(component => component?.status === "failed").length;
       return {

@@ -82,10 +82,9 @@ export const DEFAULT_RUNTIME_SETTINGS: RuntimeSettings = {
 };
 
 const IMPLEMENTED_ROOT_KEYS = new Set([
-  "schemaVersion", "enabled", "mode", "runtime", "permissions", "sources",
+  "schemaVersion", "enabled", "mode", "runtime", "permissions", "observationSources", "sources",
   "modelProfiles", "prompts", "contexts", "evaluators", "policies", "checks", "observability",
 ]);
-const UNIMPLEMENTED_ROOT_KEYS = ["observationSources"] as const;
 
 const RUNTIME_LIMITS: Record<string, { min: number; max: number }> = {
   maxConcurrentEvaluations: { min: 1, max: 16 },
@@ -942,6 +941,21 @@ function isLocalResourceReference(entry: unknown): boolean {
   return !entry.includes(":");
 }
 
+function validateObservationSourceBinding(id: string, input: unknown): Result<{ use: string; options: JsonObject }> {
+  const field = `$.observationSources.${id}`;
+  if (!isPlainObject(input)) return reject("config.invalid-value", field);
+  for (const key of Object.keys(input)) {
+    if (key !== "use" && key !== "options") return reject("config.unknown-key", field);
+  }
+  const use = validateComponentRef(input["use"], `${field}.use`);
+  if (!use.ok) return use;
+  const options = input["options"] ?? {};
+  if (!isPlainObject(options) || Buffer.byteLength(JSON.stringify(options), "utf8") > 65_536) {
+    return reject("config.invalid-value", `${field}.options`);
+  }
+  return { ok: true, value: { use: use.value, options: options as JsonObject } };
+}
+
 function validatePromptBinding(id: string, input: unknown): Result<PromptBinding> {
   const field = `$.prompts.${id}`;
   if (!isPlainObject(input)) return reject("config.invalid-value", field);
@@ -1106,6 +1120,7 @@ function validateCheckDefinition(
 // ---------------------------------------------------------------------------
 
 export interface ConfigurationLayer {
+  observationSources: EngineConfiguration["observationSources"];
   schemaVersion: 1;
   enabled: boolean | undefined;
   mode: "observe" | "advise" | undefined;
@@ -1301,7 +1316,7 @@ function validateNamedMap(
  */
 export function validateConfiguration(value: JsonObject): Result<ConfigurationLayer> {
   for (const key of Object.keys(value)) {
-    if (!IMPLEMENTED_ROOT_KEYS.has(key) && !(UNIMPLEMENTED_ROOT_KEYS as readonly string[]).includes(key)) {
+    if (!IMPLEMENTED_ROOT_KEYS.has(key)) {
       return reject("config.unknown-key", "$");
     }
   }
@@ -1323,13 +1338,8 @@ export function validateConfiguration(value: JsonObject): Result<ConfigurationLa
   const observability = validateObservability(value["observability"]);
   if (!observability.ok) return observability;
 
-  for (const key of UNIMPLEMENTED_ROOT_KEYS) {
-    const supplied = value[key];
-    if (supplied === undefined) continue;
-    if (!isPlainObject(supplied) || Object.keys(supplied).length > 0) {
-      return reject("config.capability-unavailable", `$.${key}`);
-    }
-  }
+  const observationSources = validateNamedMap(value["observationSources"], "$.observationSources", validateObservationSourceBinding);
+  if (!observationSources.ok) return observationSources;
 
   const sources = validateNamedMap(value["sources"], "$.sources", validateSourceDefinition);
   if (!sources.ok) return sources;
@@ -1361,6 +1371,7 @@ export function validateConfiguration(value: JsonObject): Result<ConfigurationLa
       mode: mode === "observe" || mode === "advise" ? mode : undefined,
       runtime: runtime.value,
       permissions: permissions.value,
+      observationSources: observationSources.value as EngineConfiguration["observationSources"],
       sources: sources.value as Record<string, SourceDefinition>,
       modelProfiles: modelProfiles.value as Record<string, ModelProfileDefinition>,
       observability: observability.value,
@@ -1380,6 +1391,7 @@ export function defaultConfiguration(): EngineConfiguration {
     mode: "observe",
     runtime: { ...DEFAULT_RUNTIME_SETTINGS },
     permissions: { modelProfiles: [], actions: [], allowIdleContinuation: false, allowPrimaryAbort: false, maxFeedbackBytes: 2048 },
+    observationSources: {},
     sources: {},
     modelProfiles: {},
     prompts: {},
@@ -1516,6 +1528,7 @@ function applyUserLayer(previous: EngineConfiguration, layer: ConfigurationLayer
       allowPrimaryAbort: layer.permissions.allowPrimaryAbort ?? previous.permissions.allowPrimaryAbort,
       maxFeedbackBytes: layer.permissions.maxFeedbackBytes ?? previous.permissions.maxFeedbackBytes,
     },
+    observationSources: { ...previous.observationSources, ...layer.observationSources },
     sources: { ...previous.sources, ...layer.sources },
     modelProfiles: { ...previous.modelProfiles, ...layer.modelProfiles },
     observability: {
@@ -1578,6 +1591,7 @@ function applyProjectLayer(previous: EngineConfiguration, layer: ConfigurationLa
     return reject("config.widens-limit", "$.permissions.maxFeedbackBytes");
   }
   for (const [family, entries] of [
+    ["observationSources", layer.observationSources],
     ["sources", layer.sources],
     ["modelProfiles", layer.modelProfiles],
     ["prompts", layer.prompts],

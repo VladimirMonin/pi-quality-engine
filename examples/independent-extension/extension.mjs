@@ -17,6 +17,8 @@ export const FIXTURE_CONTEXT_ID = "fixture.note";
 export const FIXTURE_EVALUATOR_ID = "fixture.audit-evaluator";
 export const FIXTURE_POLICY_ID = "fixture.audit-policy";
 export const FIXTURE_ACTION_ID = "fixture.audit-file";
+export const FIXTURE_OBSERVATION_ID = "fixture.observation";
+const OBSERVATION_CHANNEL = "fixture.observation.input.v1";
 const CONTEXT_RESOURCE = new URL("./resources/k08-context.md", import.meta.url);
 const PROMPT_RESOURCE = new URL("./resources/k08-prompt.md", import.meta.url);
 
@@ -71,6 +73,29 @@ export default function independentFixture(pi) {
   let endpoint = null;
   let sessionId = null;
   let registration = null;
+  let currentInstance = null, previousInstance = null, instanceNumber = 0;
+  let holdNext = false, lastFailure = null, lastRepeat = null;
+  let currentSource = null, previousSource = null, sourceNumber = 0;
+  const sourceStatus = source => source === null ? null : ({
+    number: source.number, packageNumber: source.packageNumber, scope: source.context.scope,
+    signalAborted: source.context.signal.aborted, startReturned: source.startReturned,
+    callbacks: source.callbacks, disposals: source.disposals, results: [...source.results],
+  });
+  const instanceStatus = value => value === null ? null : ({
+    number: value.number, registrationId: value.handle?.registrationId ?? null,
+    generation: value.handle?.generation ?? null, scope: value.lifecycle?.scope ?? null,
+    signalAborted: value.lifecycle?.signal.aborted ?? null, held: value.held,
+    prepareCalls: value.prepareCalls, resourceReadStarts: value.resourceReadStarts,
+    resourceReads: value.resourceReads, readyCallbacks: value.readyCallbacks,
+    ready: value.ready, disposeCalls: value.disposeCalls, noteOffers: value.noteOffers,
+  });
+  const snapshot = () => ({
+    current: instanceStatus(currentInstance), previous: instanceStatus(previousInstance),
+    currentSource: sourceStatus(currentSource), previousSource: sourceStatus(previousSource),
+    endpointGeneration: endpoint?.engineGeneration ?? null, holdNext, lastFailure, lastRepeat,
+    sameDefinitionAsPrevious: currentInstance !== null && previousInstance !== null && currentInstance.definition === previousInstance.definition,
+    sameLifecycleAsPrevious: currentInstance?.lifecycle !== undefined && currentInstance.lifecycle === previousInstance?.lifecycle,
+  });
 
   const query = () => {
     if (sessionId === null) return;
@@ -78,16 +103,20 @@ export default function independentFixture(pi) {
       apiMajor: 1,
       observedSessionId: sessionId,
       reply(candidate) {
-        if (candidate === null || candidate === undefined) return;
-        if (candidate.apiMajor !== 1 || candidate.observedSessionId !== sessionId) return;
-        endpoint = candidate;
-        register();
+        accept(candidate);
       },
     });
   };
 
   const register = () => {
     if (endpoint === null || registration !== null) return;
+    const held = holdNext;
+    holdNext = false;
+    let release = () => {};
+    const gate = held ? new Promise(resolvePromise => { release = resolvePromise; }) : null;
+    const instance = { number: ++instanceNumber, held, release, prepareCalls: 0,
+      resourceReadStarts: 0, resourceReads: 0, readyCallbacks: 0, ready: null,
+      disposeCalls: 0, noteOffers: 0, handle: null, definition: null };
     let document = null;
     let revision = null;
     let acquiredAt = null;
@@ -105,7 +134,8 @@ export default function independentFixture(pi) {
       diagnosticCodes: ["fixture.burst"],
       initialState: () => ({ seen: 0 }),
       update(options, input) {
-        if (input.cause !== "observation" || input.observation?.kind !== "core.tool-completed") {
+        if (input.cause !== "observation" || (input.observation?.kind !== "core.tool-completed"
+          && !(input.observation?.kind === "fixture.signal" && input.observation.origin.ownerId === FIXTURE_OBSERVATION_ID))) {
           return { state: input.state, intent: null, nextDueMonoMs: null };
         }
         const seen = Number((input.state && input.state.seen) || 0) + 1;
@@ -213,54 +243,134 @@ export default function independentFixture(pi) {
         return { actionId: input.actionId, state: "completed", destinationId: null, evidenceIds: [] };
       },
     };
-    const result = endpoint.register({
+    const observation = {
+      id: FIXTURE_OBSERVATION_ID, apiMajor: 1, kind: "observation", requiredCapabilities: [], diagnosticCodes: [],
+      optionsSchema: { type: "object", properties: { holdStart: { type: "boolean" } }, additionalProperties: false },
+      observationSchemas: { "fixture.signal": { type: "object", properties: { changed: { type: "boolean" } }, required: ["changed"], additionalProperties: false } },
+      async start(options, context) {
+        let release = () => {};
+        const gate = options.holdStart === true ? new Promise(resolvePromise => { release = resolvePromise; }) : null;
+        const source = { number: ++sourceNumber, packageNumber: instance.number, context, release,
+          startReturned: false, callbacks: 0, disposals: 0, results: [] };
+        source.publish = event => {
+          source.callbacks += 1;
+          const result = context.publish({ externalId: event.externalId, kind: event.kind ?? "fixture.signal",
+            occurredAt: context.clock().utc, visibility: "complete", facts: event.facts ?? { changed: true }, evidenceIds: event.evidenceIds ?? [] });
+          source.results.push(result.ok ? { ok: true, observationId: result.value.observationId } : { ok: false, errorCode: result.error.code });
+          if (source.results.length > 8) source.results.shift();
+          return result;
+        };
+        previousSource?.release();
+        previousSource = currentSource;
+        currentSource = source;
+        if (gate !== null) await gate;
+        const unsubscribe = pi.events.on(OBSERVATION_CHANNEL, source.publish);
+        source.startReturned = true;
+        return { dispose() { source.disposals += 1; unsubscribe(); } };
+      },
+    };
+    const definition = {
       id: FIXTURE_PACKAGE_ID,
       version: "0.1.0",
       baseUri: new URL(".", import.meta.url).href,
-      components: [trigger, context, evaluator, policy, action,
+      components: [trigger, context, evaluator, policy, action, observation,
         projectedFileSink("fixture.mutating-sink"), projectedFileSink("fixture.projected-sink"), projectedFileSink("fixture.stalled-sink")],
       resources: { "k08-context": { uri: CONTEXT_RESOURCE.href }, "k08-prompt": { uri: PROMPT_RESOURCE.href } },
       async prepare(ctx) {
+        instance.prepareCalls += 1;
+        instance.lifecycle = ctx;
+        if (gate !== null) {
+          await gate;
+          instance.noteOffers += 1;
+          ctx.diagnostics.note({ code: "fixture.note", counts: { records: instance.number } });
+        }
+        instance.resourceReadStarts += 1;
         document = await readFile(CONTEXT_RESOURCE, { encoding: "utf8", signal: ctx.signal });
+        instance.resourceReads += 1;
         revision = "sha256:" + createHash("sha256").update(document, "utf8").digest("hex");
         acquiredAt = ctx.clock().utc;
       },
-    });
+    };
+    instance.definition = definition;
+    const result = endpoint.register(definition);
     if (!result.ok) {
-      registration = { ready: Promise.resolve(result), dispose: async () => {} };
+      lastFailure = result.error.code;
       return;
     }
+    previousInstance?.release();
+    previousInstance = currentInstance;
+    currentInstance = instance;
+    instance.handle = result.value;
     registration = result.value;
+    lastFailure = null;
+    registration.ready.then(value => {
+      instance.readyCallbacks += 1;
+      instance.ready = value.ok ? { ok: true } : { ok: false, errorCode: value.error.code };
+    });
   };
+
+  const accept = candidate => {
+    if (candidate?.apiMajor !== 1 || candidate.observedSessionId !== sessionId) return;
+    if (registration !== null && candidate.engineGeneration !== registration.generation) return;
+    endpoint = candidate;
+    register();
+  };
+
+  // An ordinary demo command controls only this package's owned C1 handles and
+  // bounded local preparation gates. It grants no engine/model/effect authority.
+  pi.registerCommand("fixture-lifecycle", {
+    description: "Inspect, hold, release or dispose the independent example's C1 registration",
+    async handler(args, ctx) {
+      const [operation, number, externalId] = args.trim().split(/\s+/u);
+      const instance = [currentInstance, previousInstance].find(value => value !== null && value.number === Number(number));
+      const source = [currentSource, previousSource].find(value => value !== null && value.number === Number(number));
+      if (operation === "observe") pi.events.emit(OBSERVATION_CHANNEL, { externalId: number });
+      else if (operation === "observe-bad") pi.events.emit(OBSERVATION_CHANNEL, { externalId: number, facts: { changed: "invalid" } });
+      else if (operation === "observe-foreign") pi.events.emit(OBSERVATION_CHANNEL, { externalId: number, evidenceIds: ["obs-999999"] });
+      else if (operation === "publish-source") source?.publish({ externalId: externalId });
+      else if (operation === "release-source") source?.release();
+      else if (operation === "hold-next") holdNext = true;
+      else if (operation === "release") instance?.release();
+      else if (operation === "dispose" && currentInstance !== null) {
+        currentInstance.disposeCalls += 1;
+        await currentInstance.handle.dispose();
+        registration = null;
+      } else if (operation === "register") query();
+      else if (operation === "repeat" && currentInstance !== null && endpoint !== null) {
+        const result = endpoint.register(currentInstance.definition);
+        lastRepeat = result.ok ? { ok: true, registrationId: result.value.registrationId,
+          generation: result.value.generation, sameReadyPromise: result.value.ready === currentInstance.handle.ready }
+          : { ok: false, errorCode: result.error.code };
+      } else if (operation === "note" && instance?.lifecycle !== undefined) {
+        instance.noteOffers += 1;
+        instance.lifecycle.diagnostics.note({ code: "fixture.note", counts: { records: instance.number } });
+      }
+      ctx.ui.notify(JSON.stringify(snapshot()), "info");
+    },
+  });
 
   pi.on("session_start", (_event, ctx) => {
     sessionId = ctx.sessionManager.getSessionId();
     endpoint = null;
     registration = null;
     unsubscribeAvailable?.();
-    unsubscribeAvailable = pi.events.on(AVAILABLE_CHANNEL, candidate => {
-      if (candidate === null || candidate === undefined) return;
-      if (candidate.observedSessionId !== sessionId) return;
-      endpoint = candidate;
-      register();
-    });
+    unsubscribeAvailable = pi.events.on(AVAILABLE_CHANNEL, accept);
     query();
   });
 
   pi.on("session_shutdown", async () => {
-    const current = registration;
+    currentSource?.release(); previousSource?.release();
     registration = null;
     endpoint = null;
     sessionId = null;
     unsubscribeAvailable?.();
     unsubscribeAvailable = null;
-    if (current !== null) {
-      try {
-        await current.ready;
-      } catch {
-        // A failed preparation is disposed the same way.
-      }
-      await current.dispose();
+    for (const instance of [currentInstance, previousInstance]) {
+      if (instance === null) continue;
+      instance.release();
+      instance.disposeCalls += 1;
+      await instance.handle.dispose();
+      await instance.handle.ready;
     }
   });
 }

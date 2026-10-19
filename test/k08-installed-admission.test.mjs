@@ -222,7 +222,20 @@ async function packedChild(options) {
     runner.onError(error => report.extensionErrors.push({ event: error.event, error: String(error.error) }));
     const command = runner.getCommand("quality");
     status = async () => { await command.handler("status", runner.createCommandContext()); return JSON.parse(messages.at(-1)); };
+    // Cold rejection has no journal or selected sink. Hold acknowledged package
+    // preparation long enough to observe registration before the bounded16-row
+    // status suffix is followed by readiness for the newly added ninth definition.
+    // The existing exact lifecycle/grant assertions below remain unchanged.
+    const lifecycleControl = upstream ? runner.getCommand("fixture-lifecycle") : null;
+    if (lifecycleControl !== null) await lifecycleControl.handler("hold-next", runner.createCommandContext());
     await runner.emit({ type: "session_start", reason: "startup" });
+    if (lifecycleControl !== null) {
+      report.registrationStatus = await status();
+      await lifecycleControl.handler("status", runner.createCommandContext());
+      const acknowledged = JSON.parse(messages.at(-1));
+      assert.equal(acknowledged.current.readyCallbacks, 0);
+      await lifecycleControl.handler("release " + acknowledged.current.number, runner.createCommandContext());
+    }
     report.readyStatus = await until(status, value => absent ? value.checks.detail[0]?.state === "waiting" : value.registry.packages.some(entry => entry.packageId === PACKAGE_ID && entry.phase === "ready"), "actual installed independent package readiness or explicit missing dependency");
     // Retry through the public operator command with the actual definitions
     // already registered/ready, also binding any approved action declaration.
@@ -295,7 +308,7 @@ async function packedChild(options) {
     const stateFiles = await allFiles(process.env.PI_CODING_AGENT_DIR); report.finalStateFiles = stateFiles; report.remainingLocks = stateFiles.filter(path => path.endsWith(".lock"));
     const journal = (await Promise.all(stateFiles.filter(path => /\.jsonl(?:\.gz)?$/u.test(path)).map(async path => { const bytes = await readFile(path); return (path.endsWith(".gz") ? gunzipSync(bytes) : bytes).toString("utf8"); }))).join("\n");
     const records = journal.split("\n").filter(Boolean).map(line => JSON.parse(line));
-    const snapshots = [report.readyStatus, report.checkReadyStatus, report.approvedStatus, report.settledStatus, report.effectStatus, report.retired, report.lastStatus, ...report.safetySnapshots.map(value => value.status)].flatMap(value => value?.diagnostics.recentEvents ?? []);
+    const snapshots = [report.registrationStatus, report.readyStatus, report.checkReadyStatus, report.approvedStatus, report.settledStatus, report.effectStatus, report.retired, report.lastStatus, ...report.safetySnapshots.map(value => value.status)].flatMap(value => value?.diagnostics.recentEvents ?? []);
     const events = [...new Map([...records, ...snapshots].map(event => [event.eventId, event])).values()]; report.events = events;
     const select = name => events.filter(event => event.event === name), note = code => select("quality.component.note").filter(event => event.fields.data.code === code);
     report.contributorLifecycle = select("quality.component.lifecycle").filter(event => event.fields.data.packageId === PACKAGE_ID);

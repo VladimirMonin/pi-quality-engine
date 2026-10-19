@@ -171,6 +171,61 @@ test("component options are validated against the declared schema", async () => 
   if (!unsupported.ok) assert.equal(unsupported.error.code, "core.options-schema-unsupported");
 });
 
+test("observation declarations snapshot schemas and reject accessor metadata before invocation", async () => {
+  const registry = makeRegistry();
+  let starts = 0, getters = 0;
+  const schema = { type: "object", properties: { changed: { type: "boolean" } }, required: ["changed"], additionalProperties: false };
+  const definition = {
+    id: "fixture.source", apiMajor: 1 as const, kind: "observation" as const,
+    optionsSchema: { type: "object", additionalProperties: false }, requiredCapabilities: [], diagnosticCodes: [],
+    observationSchemas: { "fixture.signal": schema }, start() { starts += 1; return {}; },
+  };
+  const admitted = registry.register({ id: "fixture.sources", version: "1.0.0", baseUri: "fixture:sources", components: [definition], resources: {} });
+  assert.equal(admitted.ok, true);
+  if (!admitted.ok) return;
+  assert.equal((await admitted.value.ready).ok, true);
+  schema.properties.changed.type = "string";
+  const resolved = registry.resolve("fixture.source", {});
+  assert.equal(resolved.ok, true);
+  if (resolved.ok && resolved.value.kind === "observation") {
+    assert.ok(JSON.stringify(resolved.value.definition.observationSchemas).includes("boolean"), "caller mutation cannot widen an admitted schema");
+  }
+  const codes: string[] = [];
+  Object.defineProperty(codes, "0", { enumerable: true, configurable: true, get() { getters += 1; return "fixture.raw"; } });
+  const bad = registry.register({ id: "fixture.accessor-source", version: "1.0.0", baseUri: "fixture:bad", resources: {}, components: [{ ...definition, id: "fixture.bad-source", diagnosticCodes: codes }] });
+  assert.equal(bad.ok, false); assert.equal(getters, 0); assert.equal(starts, 0, "acknowledged readiness is not source activation");
+  await admitted.value.dispose();
+});
+
+test("disposed registration provenance never borrows replacement component readiness", async () => {
+  const registry = makeRegistry();
+  const first = registry.register({
+    id: "fixture.replacement", version: "1.0.0", baseUri: "fixture:replacement",
+    components: [makeTrigger()], resources: {},
+  });
+  assert.equal(first.ok, true);
+  if (!first.ok) return;
+  assert.equal((await first.value.ready).ok, true);
+  await first.value.dispose();
+  const replacement = registry.register({
+    id: "fixture.replacement", version: "1.0.0", baseUri: "fixture:replacement",
+    components: [makeTrigger()], resources: {},
+  });
+  assert.equal(replacement.ok, true);
+  if (!replacement.ok) return;
+  assert.equal((await replacement.value.ready).ok, true);
+  assert.notEqual(replacement.value.registrationId, first.value.registrationId);
+  const old = registry.inventory().find(entry => entry.registrationId === first.value.registrationId);
+  const current = registry.inventory().find(entry => entry.registrationId === replacement.value.registrationId);
+  assert.equal(old?.phase, "disposed");
+  assert.equal(old?.readyComponents, 0, "a matching component ID does not confer replacement ownership");
+  assert.equal(old?.failedComponents, 0);
+  assert.equal(current?.readyComponents, 1);
+  await first.value.dispose();
+  assert.equal(registry.resolve("fixture.trigger", { count: 1 }).ok, true, "repeated old disposal cannot remove the replacement");
+  await replacement.value.dispose();
+});
+
 test("disposal is idempotent, revokes bound contexts and removes the component", async () => {
   const lifecycle: ComponentLifecycleData[] = [];
   const registry = makeRegistry(lifecycle);

@@ -133,6 +133,10 @@ export interface LifecycleContext {
   diagnostics: DiagnosticWriter;
 }
 
+export interface ObservationContext extends LifecycleContext {
+  publish(draft: ObservationDraft): Result<{ observationId: string }>;
+}
+
 export interface DisposableComponent {
   dispose?(): MaybePromise<void>;
 }
@@ -546,12 +550,19 @@ export interface DiagnosticSinkInstance extends DisposableComponent {
   flush?(): Promise<void>;
 }
 
+export interface ObservationDefinition extends ComponentMeta {
+  kind: "observation";
+  observationSchemas: Readonly<Record<string, JsonSchema>>;
+  start(options: JsonObject, ctx: ObservationContext): MaybePromise<DisposableComponent>;
+}
+
 export interface SinkDefinition extends ComponentMeta {
   kind: "sink";
   create(options: JsonObject, ctx: LifecycleContext): MaybePromise<DiagnosticSinkInstance>;
 }
 
 export type RegisteredComponentDefinition =
+  | ObservationDefinition
   | SinkDefinition
   | TriggerDefinition
   | ContextDefinition
@@ -800,6 +811,7 @@ export interface EngineConfiguration {
   mode: "observe" | "advise";
   runtime: RuntimeSettings;
   permissions: PermissionSettings;
+  observationSources: Readonly<Record<string, { use: string; options: JsonObject }>>;
   sources: Readonly<Record<string, SourceDefinition>>;
   modelProfiles: Readonly<Record<string, ModelProfileDefinition>>;
   prompts: Readonly<Record<string, PromptBinding>>;

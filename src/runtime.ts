@@ -18,8 +18,8 @@ import { SessionJournal } from "./journal.js";
 import type { JournalEvent, JournalStatus } from "./journal.js";
 import { ControlCheckpoint } from "./checkpoint.js";
 import { ObservationStore } from "./observation.js";
-import type { ObservationSnapshot, ObservationSource } from "./observation.js";
-import { ComponentRegistry } from "./registry.js";
+import type { AcceptedObservation, ObservationSnapshot, ObservationSource } from "./observation.js";
+import { ComponentRegistry, compileOptionsSchema, copyJsonData } from "./registry.js";
 import type { ActionComponent, PackageInventoryEntry, ResolvedComponent } from "./registry.js";
 import { Scheduler, systemClock } from "./scheduling.js";
 import type { EngineClock, SchedulerDue, SchedulerHost, TriggerBinding } from "./scheduling.js";
@@ -75,6 +75,7 @@ import type {
   ContextItem,
   ContextSnapshot,
   DiagnosticRecordV1,
+  DisposableComponent,
   EffectReceipt,
   EvaluationServices,
   EvidenceAccess,
@@ -85,6 +86,8 @@ import type {
   JsonObject,
   LifecycleContext,
   Observation,
+  ObservationContext,
+  ObservationDraft,
   PackageDefinition,
   PolicyDecision,
   ReceiptState,
@@ -728,6 +731,20 @@ function cancelledAssessmentResult(reasonCode: string): AssessmentResult {
   };
 }
 
+interface ObservationBindingState {
+  key: string;
+  componentId: string;
+  registrationId: string;
+  controller: AbortController;
+  live: boolean;
+  failed: boolean;
+  closed: boolean;
+  instance: DisposableComponent | null;
+  starting: Promise<void> | null;
+  stopping: Promise<void> | null;
+  removeAbort(): void;
+}
+
 interface CheckRuntimeState {
   checkId: string;
   state: "active" | "waiting" | "disabled";
@@ -811,6 +828,7 @@ export class EngineSession {
   readonly #clock: EngineClock;
   readonly #scheduler: Scheduler;
   readonly #registry: ComponentRegistry;
+  readonly #observationSources = new Map<string, ObservationBindingState>();
   #journal: SessionJournal | null = null;
   #journalFailure: { reasonCode: string } | null = null;
   readonly #sourceEvidence: SourceEvidence;
@@ -1373,6 +1391,7 @@ export class EngineSession {
     this.#activateChecks();
     this.#pinApprovedActions();
     this.#activationReady = true;
+    this.#reconcileObservationSources();
     this.#input.publishRegistryEndpoint?.(this.#registry.endpoint);
   }
 
@@ -1434,6 +1453,13 @@ export class EngineSession {
 
   #missingComponents(check: CheckDefinition, checkId: string): string[] {
     const missing: string[] = [];
+    for (const [id, reference] of Object.entries(this.#configuration.value.observationSources)) {
+      const resolved = this.#registry.resolve(reference.use, reference.options);
+      const source = this.#observationSources.get(id);
+      if (!resolved.ok || resolved.value.kind !== "observation" || source?.failed || (source !== undefined && !source.live)) {
+        missing.push(`observation-source:${id}`);
+      }
+    }
     const plan = this.#configuration.value.contexts[check.context];
     if (plan === undefined) missing.push(`context:${check.context}`);
     else {
@@ -1559,6 +1585,7 @@ export class EngineSession {
     if (this.#state === "active" && this.#activationReady
       && (data.phase === "ready" || data.phase === "disposed" || data.phase === "failed")) {
       this.#activateChecks();
+      this.#reconcileObservationSources();
     }
   }
 
@@ -1751,6 +1778,7 @@ export class EngineSession {
     const previousWork = this.#store.view().work;
     this.#paused = true;
     this.#store.markObserverPaused(true);
+    this.#reconcileObservationSources();
     if (this.#input.controlState !== undefined) this.#input.controlState.observerPaused = true;
     this.#emitRuntimeState(previousWork);
     void this.#commitControl();
@@ -1761,6 +1789,7 @@ export class EngineSession {
     const previousWork = this.#store.view().work;
     this.#paused = false;
     this.#store.markObserverPaused(false);
+    this.#reconcileObservationSources();
     if (this.#input.controlState !== undefined) this.#input.controlState.observerPaused = false;
     this.#emitRuntimeState(previousWork);
     void this.#commitControl();
@@ -1784,6 +1813,19 @@ export class EngineSession {
         if (resolved.ok && resolved.value.kind === "evaluator"
           && this.#invalidEvaluatorBinding(resolved.value.definition.mechanism, profile.modelProfile)) {
           bindingField = `$.evaluators.${id}.modelProfile`;
+          break;
+        }
+      }
+    }
+    if (loaded.rejection === null && bindingField === null) {
+      for (const [id, reference] of Object.entries(loaded.resolved.value.observationSources)) {
+        const resolved = this.#registry.resolve(reference.use, reference.options);
+        if (resolved.ok && resolved.value.kind !== "observation") {
+          bindingField = `$.observationSources.${id}.use`;
+          break;
+        }
+        if (!resolved.ok && resolved.error.code === "core.options-invalid") {
+          bindingField = `$.observationSources.${id}.options`;
           break;
         }
       }
@@ -1830,6 +1872,7 @@ export class EngineSession {
     await this.#commitControl();
     if (destinationChanged) await this.#reloadJournal();
     this.#rebindChecks();
+    this.#reconcileObservationSources();
     // An accepted configuration is the operator's approval boundary: bind the
     // declarations of all granted, registered actions again (explicit reapproval
     // for a contribution installed after the previous approval).
@@ -1853,7 +1896,7 @@ export class EngineSession {
 
   #changedFieldPaths(previous: ResolvedConfiguration, next: ResolvedConfiguration): string[] {
     const paths: string[] = [];
-    const sections = ["enabled", "mode", "runtime", "permissions", "prompts", "contexts", "evaluators", "policies", "checks"] as const;
+    const sections = ["enabled", "mode", "runtime", "permissions", "observationSources", "prompts", "contexts", "evaluators", "policies", "checks"] as const;
     for (const section of sections) {
       if (JSON.stringify(previous.value[section]) !== JSON.stringify(next.value[section])) paths.push(`$.${section}`);
     }
@@ -1925,18 +1968,126 @@ export class EngineSession {
     return outcome.ok;
   }
 
-  #publish(source: ObservationSource, draft: Parameters<ObservationStore["publish"]>[1], parentOperationId: string | null = null): void {
+  #publish(source: ObservationSource, draft: ObservationDraft, parentOperationId: string | null = null): Result<AcceptedObservation> {
     const result = this.#store.publish(source, draft, {
       receivedMonoMs: this.#clock.nowMonoMs(),
       parentOperationId,
     });
-    if (!result.ok) {
-      this.#rejectedObservations += 1;
-      return;
+    if (!result.ok) this.#rejectedObservations += 1;
+    else if (!result.value.duplicate) {
+      this.#acceptIdentity(result.value.observation.id);
+      this.#lastObservation = result.value.observation;
     }
-    if (result.value.duplicate) return;
-    this.#acceptIdentity(result.value.observation.id);
-    this.#lastObservation = result.value.observation;
+    return result;
+  }
+
+  #observationBindingKey(id: string): string | null {
+    if (this.#state !== "active" || !this.#configuration.value.enabled || this.#paused) return null;
+    const reference = this.#configuration.value.observationSources[id];
+    if (reference === undefined) return null;
+    const resolved = this.#registry.resolve(reference.use, reference.options);
+    return resolved.ok && resolved.value.kind === "observation"
+      ? JSON.stringify([resolved.value.registrationId, reference.use, reference.options]) : null;
+  }
+
+  #stopObservationSource(id: string, state: ObservationBindingState): Promise<void> {
+    // Revoke publication before waiting for a possibly non-cooperative resource.
+    state.live = false;
+    if (!state.controller.signal.aborted) state.controller.abort();
+    state.removeAbort();
+    if (state.stopping !== null) return state.stopping;
+    state.stopping = (async () => {
+      try {
+        if (state.starting !== null) await state.starting;
+        await state.instance?.dispose?.();
+      } catch {
+        state.failed = true;
+      } finally {
+        state.closed = true;
+        if (this.#observationSources.get(id) === state) {
+          if (!state.failed || this.#observationBindingKey(id) !== state.key) this.#observationSources.delete(id);
+          if (this.#state === "active") {
+            this.#reconcileObservationSources();
+            this.#activateChecks();
+          }
+        }
+      }
+    })();
+    return state.stopping;
+  }
+
+  #reconcileObservationSources(): void {
+    for (const [id, state] of this.#observationSources) {
+      if (this.#observationBindingKey(id) !== state.key) void this.#stopObservationSource(id, state);
+    }
+    if (this.#state !== "active" || !this.#activationReady || !this.#configuration.value.enabled || this.#paused) return;
+    for (const [id, reference] of Object.entries(this.#configuration.value.observationSources)) {
+      if (this.#observationSources.has(id)) continue;
+      const resolved = this.#registry.resolve(reference.use, reference.options);
+      if (!resolved.ok || resolved.value.kind !== "observation") continue;
+      const component = resolved.value, lifecycle = component.lifecycle();
+      if (lifecycle.signal.aborted) continue;
+      const validators = new Map<string, (value: unknown) => boolean>();
+      for (const [kind, schema] of Object.entries(component.definition.observationSchemas)) {
+        const compiled = compileOptionsSchema(schema);
+        if (compiled.ok) validators.set(kind, compiled.value);
+      }
+      const state: ObservationBindingState = {
+        key: JSON.stringify([component.registrationId, reference.use, reference.options]),
+        componentId: reference.use, registrationId: component.registrationId, controller: new AbortController(),
+        live: true, failed: false, closed: false, instance: null, starting: null, stopping: null, removeAbort: () => {},
+      };
+      this.#observationSources.set(id, state);
+      const stop = (): void => { void this.#stopObservationSource(id, state); };
+      lifecycle.signal.addEventListener("abort", stop, { once: true });
+      state.removeAbort = () => lifecycle.signal.removeEventListener("abort", stop);
+      const context: ObservationContext = {
+        ...lifecycle, scope: { ...lifecycle.scope }, signal: state.controller.signal,
+        publish: draft => {
+          if (!state.live || state.controller.signal.aborted || this.#observationSources.get(id) !== state || this.#observationBindingKey(id) !== state.key) {
+            return { ok: false, error: { code: "core.retired-generation", retryable: false } };
+          }
+          const reject = (): Result<{ observationId: string }> => {
+            this.#rejectedObservations += 1;
+            return { ok: false, error: { code: "core.invalid-observation", retryable: false } };
+          };
+          const copied = copyJsonData(draft);
+          if (!copied.ok || !isPlainRecord(copied.value)) return reject();
+          const fields = copied.value;
+          if (Object.keys(fields).some(key => !["externalId", "kind", "occurredAt", "visibility", "facts", "evidenceIds"].includes(key))
+            || !["externalId", "kind", "occurredAt", "visibility", "facts", "evidenceIds"].every(key => Object.hasOwn(fields, key))) return reject();
+          const clean = fields as unknown as ObservationDraft;
+          if (typeof clean.kind !== "string" || clean.kind.startsWith("core.") || !validators.get(clean.kind)?.(clean.facts)
+            || !Array.isArray(clean.evidenceIds) || clean.evidenceIds.length > 16) return reject();
+          const scope = this.#store.view().scope;
+          if (clean.evidenceIds.some(evidenceId => !this.#store.recentObservations(256).some(observation => observation.id === evidenceId
+            && observation.scope.observedSessionId === scope.observedSessionId && observation.scope.runtimeGeneration === scope.runtimeGeneration
+            && observation.scope.branchId === scope.branchId && observation.scope.episodeId === scope.episodeId))) return reject();
+          const accepted = this.#publish({ ownerId: state.componentId, kind: "external" }, clean);
+          if (!accepted.ok) return accepted;
+          if (!accepted.value.duplicate) this.#scheduler.observe(this.#store.view(), accepted.value.observation);
+          return { ok: true, value: { observationId: accepted.value.observation.id } };
+        },
+      };
+      // Install the tracked promise before invoking trusted source code. A
+      // synchronous abort inside start still owns and disposes its late handle.
+      state.starting = Promise.resolve().then(() => state.live ? component.definition.start(structuredClone(reference.options), context) : null).then(instance => {
+        if (instance === null && !state.live) return;
+        if (typeof instance !== "object" || instance === null || (instance.dispose !== undefined && typeof instance.dispose !== "function")) throw new Error("invalid-source-instance");
+        state.instance = instance;
+      }).catch(() => {
+        state.failed = true;
+        void this.#stopObservationSource(id, state);
+        this.#activateChecks();
+      });
+      void this.#boundedWait(state.starting, this.#configuration.value.runtime.componentInitTimeoutMs).then(completed => {
+        if (!completed && state.live) {
+          state.failed = true;
+          void this.#stopObservationSource(id, state);
+          this.#activateChecks();
+        }
+      });
+    }
   }
 
   #lastObservation: Observation | null = null;
@@ -4596,7 +4747,7 @@ Your previous response was not valid structured output. Return only valid JSON m
         };
         this.#sinks.set(componentId, state);
       }
-      if (state.disabled) continue;
+      if (state.disabled || state.disposed) continue;
       if (state.instance === null) {
         const aggregateBytes = [...this.#sinks.values()].reduce((total, entry) => total + entry.queuedBytes + entry.outstandingBytes, 0);
         if (state.queue.length >= 256 || state.queuedBytes + bytes > 1_048_576 || aggregateBytes + bytes > 8_388_608) {
@@ -4670,8 +4821,8 @@ Your previous response was not valid structured output. Return only valid JSON m
     }
   }
 
-  #writeSink(state: { instance: DiagnosticSinkInstance | null; queue: DiagnosticRecordV1[]; queuedBytes: number; outstanding: number; outstandingBytes: number; dropped: number; failed: number; disabled: boolean; firstLostSequence: number | null; lastLostSequence: number | null; byEventFamily: Record<string, number> }, record: DiagnosticRecordV1): void {
-    if (state.instance === null || state.disabled) return;
+  #writeSink(state: { instance: DiagnosticSinkInstance | null; queue: DiagnosticRecordV1[]; queuedBytes: number; outstanding: number; outstandingBytes: number; dropped: number; failed: number; disabled: boolean; disposed: boolean; firstLostSequence: number | null; lastLostSequence: number | null; byEventFamily: Record<string, number> }, record: DiagnosticRecordV1): void {
+    if (state.instance === null || state.disabled || state.disposed) return;
     const bytes = Buffer.byteLength(`${JSON.stringify(record)}\n`, "utf8");
     const aggregateBytes = [...this.#sinks.values()].reduce((total, entry) => total + entry.queuedBytes + entry.outstandingBytes, 0);
     if (state.outstanding >= 64 || state.outstandingBytes + bytes > 1_048_576
@@ -4759,10 +4910,10 @@ Your previous response was not valid structured output. Return only valid JSON m
     if (record !== undefined && this.#journal !== null) this.#journal.write(record);
   }
 
-  async #drainSinks(): Promise<void> {
-    const deadline = Date.now() + 1_000;
+  async #drainSinks(deadline: number, close: boolean): Promise<void> {
     const remaining = (): number => Math.max(0, deadline - Date.now());
     for (const state of this.#sinks.values()) {
+      const failedBefore = state.failed;
       while (state.starting && Date.now() < deadline) await new Promise(resolve => setTimeout(resolve, 5));
       while ((state.outstanding > 0 || state.queue.length > 0) && Date.now() < deadline) {
         for (const pending of state.queue.splice(0)) {
@@ -4773,7 +4924,7 @@ Your previous response was not valid structured output. Return only valid JSON m
       }
       if (state.queue.length > 0) this.#noteQueuedDrops(state);
       if (state.instance !== null && !state.disposed) {
-        state.disposed = true;
+        if (close) state.disposed = true;
         if (state.instance.flush !== undefined && !state.disabled) {
           let flushed: Promise<unknown> | null = null;
           try {
@@ -4783,7 +4934,7 @@ Your previous response was not valid structured output. Return only valid JSON m
           }
           if (flushed !== null && !await this.#boundedWait(flushed, remaining())) state.failed += 1;
         }
-        if (state.instance.dispose !== undefined) {
+        if (close && state.instance.dispose !== undefined) {
           let disposed: Promise<unknown> | null = null;
           try {
             disposed = Promise.resolve(state.instance.dispose());
@@ -4793,7 +4944,19 @@ Your previous response was not valid structured output. Return only valid JSON m
           if (disposed !== null && !await this.#boundedWait(disposed, remaining())) state.failed += 1;
         }
       }
-      if (state.dropped > 0 || state.failed > 0) {
+      if (close && state.failed > failedBefore) {
+        // A final flush/disposal failure remains inspectable after journal close;
+        // it cannot be retroactively persisted or sent to a disposed destination.
+        this.#retainDiagnostic({
+          event: "quality.sink.health", level: "warn", reasonCodes: [],
+          data: {
+            sinkId: state.componentId, previousState: state.disabled ? "failed" : "ready", state: "failed",
+            queuedRecords: state.queue.length, queuedBytes: state.queuedBytes, lostRecords: state.dropped,
+            reasonCode: "core.sink-write-failed",
+          },
+        });
+      }
+      if (!close && (state.dropped > 0 || state.failed > 0)) {
         // Canonical seven-key health plus the approved diagnostic gap shape for
         // range/family/exactness; no locally expanded contract.
         this.#retainDiagnostic({
@@ -4985,6 +5148,7 @@ Your previous response was not valid structured output. Return only valid JSON m
     this.#modelService?.disposeFeed();
     this.#state = "retired";
     this.#retiredAt = nowIso(this.#clock);
+    const observationStop = Promise.all([...this.#observationSources].map(([id, source]) => this.#stopObservationSource(id, source)));
     // F09: retirement revokes queued investigative/result authority
     // synchronously — already-declared sequential work in a retired generation
     // must not acquire later. Physical ownership still persists until the
@@ -5000,7 +5164,7 @@ Your previous response was not valid structured output. Return only valid JSON m
     const registryDisposal = this.#registry.disposeAll();
     for (const cancel of this.#runTimers.values()) cancel();
     this.#runTimers.clear();
-    const unsettledOperations = this.#activeRuns.size;
+    const unsettledOperations = this.#activeRuns.size + [...this.#observationSources.values()].filter(source => !source.closed).length;
     const journalFlushState: "written" | "failed" | "disabled" = this.#journal === null
       ? (this.#journalFailure === null ? "disabled" : "failed")
       : (this.#journal.state === "healthy" ? "written" : "failed");
@@ -5017,9 +5181,11 @@ Your previous response was not valid structured output. Return only valid JSON m
         journalFlushState,
       },
     });
-    // Drain sinks while the journal is still open so bounded loss/degradation
-    // is truthful in the physical record.
-    await this.#drainSinks();
+    // First account delivery loss while the journal can persist it. Keep the
+    // instances live for the close marker and final control records, then flush
+    // and dispose them under the SAME bounded sink deadline.
+    const sinkDeadline = Date.now() + 1_000;
+    await this.#drainSinks(sinkDeadline, false);
     if (this.#journal !== null) {
       const journal = this.#journal;
       const closed = await journal.close(normalizeRetireCause(cause));
@@ -5060,6 +5226,8 @@ Your previous response was not valid structured output. Return only valid JSON m
     await this.#commitControl();
     if (this.#control !== null) await this.#control.close();
     await registryDisposal;
+    await this.#boundedWait(observationStop, this.#configuration.value.runtime.componentStopTimeoutMs);
+    await this.#drainSinks(sinkDeadline, true);
   }
 
   /** Persists late receipts from a retired generation through this owner. */
