@@ -4224,6 +4224,9 @@ export class EngineSession {
           ...instructionLines,
           ...materialSections,
           ...questionSections,
+          // The admitted C1 result-schema resource is input, not merely a
+          // post-submission validator or the generic submit_result tool shape.
+          `## configured result schema${String.fromCharCode(10)}${JSON.stringify(assembled.resources.resultSchema)}`,
           manifestSummary,
           `[selection] promptTruncatedItems ${material.truncated} promptOmittedItems ${material.omitted}`,
           ...manifestLines,

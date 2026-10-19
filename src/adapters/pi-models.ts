@@ -70,8 +70,13 @@ export function piModelRegistryPort(registry: ModelRegistry): ModelRegistryPort 
       return registry.hasConfiguredAuth(model as never);
     },
     async completeChat(model, messages, options, _signal): Promise<ChatTransportResult> {
+      // The public SDK Context carries instructions in systemPrompt. Putting
+      // text blocks in a message merely labeled "system" does not implement
+      // the SDK's native system-message shape and can silently lose them.
+      const systemPrompt = messages.filter(message => message.role === "system").map(message => message.content).join("\n\n");
       const context = {
-        messages: messages.map(message => ({
+        ...(systemPrompt.length > 0 ? { systemPrompt } : {}),
+        messages: messages.filter(message => message.role !== "system").map(message => ({
           role: message.role,
           content: [{ type: "text", text: message.content }],
         })),
