@@ -150,7 +150,44 @@ otherwise this test uses the checkout build. The two pure mapping regressions
 are in `test/k09-sdk-input.test.ts` for the existing compiled unit-test path.
 These are not new npm/live commands. See the [accepted offline scope and remaining
 K09 gates](docs/08-development-checkpoints-and-release-checklists.md#k09-offline-preparation).
-A new actual evaluation-tuple binding, semantic T01–T07, exact route/model/usage,
-billable-input cost/provisioning, per-domain promotion and D-39 usefulness remain
-pending. No whole-K09 acceptance, live-study spending or product-model execution
-follows from this local save.
+At the352 offline-only boundary, a new evaluation tuple and live route data
+remained pending. Whole-checkpoint T01–T07, per-domain promotion and D-39
+usefulness remain incomplete; the finite follow-up below does not close them.
+No whole-K09 acceptance or spending authority follows from a local save.
+
+## Completed calibration packet — accepted 2026-10-20
+
+Independent decision356 accepted the completed354 data and exact unshipped
+supporting scripts/tests, locally saved in
+`6bf31c4f31c16fab388850e1dcf1b5926e76a095`. This accepts honest failed-model data,
+not a model/profile, general-purpose collector, K09 stage or release.
+
+Three related calibration variants from one task group used native
+`ollama-cloud/deepseek-v4.1-flash` HIGH subjects and direct
+`polza/openai/gpt-4o-mini-2024-07-18` evaluations: six requests, no retry, repair,
+tools or corrective dispatch. **Canonical success is0/3**, despite3/3 parseable
+JSON answers; source/schema delivery is not canonical or semantic success.
+Accepted-finding precision is undefined0/0. No holdout was run.
+
+Case003 retains `no-supported-finding`: the authorized JSON-only amendment
+supersedes text compatibility. Undefined/nonserializable input handling is a
+conditional caveat with unestablished domain applicability, not a supported
+categorical defect or proof of universal compliance. Unsupported raw repair
+advice remains recorded; record-only suppression does not make it correct.
+
+USD conservative credit upper is0.003199800; exact debit remains UNKNOWN.
+RUB provider-reported spend is0.158343590. Separate cumulative caps USD3/RUB20
+are not pooled, renewed or augmented by the earlier USD1 pilot. Unused amounts
+are not authority. Raw results, sanitized native projections and the private
+Repomix remain outside Git.
+
+The [experimental collector](scripts/collect-k09.mjs),
+[campaign ledger](scripts/k09-budget.mjs) and
+[offline guard tests](test/k09-collector.test.mjs) support this completed packet;
+their presence does not authorize execution, resumption or expansion. Aggregate
+pre-write artifact admission and one shared absolute error-path cleanup budget
+remain unqualified for expanded/general reuse. See the
+[dated K09 result and remaining boundaries](docs/08-development-checkpoints-and-release-checklists.md#k09-completed-calibration-356).
+Other39 cases/all21 holdout, live clean-reviewer/T06 comparison, promotion,
+D-39 and whole K09/release remain unexecuted or unaccepted. No new package,
+version, tag, push or publication accompanies this local preservation.

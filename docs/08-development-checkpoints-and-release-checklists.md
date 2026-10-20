@@ -1017,12 +1017,93 @@ Keep unknowns unknown. Exact route/data/billable-input cost/provisioning and
 execution authority remain prerequisites; this save creates no semantic freeze,
 model plan, successor dispatch or new evaluation platform.
 
-Semantic T01–T07, actual route/model/revision/input/usage/cost, profile/domain
-promotion, D-39 closed-loop usefulness and whole K09/release remain pending. All
+At the352 offline-only boundary, semantic execution and actual route data
+remained pending. Full semantic T01–T07, profile/domain promotion, D-39
+closed-loop usefulness and whole K09/release remain incomplete; the dated
+completed-packet follow-up below has a narrower scope. All
 original checkpoint boxes below remain unchanged; package version stays0.6.0,
 with no new tag or publication. Proposed42 requests/USD2.10 grant no allowance.
 The separate original USD1 three-case/nine-request pilot remains unspent here and
 billable-input/safe-provisioning-blocked, without renewal or reassignment.
+
+<a id="k09-completed-calibration-356"></a>
+
+### Completed three-case packet accepted 2026-10-20 — no profile promotion
+
+Independent decision356, `ACCEPTED_SCOPED_COMPLETED_LIVE_DATA_PACKET`, admits the
+completed354 collection, its qualified interpretation and supporting unshipped
+source/test subset, saved locally as
+`6bf31c4f31c16fab388850e1dcf1b5926e76a095`. No completed-packet mandatory repair
+or acceptance oracle remains. Historical v1, labels, split, gates and earlier
+verification records are unchanged. The experiment tuple is
+`ccdda95c5ac197e8b212c8e11f2fc5666f5b965f145f33835a09bf55b3eebbe9`;
+this is not a new semantic freeze or a general collector approval.
+
+Cases002/003/001 are three correlated calibration siblings in group-001, not
+three independent projects or held-out validation. Three actual native
+`ollama-cloud/deepseek-v4.1-flash` HIGH analyst subjects (serialized cap4096)
+triggered three managed direct `polza/openai/gpt-4o-mini-2024-07-18` evaluations
+(cap2048). Six actual requests; no retries, repairs, tools or corrective effects.
+Actual model-build revisions remain UNKNOWN. The subject answers were labeled
+nonauthoritative references; no hypothesis-free comparison arm establishes
+attribution to the evaluator alone. This was not a coding/productivity trial.
+
+All supplied sources and configured resources/schema reached the observed inputs.
+Nevertheless **canonical validity is0/3**: raw JSON parseability3/3 cannot replace
+C1 operational/coverage/conclusion/reference validity. All canonical outcomes are
+failed/insufficient/undetermined/invalid with no accepted findings. The local
+failure envelope is not honest model abstention or evidence of missing inputs.
+Canonical violation detection is0/1; accepted-finding precision is undefined0/0;
+useful canonical limited outcome is0/1. Zero actual corrections does not validate
+raw advice or satisfy false-correction/over-intervention gates.
+
+Case002 still has the supported R1 violation, noticed only in invalid raw prose.
+Case003's `no-supported-finding` label stands: the authorized JSON-only amendment
+supersedes R1 text compatibility. R2 requires a value member but does not establish
+whether undefined/nonserializable values are admitted inputs. Their behavior is
+a real conditional caveat, not evidence of a categorical present defect. Neither
+a JSON-only input precondition nor an all-JavaScript-values obligation is added;
+universal R2 compliance is not established. This general domain-coverage limit
+is not an unresolved acceptance question. The categorical R2 repair suggestion
+lacks established applicability (1/1 raw near-miss cases with an unsupported
+proposed correction). The conditional future text-rendering mechanism is
+speculative, not current authority. Case001 identifies conflict but its proposed
+mode repair does not resolve which contradictory default governs. These raw
+unsupported/unsafe advice signals remain distinct from runtime rejection.
+
+Separate cumulative allowances were USD3 and RUB20. Full-model three-request
+reservations were USD2.359296000 and RUB10.187893740. Observed USD conservative
+credit upper is0.003199800; exact debit, usable quota, discounts and cash invoice
+remain UNKNOWN. RUB0.158343590 is provider-reported, not an FX or balance-difference
+calculation. Six terminal attempts settled; reserved/unknown terminal-token
+exposure is0 within that receipt/tariff domain, not a guarantee of hidden billing
+or later corrections. Ledger `closed:null` remains unchanged. Fixed counts and
+accepted completed custody authorize no new work; carry spent/exposures forward,
+with no renewal, pooling or oldUSD1 addition.
+
+The native parent12840/0 and children25824/25988/27028 closed normally with returned
+pipes and no watchdog kill. Selected ten-capture totals386749/387680/386912B are
+below1MiB each, not whole HOME/cache sizes. An aggregate pre-write1MiB limiter and
+one shared absolute10s error-path cleanup budget are **not qualified**. These gaps
+do not invalidate the completed data, but block expanded/general reuse or claims
+of those guarantees until separately qualified. No present repair or rerun is
+implied.355's accepted12 unit/6 independent leaves are reused;357's storage syntax
+checks are not another live run or acceptance cycle.
+
+The [collector](../scripts/collect-k09.mjs), [budget owner](../scripts/k09-budget.mjs)
+and [offline tests](../test/k09-collector.test.mjs) are outside the package allowlist.
+357 preserves exact raw/indexed/committed bodies without EOL conversion. No emitted,
+package or consumer artifact is produced or qualified by this save. All private
+results, native-session projections and245126B/32-member Repomix remain outside
+Git; projections are sanitized actual entries, not pristine transcripts. No raw
+reasoning/headers/credentials become normal O1 data.
+
+Remaining:39 original cases including all21 held-out, other domains, live clean
+reviewer/T06 comparator, D-39, domain/profile promotion and whole K09/release.
+Future work requires its own actual tuple, route/billable coverage and authority;
+remaining USD/RUB is not permission. No new campaign, version/tag/push/publication
+or instruction synchronization follows. All original26 checklist predicates and
+unchecked boxes below remain unchanged.
 
 | Gate input | Required reference |
 |---|---|
