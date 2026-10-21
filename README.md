@@ -191,3 +191,33 @@ remain unqualified for expanded/general reuse. See the
 Other39 cases/all21 holdout, live clean-reviewer/T06 comparison, promotion,
 D-39 and whole K09/release remain unexecuted or unaccepted. No new package,
 version, tag, push or publication accompanies this local preservation.
+
+## Offline C1 assessor-contract repair — accepted 2026-10-21
+
+Astra360 independently accepted the seven-path offline repair, saved in
+`5643553b416e842d518d409e906ff32745d7f2f4`. The
+[shipped result schema](resources/prompts/evaluation-v1.schema.json), explicit
+and omitted prompt selections, and ordinary structural validation now share
+one full C1 declaration. Contextual reference existence, criteria, score ranges,
+evidence authority and coverage checks remain separate and strict. Bounded
+schema copying does not raise final-input budgets.
+
+Historical354 remains canonical0/3: its three parseable replies satisfied the
+old shallow declaration but violated C1. This repair changes neither those
+results nor their labels. Reused359 evidence is102 unit checks,7 independent
+checks and three affected fixture scenarios in one Node test;358's common26,
+connected8 and native serialization controls are separate, overlapping evidence.
+361 qualifies exact local storage, not another behavioral or live run.
+
+Schema text is **not API enforcement**: ordinary `core.chat` sends no
+`response_format`; the broad reviewer result-tool envelope and SDK-only carrier
+probe do not prove provider strict-schema support. A minimal text-schema
+three-case calibration is legitimate, but its **live executor is NOT READY**.
+Cumulative finance ownership, aggregate pre-write artifact admission, one shared
+absolute cleanup budget, physical termination custody and the required pre-run
+gate remain mandatory. No spending grant is renewed; exact USD debit/invoice
+remains UNKNOWN. This is GPT-4o-mini/core.chat evidence, not Jev/System One,
+profile promotion or whole K09. See the
+[accepted contract scope and remaining gate](docs/08-development-checkpoints-and-release-checklists.md#k09-offline-contract-360).
+No package was produced or qualified by361; version0.6.0 and the K08 tag/artifact
+remain unchanged.

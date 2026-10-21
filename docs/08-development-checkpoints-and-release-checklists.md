@@ -1105,6 +1105,66 @@ remaining USD/RUB is not permission. No new campaign, version/tag/push/publicati
 or instruction synchronization follows. All original26 checklist predicates and
 unchecked boxes below remain unchanged.
 
+<a id="k09-offline-contract-360"></a>
+
+### Offline C1 assessor-contract repair accepted 2026-10-21 — live executor NOT READY
+
+Astra360 independently accepted `SCOPED_OFFLINE_C1_ASSESSOR_CONTRACT_REPAIR`
+without mandatory candidate repairs.361 saved the exact seven accepted source,
+resource and test bodies in `5643553b416e842d518d409e906ff32745d7f2f4`, parent
+`ce507cd88716fc3f71e39d42d1ec9d6220bc3666`. Raw, effective filtered, indexed,
+committed and working bodies agree,100644/LF with zero EOL conversions. This is
+an offline fix at unchanged0.6.0, not a version release or K09 acceptance.
+
+The [prompt owner](../src/builtins/prompts.ts) supplies one full C1 structural
+schema, checked against its [shipped JSON](../resources/prompts/evaluation-v1.schema.json)
+and explicit/omitted selections. Ordinary runtime validation uses that same
+declaration before preserved contextual reference/criterion/range/authority and
+coverage checks. Schema admission reuses descriptor-only copying bounded to32
+levels/4096 nodes/262144 bytes; final-input limits are not raised. Three fixture
+allowances8192→16384 preserve their oversized sources and refusal/omission/partial
+assertions. No C1/O1 fields, permissions or semantic acceptance criteria changed.
+
+The declaration defect is established: all three authentic354 replies satisfy
+the old shallow sent schema but violate the canonical operational enum; repaired
+structure also rejects them. Historical canonical success remains0/3. This is not
+proof that the declaration defect caused every semantic error, and the case003
+label/domain caveat and unsupported raw-advice signals above remain unchanged.
+
+360 reuses359's102/102 unit (32 contract+70 existing),7/7 independent and three
+real-loader scenarios in one Node test; separately reused358 evidence includes
+102 unit,26 common-host,8 connected and three ordinary native requests plus one
+SDK-only carrier. Overlaps are not additive or fresh360/361 tests. Historical REDs
+and359's96/102 missing-resource harness failure remain retained.361 adds storage,
+staged-diff and factual-document checks only; no build/package/consumer or live
+cycle is rerun or newly qualified. No accepted tag is moved or artifact repacked.
+
+Actual ordinary `core.chat` requests contain complete schema/instructions and no
+`response_format`. The broad reviewer `submit_result` tool envelope is separate;
+public SDK transport and catalog advertisement do not qualify remote enforcement
+or this schema's strict subset.360 admits text-schema-only calibration as the
+minimal legitimate successor, not guaranteed constrained generation or meaningful
+judgment. A provider-constrained objective needs a separate capability/subset
+binding, never a silent payload rewrite.
+
+Before any paid dispatch, the actual finite executor must pass the existing
+independent pre-run gate: persistent cumulative finance ownership importing354
+without reset, aggregate pre-write1MiB/case and3MiB total output admission, one
+absolute10s cleanup/error-path budget and external native termination/pipe custody.
+The prepared tuple `fb78822af9a0b806237efd92016077fd29fb65810586b62a1991b42729e842c9`
+remains historical, not an executable admission. Bind the actual executor,
+route/tariff/billable coverage, effective serialized input/settings and failure
+controls before sending. Only002/003/001 once, concurrency1, dated GPT-4o-mini/
+core.chat, off/2048, unchanged stored hypotheses, record-only; no new subjects,
+tools, retries, repairs or feedback. The offline preparer is not a live executor.
+
+Original USD3/RUB20 grants remain separate and cumulative, not renewed or pooled;
+recorded quote arithmetic is not admission and exact USD debit/invoice remains
+UNKNOWN. This is not Jev/System One, promotion, held-out quality, D-39 or whole
+K09.362 scratch work is not assessed by this storage/docs record. All original26
+K09 checklist predicates/unchecked boxes and other checkpoints remain unchanged;
+no new version/tag/push/publication follows.
+
 | Gate input | Required reference |
 |---|---|
 | Existing obligations | D-16/D-17/D-18/D-29, D-38 and the one-shot portion of D-39; O-11/O-18/O-30; P-05/P-06/P-10 live subsets. |
