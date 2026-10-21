@@ -479,7 +479,8 @@ await run("R4-reload-stop-preservation", config(), async (host, observed) => {
 
 await run("R5-context-byte-ceiling", (() => {
   const budget = config([{ id: "large", use: "qa.large" }]);
-  budget.contexts.recent.maxBytes = 8_192;
+  // Fit the full canonical prompt; the 128 KiB source still cannot fit.
+  budget.contexts.recent.maxBytes = 16_384;
   budget.runtime = { maxEvidenceBytes: 65_536 };
   budget.evaluators.repetition = { use: "qa.capture" };
   return budget;
@@ -531,7 +532,7 @@ await run("R5-context-byte-ceiling", (() => {
 
 await run("R5-context-byte-ceiling-partial-plan-omission", (() => {
   const budget = config([{ id: "large", use: "qa.large" }]);
-  budget.contexts.recent.maxBytes = 8_192;
+  budget.contexts.recent.maxBytes = 16_384;
   budget.contexts.recent.requiredCoverage = "partial";
   budget.runtime = { maxEvidenceBytes: 65_536 };
   budget.evaluators.repetition = { use: "qa.capture" };
@@ -604,7 +605,7 @@ await run("R5-prompt-resource-budget", (() => {
 
 await run("R5-explicit-partial-operation", (() => {
   const budget = config([{ id: "large-partial", use: "qa.large-partial" }]);
-  budget.contexts.recent.maxBytes = 8_192;
+  budget.contexts.recent.maxBytes = 16_384;
   budget.contexts.recent.requiredCoverage = "partial";
   budget.evaluators.repetition = { use: "qa.partial-evaluator" };
   return budget;

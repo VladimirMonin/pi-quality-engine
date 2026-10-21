@@ -1,16 +1,657 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Canonical C1 assessment result",
+  "description": "Return this JSON object, not prose or a fenced fragment. Empty arrays are valid. Only report supplied criteria and issued references. Numeric scores must lie between their own minimum and maximum. Schema validity is not semantic truth, coverage authority or permission to act.",
   "type": "object",
-  "required": ["operational", "coverage", "conclusion", "findings", "scores", "additionalEvidence", "dependencies", "usageAttemptIds"],
-  "additionalProperties": true,
   "properties": {
-    "operational": { "type": "string" },
-    "coverage": { "type": "object" },
-    "conclusion": { "type": "string" },
-    "findings": { "type": "array" },
-    "scores": { "type": "array" },
-    "additionalEvidence": { "type": "array" },
-    "dependencies": { "type": "array" },
-    "usageAttemptIds": { "type": "array" }
-  }
+    "operational": {
+      "enum": [
+        "completed",
+        "unavailable",
+        "failed",
+        "cancelled"
+      ]
+    },
+    "coverage": {
+      "type": "object",
+      "properties": {
+        "state": {
+          "enum": [
+            "complete",
+            "partial",
+            "insufficient"
+          ]
+        },
+        "scopeDescription": {
+          "type": "string"
+        },
+        "issues": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "sourceId": {
+                "type": "string"
+              },
+              "reason": {
+                "type": "string"
+              },
+              "required": {
+                "type": "boolean"
+              },
+              "evidenceIds": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,191}$",
+                  "description": "Copy an actual issued context/evidence ID; never invent a source label, path or reference. Existence is checked separately."
+                }
+              }
+            },
+            "required": [
+              "sourceId",
+              "reason",
+              "required",
+              "evidenceIds"
+            ],
+            "additionalProperties": false
+          },
+          "maxItems": 32
+        }
+      },
+      "required": [
+        "state",
+        "scopeDescription",
+        "issues"
+      ],
+      "additionalProperties": false
+    },
+    "conclusion": {
+      "enum": [
+        "no-supported-finding",
+        "findings",
+        "conflicting-requirements",
+        "undetermined"
+      ]
+    },
+    "findings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,191}$",
+            "description": "Response-local finding ID, not an engine finding reference."
+          },
+          "criterion": {
+            "type": "string",
+            "description": "Exactly one of this check's declared criteria."
+          },
+          "status": {
+            "enum": [
+              "suspected",
+              "supported"
+            ]
+          },
+          "severity": {
+            "enum": [
+              "info",
+              "concern",
+              "critical"
+            ]
+          },
+          "requirementRefs": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,191}$",
+              "description": "Copy an actual issued context/evidence ID; never invent a source label, path or reference. Existence is checked separately."
+            },
+            "maxItems": 32
+          },
+          "evidenceIds": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,191}$",
+              "description": "Copy an actual issued context/evidence ID; never invent a source label, path or reference. Existence is checked separately."
+            },
+            "maxItems": 32
+          },
+          "affectedItems": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,191}$",
+              "description": "Copy an actual issued context/evidence ID; never invent a source label, path or reference. Existence is checked separately."
+            },
+            "maxItems": 32
+          },
+          "defectCode": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9._:-]{0,95}$"
+          },
+          "explanation": {
+            "type": "string"
+          },
+          "proposedCorrection": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "limitations": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 16
+          }
+        },
+        "required": [
+          "id",
+          "criterion",
+          "status",
+          "severity",
+          "requirementRefs",
+          "evidenceIds",
+          "affectedItems",
+          "defectCode",
+          "explanation",
+          "proposedCorrection",
+          "limitations"
+        ],
+        "additionalProperties": false
+      },
+      "maxItems": 64
+    },
+    "scores": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "criterion": {
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "probability",
+              "ordinal",
+              "numeric",
+              "self-reported-confidence"
+            ]
+          },
+          "value": {
+            "type": "number"
+          },
+          "minimum": {
+            "type": "number"
+          },
+          "maximum": {
+            "type": "number"
+          },
+          "interpretation": {
+            "type": "string"
+          },
+          "calibrationRef": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "criterion",
+          "kind",
+          "value",
+          "minimum",
+          "maximum",
+          "interpretation",
+          "calibrationRef"
+        ],
+        "additionalProperties": false
+      },
+      "maxItems": 32
+    },
+    "additionalEvidence": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "role": {
+            "enum": [
+              "task",
+              "requirement",
+              "evidence",
+              "reference",
+              "prior-finding"
+            ]
+          },
+          "required": {
+            "type": "boolean"
+          },
+          "content": {
+            "type": "array",
+            "items": {
+              "anyOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "type": {
+                      "enum": [
+                        "text"
+                      ]
+                    },
+                    "text": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "text"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "type": {
+                      "enum": [
+                        "json"
+                      ]
+                    },
+                    "value": true
+                  },
+                  "required": [
+                    "type",
+                    "value"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "type": {
+                      "enum": [
+                        "image"
+                      ]
+                    },
+                    "artifactId": {
+                      "type": "string"
+                    },
+                    "mimeType": {
+                      "type": "string"
+                    },
+                    "width": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "height": {
+                      "type": "integer",
+                      "minimum": 0
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "artifactId",
+                    "mimeType",
+                    "width",
+                    "height"
+                  ],
+                  "additionalProperties": false
+                }
+              ]
+            }
+          },
+          "provenance": {
+            "type": "object",
+            "properties": {
+              "sourceId": {
+                "type": "string"
+              },
+              "uri": {
+                "type": "string"
+              },
+              "revision": {
+                "type": "string"
+              },
+              "acquiredAt": {
+                "type": "string"
+              },
+              "selection": {
+                "anyOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "kind": {
+                        "enum": [
+                          "full"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "kind"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "kind": {
+                        "enum": [
+                          "lines"
+                        ]
+                      },
+                      "start": {
+                        "type": "integer",
+                        "minimum": 1
+                      },
+                      "end": {
+                        "type": "integer",
+                        "minimum": 1
+                      }
+                    },
+                    "required": [
+                      "kind",
+                      "start",
+                      "end"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "kind": {
+                        "enum": [
+                          "sections"
+                        ]
+                      },
+                      "headings": {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      }
+                    },
+                    "required": [
+                      "kind",
+                      "headings"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "kind": {
+                        "enum": [
+                          "derived"
+                        ]
+                      },
+                      "inputIds": {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      },
+                      "method": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "kind",
+                      "inputIds",
+                      "method"
+                    ],
+                    "additionalProperties": false
+                  }
+                ]
+              },
+              "changedDuringRead": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "sourceId",
+              "uri",
+              "revision",
+              "acquiredAt",
+              "selection",
+              "changedDuringRead"
+            ],
+            "additionalProperties": false
+          },
+          "bytes": {
+            "type": "number"
+          },
+          "tokenEstimate": {
+            "anyOf": [
+              {
+                "type": "null"
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "count": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "method": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "count",
+                  "method"
+                ],
+                "additionalProperties": false
+              }
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "role",
+          "required",
+          "content",
+          "provenance",
+          "bytes",
+          "tokenEstimate"
+        ],
+        "additionalProperties": false
+      },
+      "maxItems": 64
+    },
+    "dependencies": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "evidenceId": {
+            "type": "string"
+          },
+          "revision": {
+            "type": "string"
+          },
+          "relevance": {
+            "enum": [
+              "authority",
+              "conclusion",
+              "supporting"
+            ]
+          },
+          "check": {
+            "enum": [
+              "content-fingerprint",
+              "host-cursor",
+              "external-revision",
+              "unknown"
+            ]
+          }
+        },
+        "required": [
+          "evidenceId",
+          "revision",
+          "relevance",
+          "check"
+        ],
+        "additionalProperties": false
+      },
+      "maxItems": 64
+    },
+    "usageAttemptIds": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,191}$",
+        "description": "Copy an actual issued context/evidence ID; never invent a source label, path or reference. Existence is checked separately."
+      },
+      "maxItems": 16,
+      "description": "Owned attempt IDs only. For core.chat return []; the engine attaches the actual attempts, never model-invented billing IDs."
+    },
+    "workInterpretation": {
+      "type": "object",
+      "properties": {
+        "proposedState": {
+          "enum": [
+            "work-expected",
+            "waiting-dependency",
+            "waiting-operator",
+            "completion-candidate",
+            "complete",
+            "unknown"
+          ]
+        },
+        "outstandingWork": {
+          "enum": [
+            "supported",
+            "none",
+            "unknown"
+          ]
+        },
+        "evidenceIds": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,191}$",
+            "description": "Copy an actual issued context/evidence ID; never invent a source label, path or reference. Existence is checked separately."
+          }
+        },
+        "rationale": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "proposedState",
+        "outstandingWork",
+        "evidenceIds",
+        "rationale"
+      ],
+      "additionalProperties": false
+    },
+    "extensions": {
+      "type": "object",
+      "description": "Optional namespaced data only under the evaluator's declared resultExtensions; never action authority.",
+      "additionalProperties": true
+    },
+    "error": {
+      "type": "object",
+      "properties": {
+        "code": {
+          "type": "string"
+        },
+        "retryable": {
+          "type": "boolean"
+        },
+        "field": {
+          "type": "string"
+        },
+        "details": {
+          "type": "object",
+          "additionalProperties": true
+        }
+      },
+      "required": [
+        "code",
+        "retryable"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "required": [
+    "operational",
+    "coverage",
+    "conclusion",
+    "findings",
+    "scores",
+    "additionalEvidence",
+    "dependencies",
+    "usageAttemptIds"
+  ],
+  "additionalProperties": false,
+  "allOf": [
+    {
+      "anyOf": [
+        {
+          "properties": {
+            "operational": {
+              "enum": [
+                "completed"
+              ]
+            }
+          }
+        },
+        {
+          "properties": {
+            "conclusion": {
+              "enum": [
+                "undetermined"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "anyOf": [
+        {
+          "properties": {
+            "conclusion": {
+              "enum": [
+                "findings"
+              ]
+            },
+            "findings": {
+              "minItems": 1
+            }
+          }
+        },
+        {
+          "properties": {
+            "conclusion": {
+              "enum": [
+                "no-supported-finding"
+              ]
+            },
+            "findings": {
+              "maxItems": 0
+            }
+          }
+        },
+        {
+          "properties": {
+            "conclusion": {
+              "enum": [
+                "conflicting-requirements",
+                "undetermined"
+              ]
+            }
+          }
+        }
+      ]
+    }
+  ]
 }

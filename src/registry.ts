@@ -102,7 +102,7 @@ const NOTE_CODE_PATTERN = /^[a-z][a-z0-9._:-]{0,95}$/;
 const SUPPORTED_SCHEMA_KEYWORDS = new Set([
   "$schema", "title", "description", "type", "properties", "required",
   "additionalProperties", "items", "enum", "minimum", "maximum",
-  "minLength", "maxLength", "default",
+  "minLength", "maxLength", "default", "pattern", "minItems", "maxItems", "anyOf", "allOf",
 ]);
 const SUPPORTED_TYPES = new Set(["object", "array", "string", "integer", "number", "boolean", "null"]);
 
@@ -143,6 +143,29 @@ export function compileOptionsSchema(schema: unknown): Result<Validator> {
   if (enumValues !== undefined && (!Array.isArray(enumValues) || enumValues.length === 0)) {
     return schemaFailure("core.options-schema-unsupported");
   }
+  const alternatives: Validator[][] = [];
+  for (const keyword of ["anyOf", "allOf"]) {
+    const branches = record[keyword];
+    if (branches === undefined) { alternatives.push([]); continue; }
+    if (!Array.isArray(branches) || branches.length === 0) return schemaFailure("core.options-schema-unsupported");
+    const validators: Validator[] = [];
+    for (const branch of branches) {
+      const compiled = compileOptionsSchema(branch);
+      if (!compiled.ok) return compiled;
+      validators.push(compiled.value);
+    }
+    alternatives.push(validators);
+  }
+  let pattern: RegExp | null = null;
+  if (record["pattern"] !== undefined) {
+    if (typeof record["pattern"] !== "string") return schemaFailure("core.options-schema-unsupported");
+    try { pattern = new RegExp(record["pattern"], "u"); } catch { return schemaFailure("core.options-schema-unsupported"); }
+  }
+  for (const keyword of ["minItems", "maxItems"]) {
+    if (record[keyword] !== undefined && (!Number.isInteger(record[keyword]) || (record[keyword] as number) < 0)) {
+      return schemaFailure("core.options-schema-unsupported");
+    }
+  }
   const propertiesInput = record["properties"];
   if (propertiesInput !== undefined && (typeof propertiesInput !== "object" || propertiesInput === null || Array.isArray(propertiesInput))) {
     return schemaFailure("core.options-schema-unsupported");
@@ -171,54 +194,44 @@ export function compileOptionsSchema(schema: unknown): Result<Validator> {
   const maxLength = typeof record["maxLength"] === "number" ? record["maxLength"] : null;
 
   const validator: Validator = value => {
-    if (Array.isArray(enumValues) && !enumValues.some(entry => JSON.stringify(entry) === JSON.stringify(value))) return false;
-    if (typeNames.length === 0) {
-      if (compiledProperties.size > 0 && typeof value === "object" && value !== null && !Array.isArray(value)) {
-        const objectValue = value as Record<string, unknown>;
-        for (const name of required) {
-          if (!Object.hasOwn(objectValue, name)) return false;
-        }
-        for (const [name, subValidator] of compiledProperties) {
-          if (Object.hasOwn(objectValue, name) && !subValidator(objectValue[name])) return false;
-        }
-        if (!additionalProperties) {
-          for (const name of Object.keys(objectValue)) {
-            if (!compiledProperties.has(name)) return false;
-          }
-        }
-      }
-      return true;
-    }
-    if (typeNames.includes("object") && typeof value === "object" && value !== null && !Array.isArray(value)) {
-      const objectValue = value as Record<string, unknown>;
+    // Scalar enums (including all C1 enums) never serialize untrusted data.
+    if (Array.isArray(enumValues) && !enumValues.some(entry => entry !== null && typeof entry === "object"
+      ? JSON.stringify(entry) === JSON.stringify(value) : entry === value)) return false;
+    const anyOf = alternatives[0] ?? [], allOf = alternatives[1] ?? [];
+    if (anyOf.length > 0 && !anyOf.some(check => check(value))) return false;
+    if (!allOf.every(check => check(value))) return false;
+    const isObject = typeof value === "object" && value !== null && !Array.isArray(value);
+    if (typeNames.length > 0 && !typeNames.some(name =>
+      name === "object" ? isObject : name === "array" ? Array.isArray(value)
+        : name === "integer" ? typeof value === "number" && Number.isInteger(value)
+        : name === "null" ? value === null : typeof value === name)) return false;
+    if (isObject) {
       for (const name of required) {
-        if (!Object.hasOwn(objectValue, name)) return false;
+        const descriptor = Object.getOwnPropertyDescriptor(value, name);
+        if (descriptor === undefined || !("value" in descriptor)) return false;
       }
       for (const [name, subValidator] of compiledProperties) {
-        if (Object.hasOwn(objectValue, name) && !subValidator(objectValue[name])) return false;
+        const descriptor = Object.getOwnPropertyDescriptor(value, name);
+        if (descriptor !== undefined && (!("value" in descriptor) || !subValidator(descriptor.value))) return false;
       }
-      if (!additionalProperties) {
-        for (const name of Object.keys(objectValue)) {
-          if (!compiledProperties.has(name)) return false;
-        }
+      if (!additionalProperties && Object.keys(value).some(name => !compiledProperties.has(name))) return false;
+    }
+    if (Array.isArray(value)) {
+      if (typeof record["minItems"] === "number" && value.length < record["minItems"]) return false;
+      if (typeof record["maxItems"] === "number" && value.length > record["maxItems"]) return false;
+      if (compiledItems !== null) for (let i = 0; i < value.length; i += 1) {
+        const descriptor = Object.getOwnPropertyDescriptor(value, String(i));
+        if (descriptor === undefined || !("value" in descriptor) || !compiledItems(descriptor.value)) return false;
       }
-      return true;
     }
-    if (typeNames.includes("array") && Array.isArray(value)) {
-      return compiledItems === null || value.every(entry => compiledItems(entry));
-    }
-    if (typeNames.includes("string") && typeof value === "string") {
+    if (typeof value === "string") {
       if (minLength !== null && value.length < minLength) return false;
       if (maxLength !== null && value.length > maxLength) return false;
-      return true;
+      if (pattern !== null && !pattern.test(value)) return false;
     }
-    if (typeNames.includes("integer") && typeof value === "number" && Number.isInteger(value)
-      && (minimum === null || value >= minimum) && (maximum === null || value <= maximum)) return true;
-    if (typeNames.includes("number") && typeof value === "number" && Number.isFinite(value)
-      && (minimum === null || value >= minimum) && (maximum === null || value <= maximum)) return true;
-    if (typeNames.includes("boolean") && typeof value === "boolean") return true;
-    if (typeNames.includes("null") && value === null) return true;
-    return false;
+    if (typeof value === "number" && (!Number.isFinite(value)
+      || (minimum !== null && value < minimum) || (maximum !== null && value > maximum))) return false;
+    return true;
   };
   return { ok: true, value: validator };
 }

@@ -37,7 +37,7 @@ import { SourceEvidence, type AcquisitionObservation, type AcquiredRefs, type Ac
 import { GitEpisodeEvidence } from "./git-evidence.js";
 import { ModelService, renderChatInput, renderClassifierState, finalizeRenderedInput } from "./models.js";
 import type { ModelRegistryPort, ModelUsageSummary } from "./models.js";
-import { createPromptFilesProvider } from "./builtins/prompts.js";
+import { CANONICAL_RESULT_SCHEMA, createPromptFilesProvider } from "./builtins/prompts.js";
 import { chatEvaluator, classifierEvaluator, piSessionEvaluator, repeatedToolsEvaluator } from "./builtins/evaluators.js";
 import { engineeringPolicy, recordOnlyPolicy } from "./builtins/policies.js";
 import { feedbackAction, requestCheckAction } from "./builtins/actions.js";
@@ -658,6 +658,9 @@ const COVERAGE_STRENGTH: Record<"complete" | "partial" | "insufficient", number>
 
 const BOUNDED_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,191}$/;
 const DEFECT_CODE_PATTERN = /^[a-z][a-z0-9._:-]{0,95}$/;
+// The same structural contract is supplied to the model by the prompt owner.
+// Contextual reference/criterion/authority validation below remains mandatory.
+const CANONICAL_RESULT_VALIDATOR = compileOptionsSchema(CANONICAL_RESULT_SCHEMA);
 
 function isPlainRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -3615,7 +3618,9 @@ export class EngineSession {
       terminalReason: code,
       findingCount: 0,
     });
-    if (!isPlainRecord(raw)) return invalid("core.invalid-evaluation-result");
+    if (!isPlainRecord(raw) || !CANONICAL_RESULT_VALIDATOR.ok || !CANONICAL_RESULT_VALIDATOR.value(raw)) {
+      return invalid("core.invalid-evaluation-result");
+    }
     const operational = readData(raw, "operational");
     if (!(operational === "completed" || operational === "unavailable" || operational === "failed" || operational === "cancelled")) {
       return invalid("core.invalid-evaluation-result");

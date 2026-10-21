@@ -38,7 +38,7 @@ import type {
   SizeMeasurement,
   EvaluationServices,
 } from "./contracts.js";
-import type { ResolvedComponent } from "./registry.js";
+import { copyJsonData, type ResolvedComponent } from "./registry.js";
 
 const MAX_ITEM_BYTES_COPY_DEPTH = 8;
 const MAX_PLAIN_KEYS = 64;
@@ -528,7 +528,10 @@ export async function assembleContext(input: ContextAssemblyInput): Promise<Resu
     }
     promptChangedDuringRead = instructions.some(instruction => instruction.provenance.changedDuringRead);
     promptInstructionRefs = instructions.map(instruction => tokens.resource(promptComponentId, instruction.provenance.uri));
-    const copiedSchema = copyPlainJson(dataAt(builtValue, "resultSchema").value, 0);
+    // Schemas describe nested C1 objects and are deeper than source JSON
+    // content. Reuse descriptor-only admission (32 levels, 4096 nodes) with
+    // the prompt-file resource ceiling, without raising final-input budgets.
+    const copiedSchema = copyJsonData(dataAt(builtValue, "resultSchema").value, 262_144);
     if (!copiedSchema.ok) {
       return { ok: false, error: { code: "core.prompt-resource-invalid", retryable: false } };
     }
