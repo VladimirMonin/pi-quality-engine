@@ -1107,7 +1107,10 @@ unchecked boxes below remain unchanged.
 
 <a id="k09-offline-contract-360"></a>
 
-### Offline C1 assessor-contract repair accepted 2026-10-21 — live executor NOT READY
+### Offline C1 assessor-contract repair accepted 2026-10-21 — executor not ready at that save
+
+That offline readiness boundary is historical; the later
+[completed calibration acceptance](#k09-completed-calibration-369) is separate.
 
 Astra360 independently accepted `SCOPED_OFFLINE_C1_ASSESSOR_CONTRACT_REPAIR`
 without mandatory candidate repairs.361 saved the exact seven accepted source,
@@ -1161,9 +1164,78 @@ tools, retries, repairs or feedback. The offline preparer is not a live executor
 Original USD3/RUB20 grants remain separate and cumulative, not renewed or pooled;
 recorded quote arithmetic is not admission and exact USD debit/invoice remains
 UNKNOWN. This is not Jev/System One, promotion, held-out quality, D-39 or whole
-K09.362 scratch work is not assessed by this storage/docs record. All original26
+K09.362 scratch work was not assessed by that storage/docs record. All original26
 K09 checklist predicates/unchecked boxes and other checkpoints remain unchanged;
 no new version/tag/push/publication follows.
+
+<a id="k09-completed-calibration-369"></a>
+
+### Three-case text-schema calibration accepted 2026-10-21 — canonical0/3
+
+Astra369 independently issued **ACCEPTED / SCOPED_COMPLETED_THREE_CASE_DATA_PACKET**
+for completed367, including368's billing qualification and369-Q1..Q4. No blocking
+completed-data finding, mandatory offline remediation or unresolved oracle remains.
+This accepts faithful negative data, not the model, advice or whole K09. Acceptance
+release SHA256 is `bd835a9fa5c854d59175f260e7b58913d4a921123c954ac36d11363b54c72044`;
+the original364 tuple is
+`4130431756c0d21db79217aaf2b1b41e7bf0f87d5e52ae11e20ae9a3052612ec`.
+The offline360 repair and361 save above remain accepted. After365 control,366
+admitted the exact executor/domain; that single-use approval was consumed by367.
+
+One evaluator-only calibration sent and terminal-settled002/003/001 once each,
+concurrency1, reusing retained354 DeepSeek answers. Zero new subjects, retries,
+format repairs, tools, feedback or held-out cases. Actual route was
+`polza/openai/gpt-4o-mini-2024-07-18/core.chat`, reasoning off/max_tokens2048,
+observe/core.record-only. Complete instructions, actual issued IDs, eighteen source
+bodies and full C1 text schema reached the ordinary EngineSession/model-service/
+SDK/parser path without extra grader sections. No `response_format` or API-constrained
+generation was enabled or proved; admitted text-schema mode is not a failed API gate.
+
+**JSON3/3; full declared structure1/3; contextual validity0/1 structurally eligible;
+ordinary valid completed canonical0/3.** All canonical outcomes are
+failed/insufficient/undetermined/invalid, not valid model abstentions. Accepted
+findings0; precision0/0 remains null. Canonical violation detection0/1 and useful
+conflict-limited outcome0/1 are separate from raw diagnosis and blocked effects:
+
+- **002** recognizes the unsuperseded mode violation, but has inconsistent structure
+  and shortened references; its critical severity is not independently calibrated.
+- **003** passes structure but shortens issued IDs, restores mode contrary to the
+  authorized JSON-only amendment, and proposes a nonserializable-value correction
+  whose applicability is unestablished. The accepted label/domain caveat stands;
+  neither universal JSON-input restrictions nor all-JavaScript-values duties follow.
+- **001** invents precedence in an equal-authority conflict, fails structure and has
+  no finding/correction object. None is invented by this record.
+
+Actual action dispatches0 does not prove safe/useful proposals. Historical354
+canonical0/3 remains unchanged; no usable canonical improvement was observed.
+Three correlated group001 calibration siblings establish no held-out, broad,
+statistical or causal comparison, including attribution to the evaluator alone.
+
+Native reported new **RUB0.280518690** + historical0.158343590 = cumulative
+**RUB0.438862280** under originalRUB20. All three draws are below accepted per-draw
+reservesRUB3.395964580, with no new unsettled liability in the recorded domain.
+Separate originalUSD3 is unchanged: newUSD draws0, historical conservative upper
+USD0.003199800, exact Ollama debit/invoice **UNKNOWN**. No pooling, FX, reset,
+supersededUSD1 addition or free-service inference; remainder is not balance/authority.
+
+Native charges exceed token×retained-catalog products by total **RUB0.00013613574**;
+cause **UNKNOWN**, not explained as rounding, fee, FX, tokenizer or rate change.
+Native charges govern this completed spending report. O1 engine-calculation
+observations are distinct alternatives: neither native receipts, exact saved-rate
+products nor an invoice, and not additive charges.369-Q1/Q2 are nonblocking
+completed-data qualifications, **not future tariff safety/reuse or spending approval**.
+Neither the consumed approval nor ledger `closed:null` permits another draw.
+
+Normal native waits/pipes/Jobs drained; finite closed-O1/body scans and reused safe
+key hygiene support only their scoped evidence (369-Q4), not universal privacy,
+sandboxing, hidden reasoning, remote cancellation, invoice finality or provider-build
+proof. Private raw evidence and historical failed observers stay private/unchanged.
+Frozen K09v1, corpus/labels/splits/holdout and original answers remain untouched.
+No product tests/builds were rerun for this factual save. GPT-4o-mini/core.chat is
+not Jev/System One; a chat-model rename cannot establish a different typed route.
+All original26 K09 predicates remain unchanged. The remaining sample/holdout,
+clean-reviewer/T06, model/advice promotion, D-39 and whole K09 remain open; no new
+experiment, version/tag/push/publication or instruction change follows.
 
 | Gate input | Required reference |
 |---|---|
