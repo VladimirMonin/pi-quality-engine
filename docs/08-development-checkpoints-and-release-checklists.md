@@ -1334,7 +1334,7 @@ separate authorized maintenance **after actual acceptance**.
 
 <a id="k09-typed-save-382"></a>
 
-### Scoped typed acceptance378/381 and local save382 — live results still NOT_RUN
+### Scoped typed acceptance378/381 and local save382 — historical pre-execution save
 
 The preceding375–377 states are historical to that packet.378 independently
 accepted the exact offline product/profile/public-SDK/extracted-tar mechanics and
@@ -1387,6 +1387,88 @@ actual effect or billing was observed382. Historical354/367 canonical0/3,369
 negative-data scope,003 amendment/domain caveat, all26 original K09 predicates,
 independent labels/split/holdout, K01–K08/0.6.0 and advice/feedback/D-39 remain.
 No automatic recommendation authority or whole-K09 acceptance is implied.
+
+<a id="k09-typed-live-383"></a>
+
+### Real typed calibration383 — positive development smoke, scoped acceptance385
+
+The original381-approved379 entry actually ran once,002→003→001, using the original
+239995B tar/engine, not382's later EOL-qualified tar. The immutable tuple remains
+`12d8df07155947246b8fcbbe6f7eb4d6ac9ef6b8bc07ac7f1eff6a771fd17b22`.
+All126 operational bindings and approval bytes remain unchanged. The operational
+campaign/runtime-environment and initial approval are now **consumed**: never
+delete/reset/rename/reinvoke them or regenerate/reseal the packet. The completed
+ledger, not the old unchanged pre-run prior, is the next real liability lineage.
+
+383 supplied actual results and analysis;384 controlled the finished data and
+current-doc delta. **Astra385 independently accepted the actual data/current-doc
+composite and the original finite observe-only usable-assessor technical increment.**
+This is not another source acceptance, new live execution or whole-K09 promotion.
+Product58823a1, accepted docs863fbaa and maintenanceb3b7426 commits are unchanged;
+386 saves the accepted two-document delta with this minimal status synchronization.
+
+|Case|Observed ordinary result|Requirement-based control interpretation|
+|---|---|---|
+|002|quality concern; completed/complete/findings/valid; one suspected/concern|Correct bounded suspicion of the genuine unamended violation. References/explanation are adapter-supplied scope, not Jev-authored citations, line proof or a supported diagnosis; no correction.|
+|003|not-established; completed/complete/no-supported-finding/valid|No resurrection of superseded text behavior or categorical R2 repair. Undefined/nonserializable-domain applicability remains unestablished: neither a universal JS-values obligation nor a new JSON-only input precondition. This caveat is control analysis, not reasoning inferred from a finite choice or universal compliance.|
+|001|conflict; completed/complete/conflicting-requirements/valid|Equal-authority conflict stays unresolved, without invented precedence or mode prescription.|
+
+Exactly3 reserved/sent/terminal/native-reported settlements; typed3/3 and ordinary
+completed canonical/contextual validity3/3. All three bounded smoke distinctions
+were independently accepted385; positive concern routing1/1, near-miss false concern0/1,
+conflict disposition1/1. They are three correlated group-001 calibration siblings,
+not independent/held-out accuracy. Supported categorical findings0; precision
+**0/0=null**, never100%. Chosen probabilities and native confidence remain distinct,
+uncalibrated quantities, not permission. Actual effects0, observe/core.record-only;
+no new subjects/tools/retries/repair/feedback or route switch. All selected quality
+instructions, questions and six retained bodies per case reached actual SDK/native
+requests. HTTP200 and typed data qualify this selected endpoint/request only;
+native response model identity and provider weights/build revision remain UNKNOWN.
+
+The exact selected route was polza/typesafe/jev, classifier/typesafe-system-one,
+`https://api.polza.ai/api/v1/systemone`, one quality-decision-v1 question and
+criterion task.instructions. SDK inputs7738/7957/7890B and native wire7761/7980/7913B
+were separately measured below32768B. The1MiB response cap was active, but exact
+response-byte counts were not persisted. Retained414213B/58 explicit files and
+per-case135705/135189/135052B fit3MiB/1MiB limits; pre-write/no-refund partitions
+remain active. Trusted operator25768/0, outer11772/0 and workers29396/30588/17080
+all returned waits/pipes; native Jobs drained, three independent final case-end
+ACKs observed, no watchdog/unproved completion. Original10s cleanup used51/49/50ms;
+campaign5222ms. Local drainage is not remote cancellation or a universal sandbox.
+
+New native reported RUB0.154354520 plus history0.438862280 gives
+**cumulative RUB0.593216800**. Three5-RUB quotes were replaced, not added; new
+unknown transport/charge exposure0. Native tokens8918/156 are distinct from
+SDK-normalized counts and the engine's three explicit UNKNOWN-price observations;
+placeholder catalog0 is not free service. Reports are not invoice finality or an
+inferred tariff. Separate cumulative USD3/RUB100 persists, not renewed/pooled/FX-
+converted; no new USD draw, historical USD upper0.003199800/exact Ollama debit/invoice
+UNKNOWN. Remaining-ceiling arithmetic is neither account balance nor dispatch
+permission. Increment375 count is now3/9;381 covered only this consumed initial
+entry, not another batch or future tuples.
+
+Real successor lineage is the completed campaign state4822B, SHA256
+`6c26e02122456d4297cedf73c10a66a29386aeb4a2ef2cb9eaabc011a103b74a`,
+mode APPROVED_NATIVE, cumulative593216800/new154354520 nanorubles and count3.
+Any separately justified later study must import that actual exposure/count,
+never synthetic379 costs or a reset to the original input prior. Private383/384
+packets bind the raw witnesses and document digests; no raw answers/source bodies
+are published here. Control rehashes49 explicit campaign bodies and checks9
+credential/HOME entries stat-only, without reacquiring keys. Finite retired O1/key
+scan receipts retain their positive controls and limited scope;376 excluded-path/
+backend-visibility qualification and331 uncertainty remain unexonerated.
+
+The original usable-assessor increment now has the ordinary truthful typed path,
+a separate explicit quality profile, accepted local/public-SDK/isolated packaged
+mechanics, completed local saving and a real positive observe-only calibration
+with analysis.385 accepted this scoped technical outcome;386 completes the
+remaining authorized local documentation save. No mandatory technical repair or
+further initial-smoke trial remains. Broader held-out promotion,
+clean-reviewer/T06, image/domain-honesty coverage, advice inclusion/productivity,
+feedback/D-39 and whole K09 remain separate unproved roadmap obligations. Preserve
+historical354/367 canonical0/3,369 negative-data acceptance,003's caveat and all26
+original predicates. This is not a causal ablation against GPT-4o-mini/chat or
+permission for automatic recommendations, another draw, version/tag or publication.
 
 | Gate input | Required reference |
 |---|---|

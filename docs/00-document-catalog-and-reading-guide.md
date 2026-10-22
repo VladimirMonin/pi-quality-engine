@@ -53,16 +53,23 @@ has scoped independent offline product/profile and canonical-doc acceptance378.
 The corrected finite entry was separately accepted381; the accepted logical delta
 and its actual index/build/extracted-package representation were locally saved382.
 The linked record distinguishes the original accepted tar from the later qualified
-pack and records the immutable initial entry/approval. Actual Jev inference,
-held-out promotion, feedback/D-39, whole K09 and v0.7.0 remain unaccepted.
+pack. The [real typed calibration383 and control384](08-development-checkpoints-and-release-checklists.md#k09-typed-live-383)
+now records a completed positive observe-only development smoke: one actual
+002/003/001 batch, typed and completed canonical validity3/3, concern/scoped-negative/
+conflict triage and effects0. These are correlated calibration siblings, not held-out
+accuracy or supported-finding precision (0/0=null). Astra385 independently accepted
+the actual-data/current-doc composite and the original finite observe-only
+usable-assessor technical increment. Whole K09, automatic advice/feedback/D-39
+and v0.7.0 remain unaccepted.
 
-The direct375 USD3/RUB100 cumulative grant is separate from the old consumed
-approval. A separately assigned protected-key operator may execute the exact381
-initial002/003/001 operation after final save readback; this save dispatches nobody.
-The separate earlier USD1 billable-input pilot remains blocked, not pooled.
-Polza/Jev is offline-qualified only; OpenRouter/Jev and local d3-mini remain
-separate unverified routes. No push/publication, working-Pi installation or
-spending reset follows. Current role defaults are in
+The exact381 initial approval and operational roots are consumed, not reusable.
+Standing375 separate cumulative USD3/RUB100 is not renewed; any later justified
+study must retain the actual completed ledger/count, not the old input prior or
+synthetic costs. This control dispatches nobody. The separate earlier USD1
+billable-input pilot remains blocked, not pooled. The selected Polza typed endpoint
+accepted the actual bounded requests; native response model/build identity remains
+UNKNOWN. OpenRouter/Jev and local d3-mini remain separate unverified routes.
+No push/publication, working-Pi installation or spending reset follows. Current role defaults are in
 [WORKFLOW](../Инструкции/WORKFLOW.orchestration.instructions.md).
 
 <a id="first-reading"></a>
