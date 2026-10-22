@@ -1235,7 +1235,102 @@ No product tests/builds were rerun for this factual save. GPT-4o-mini/core.chat 
 not Jev/System One; a chat-model rename cannot establish a different typed route.
 All original26 K09 predicates remain unchanged. The remaining sample/holdout,
 clean-reviewer/T06, model/advice promotion, D-39 and whole K09 remain open; no new
-experiment, version/tag/push/publication or instruction change follows.
+experiment, version/tag/push/publication or instruction change follows **from that369/370 save**. The later direct375 authority and current candidate are separate below.
+
+<a id="k09-typed-assessor-376"></a>
+
+### Usable typed-assessor increment375–377 — control-ready, independent acceptance pending
+
+The direct375 order separately authorizes the connected typed repair/profile,
+necessary docs/local saves and bounded real trials through analysis. It is not a
+renewal of consumed364/366 approval.375's advisory analysis was proposed, not an
+implementation or acceptance.376 supplies the implementation;377 consolidates the
+canonical contracts and independently controls its finite boundaries. **SAME Astra
+acceptance and every live result dimension remain pending/NOT_RUN.**
+
+| State | Actual evidence and limit |
+|---|---|
+| Proposed |375 source-grounded Slice A/profile/plan delta; no tests or real inference in that analysis. |
+| Implemented/offline qualified |376 exact22-path connected candidate: prepared typed content/measurement, strict answers and bounded extensions, separate quality-decision evaluator/resources/example, chat protocol/rejection clarification. No production test mode or second budget/scheduler service. |
+| Independently controlled |377 verifies22 source pins,126 entry bindings, raw index and all68 tar payloads. Fresh34 typed+7 public-SDK cases and12 finance tests pass; independent unresolved-completion discriminator retains the original case deadline, closes admission and drains an expected inner124. These are overlapping offline controls, not semantic samples. |
+| Independently accepted | **PENDING SAME Astra**; control-ready is not acceptance, genuine pre-run approval, saved/committed-artifact qualification or permission for this control session to dispatch. |
+| Live measured | **NOT_RUN**: typed/protocol, canonical, contextual/reference, semantic/advice, actual effects, timing and billing. |
+
+The tested working candidate starts from local HEAD
+`f5c007f7215cb8463d12fd74d2f763cb5adc6d5a`, package0.6.0; it is not yet a
+new commit/release. Raw index11845B SHA256
+`dea56aedec6ed9e85605abb3bbd06fe12a3b1b14af7d0ef2915cb0f146ee0963`
+remains unchanged/unstaged. Exact final tar239995B,68 payloads/50 compiled emissions,
+SHA256 `312506e4a295d581999951ee618690035250d78640db1d8285cbfd98a4ab2324`.
+Fresh entry tuple
+`631631321b08a740067d6d57f2ed0693fd0ea314009f365381e4877b5a107d07`;
+pre-run32027B SHA256
+`ef3db42d61b790bd6105777d31e5c7c4ad92fcea8c10bf2a6626ea105a948f4e`.
+Private named packets `qe-k09-typed-assessor-376-sol` and
+`qe-k09-typed-control-377-sol` bind source, reports, docs and custody; their paths
+are evidence locators, not published source payloads.
+
+376 retains34 new/108 affected/7 public-SDK/9 native delivery-reason cases and one
+real extracted-tar typed witness with existing pinned public peers (not fresh
+installation or `test:package`). Common host26 is separate. The combined existing
+installed wrapper exited1:38 role cases passed, while cap provisioning failed
+before requests. Corrected public-peer fixture gives13 cap/reasoning cases with
+unchanged production assertions; do not relabel the original wrapper PASS.
+Nine final controlled entry scenarios include an actual ignored-abort inner124,
+unknown exposure and physical Jobs/waits/pipes drainage; this is not remote
+cancellation or a live answer. Original REDs/setup failures remain retained.
+
+Canonical owners: [C1 typed input/mappings](02-component-contracts-and-configuration.md#section-10),
+[C1 limits/example](02-component-contracts-and-configuration.md#section-13),
+[O1 measurements/provenance](03-observability-and-data-policy.md#section-8),
+[actual implementation owners](05-implementation-map-and-dependency-rules.md#section-10)
+and [P-05 changed-path proof](06-implementation-handoff-and-integration-probes.md#section-10).
+The quality mapping supplies bounded suspicion/scoped-negative/conflict/limitation,
+not classifier-generated rationale, line proof, correction or continuation authority.
+Text schema remains distinct from API-enforced generation.
+
+**Finite staged operation:** after genuine new candidate-bound Astra approval and
+separately assigned protected credential custody, initial002→003→001 once,
+concurrency1, one question/criterion, `polza/typesafe/jev`,
+classifier/`typesafe-system-one`, observe/`core.record-only`. Retained18 permitted
+bodies/subjects only; no tools, new subjects, retries, repairs, regeneration,
+feedback or held-out tuning. SDK-context and actual native JSON each≤32768B;
+response≤1MiB; pre-write retained≤1MiB/case and3MiB batch; request30s,
+case work100s/outer115s, campaign360s/outer420s, one absolute cleanup10s.
+ACK/Job custody and earlier deadlines remain binding. Unknown physical completion
+closes new admission; root exit alone is insufficient.
+
+Separate cumulative grants remain **USD3/RUB100** (100 replaces20, not additive;
+oldUSD1 is not added). Import known RUB0.438862280 and historical USD conservative
+upper0.003199800/invoice UNKNOWN, reconciling any subsequently **named** attempts
+before dispatch, never a private/account census. Missing terminal native metering
+books RUB5/draw; three estimates plus known subtotal=15.438862280 exposure arithmetic,
+not a balance, invoice, tariff or hard-charge guarantee. Native reports replace
+estimates; contradictory native usage/cost closes admission. Unresolved transport
+retains booked exposure and closes the batch. Initial3 plus at most two concretely
+repaired≤3 batches is nine reserved/possibly-sent draws total, never a reset per
+revision. Later revisions import actual latest prior exposure/count and require
+new candidate-bound review, not favourable-answer sampling or automatic retry.
+
+The frozen376 pre-run/reports remain immutable.377's authorized canonical-doc edits
+are separately bound documentation-only guard drift, not altered engine/resources,
+request assets, tariff policy or qualification. A later save/repack is a separate
+representation to qualify; do not execute/reseal the historical packet or invent
+an original all-guards-unchanged claim.
+
+Author376 disclosed one overbroad change-impact query returning excluded path
+names; no receipt body/hash was returned or followed up, but internal backend
+acquisition visibility is unestablished. Preserve that caveat and historical331
+uncertainty. Finite privacy/key/O1 scans do not establish a universal sandbox,
+all-private-data safety, provider build identity or invoice finality.
+
+Historical354/367 canonical0/3,369 negative-data acceptance, case003's authorized
+amendment/domain caveat, K08 accepted342/released344, all26 K09 predicates,
+held-out/numerical promotion, clean-reviewer/T06, advice/feedback/D-39 and whole K09
+remain unchanged/open. Desired concern/not-established/conflict is development
+triage, not promotion. No v0.7.0, push/publication, working-Pi deployment or automatic
+feedback follows this control. Necessary instruction synchronization belongs to
+separate authorized maintenance **after actual acceptance**.
 
 | Gate input | Required reference |
 |---|---|

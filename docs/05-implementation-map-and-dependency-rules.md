@@ -631,7 +631,7 @@ Runtime image handles can exist entirely in memory. Diagnostic image capture is 
 
 ### 10.1 Separate an evaluator definition from the service that spends 💳
 
-`builtins/evaluators.ts` defines how `core.repeated-tools`, `core.classifier`, `core.chat`, and `core.pi-session` interpret their inputs. `evaluation.ts` supplies the shared ownership boundary represented by C1 `EvaluationServices`. `adapters/pi-models.ts` implements the actual approved Pi dispatch and native result mapping.
+`src/builtins/evaluators.ts` defines `core.repeated-tools`, `core.classifier`, separate `core.quality-decision`, `core.chat` and `core.pi-session` interpretation. The actual shared request/accounting owner is `ModelService` in `src/models.ts`, exposed through run-bound model/review facets in `src/runtime.ts`, not the earlier proposed `evaluation.ts`. `src/adapters/pi-models.ts` implements approved public Pi dispatch and native normalization; `src/registry.ts` owns definition/options/extension-schema admission.
 
 This separation is intentionally narrow. It exists because profile authorization, request identity, limits, input manifests, and usage must apply to every owned call. It is not a replacement provider SDK.
 
@@ -643,7 +643,7 @@ The proposed call direction is:
 
 ```text
 runtime invokes registered EvaluatorDefinition.evaluate()
-    ├─ core.classifier / core.chat → EvaluationServices.request()
+    ├─ core.classifier / core.quality-decision / core.chat → EvaluationServices.request()
     │                                  → approved Pi model adapter
     └─ core.pi-session            → EvaluationServices.review()
                                        → concrete fresh-session runner
@@ -657,13 +657,15 @@ The composition root wires this relationship with explicit functions. There is n
 
 The pinned Pi model guide exposes typed classifier calls through `ctx.modelRegistry.classify()`. These take state and question definitions; they do not behave like arbitrary chat completions.[^pi-models]
 
-C1's prompt resource can contain instructions, typed questions, and a result schema. The classifier adapter uses a declared revisioned mapping such as `progress-v1`; it does not guess that an arbitrary class label corresponds to a supported engineering finding. A chat evaluator validates the configured structured response rather than extracting the first JSON-looking substring from prose.
+`models.ts` prepares the copied/frozen complete typed `{state,questions}` before admission, serializing actual selected instructions, ordered text/JSON content, identities/provenance, coverage and criteria. Complete bytes/digest and the approximate byte/4 estimate govern input limits; runtime binds the selected profile/mapping/resources to that prepared representation. It is not a second scheduler or provider SDK. Images reject; the unsent generative schema is not classifier input.
+
+The fixed `progress-v1` and separate `quality-decision-v1` evaluator interpretations validate compatible questions and normalized answers rather than guessing arbitrary labels into engineering severity. Probability distributions, distinct native confidence and optional unfinished probability are retained in bounded declared extensions; no line proof, correction or wake authority is fabricated. A chat evaluator validates the configured structured response rather than extracting the first JSON-looking substring from prose. Exact mappings and limits belong to C1 §§10–13.
 
 The native adapter must follow verified host types for the route. It must not enable speculative compatibility flags because an endpoint advertises an OpenAI-like API. Unsupported reasoning or image input is an explicit preflight error, not an unreported downgrade.
 
 ### 10.4 Validation belongs at one outer assessment boundary 🧾
 
-`evaluation.ts` validates the canonical result after the registered evaluator returns. Provider-specific mapping can validate its own raw response earlier, but the same final C1 consistency rules apply to built-ins and contributions.
+`EngineSession.#validateAssessment()` in `src/runtime.ts` validates the canonical result after the registered evaluator returns and at reviewer submission. `src/registry.ts` copies/compiles result-extension declarations; runtime validates/copies/freezes their bounded values before policy use. Provider-specific question/answer validation occurs earlier, but the same full shared C1 schema and contextual rules apply to built-ins and contributions. Safe fixed rejection categories supplement the stable outer invalid-result code, including through the reviewer's local FAILED envelope; bodies never become ordinary O1 fields.
 
 The boundary checks operational outcome, coverage/conclusion consistency, allowed criteria, score ranges and meaning, valid evidence references, additional-evidence provenance, and allowed result extensions. `Finding.status` remains `suspected` or `supported`; M1 does not introduce `confirmed`, `approved`, or `proven` as substitute public states.
 
@@ -673,7 +675,9 @@ Schema validation occurs at the boundary that can act on the data. It must not r
 
 ### 10.5 One retry owner and one observable attempt boundary 🔢
 
-The model service admits the approved profile, constructs the prepared input, reserves capacity and budget, identifies the attempt, records dispatch, and reconciles the response. An explicitly enabled format repair is another billed attempt. Its purpose is to repair structure, not to fabricate missing evidence or choose another provider.
+The model service admits the approved profile and complete prepared input, reserves capacity/budget, identifies the attempt, records dispatch and reconciles the response. Classification has no generative output allowance: operational0 means not applicable. The public adapter passes signal/timeout/maxRetries0 and bounds response bytes; question count does not multiply one invocation's usage. Unknown price stays unknown despite SDK placeholder zeros. Chat's generative cap is separate.
+
+A supported explicit format repair is another billed attempt, not new evidence or another route. Classifier repair1 is rejected; chat repair does not cover every parseable invalid C1 object.
 
 Owned reviewer SDK retries are disabled by default under C1, so an outer retry policy does not multiply hidden inner retries. Where a provider or SDK retry remains unobservable, the attempt record identifies the observable group and marks coverage partial. That limitation cannot be repaired by inventing a per-HTTP-attempt count.
 

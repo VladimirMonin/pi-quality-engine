@@ -617,7 +617,7 @@ Preflight the exact provider/model profile, required inputs, supported reasoning
 
 Next, admit a valid request and record the attempt before dispatch. Return a malformed assessment while still reporting usage. The result is a failed assessment with an owned billable/estimated attempt, not a free failure or a valid empty review.
 
-Use the ordinary `maxAttempts` and `repairAttempts` fields for explicit retry and repair cases. Their defaults remain one dispatch attempt and zero format repairs. A repair is another owned request and must not create missing evidence or switch to a different route. Retry behavior must have one owner; an SDK retry path that cannot be disabled or observed is a limitation to report, not a count to invent.
+Use the ordinary `maxAttempts` and supported `repairAttempts` fields for explicit retry/repair cases. Defaults remain one dispatch attempt and zero format repairs. Classifier repair1 is explicitly rejected; chat's optional repair does not repair every parseable C1-invalid object. A supported repair is another owned request and must not create missing evidence or switch routes. Retry behavior must have one owner; an SDK retry path that cannot be disabled or observed is a limitation to report, not a count to invent.
 
 ### 10.4 Canonical result cases 📐
 
@@ -644,6 +644,18 @@ The test should compute expected decimal amounts independently from the producti
 For duplicate-event protection, deliver the same terminal identity through supported repeated observation paths and ensure the ledger has one recognized contribution. Streaming deltas, a final event, a completed-review total, and a later transcript scan cannot each charge the same request. Replacing a reviewer generation must not reset session-wide owned totals.
 
 OMP's `AdvisorUsageLedger` is a useful source for finalized-message ownership and coverage reporting. Its comments also state that SDK/provider-internal retries and unreported usage are not observable. Those limitations must remain visible in our adapter rather than disappear behind a “complete” label.[^omp-usage]
+
+#### Typed-assessor changed-path evidence (376/377)
+
+For the [current typed increment](08-development-checkpoints-and-release-checklists.md#k09-typed-assessor-376), distinguish these finite assertions:
+
+- Actual instructions and admitted text/JSON content reach the public typed boundary with literal IDs, roles, coverage and selected provenance; source availability is not input inclusion.
+- Complete state/questions byte measurement and digest precede admission; overflow and post-intent mutation cannot enlarge dispatched input.
+- Compatible progress/quality questions, missing/unknown answers, complete probability vectors, distinct confidence, unfinished/not-asked and declared extension retention are exercised through ordinary runtime settlement/policy input.
+- Classifier output allowance0 means inapplicable, not an enforced server cap. Verify real positive input capacity, signal/timeout, retries0, bounded response and owned late usage independently of chat's unchanged output-cap proof.
+- Direct and genuine reviewer rejection retain safe categories through retirement; physical O1 scans exclude extension/source/model bodies.
+
+Author376's exact candidate reports34 new typed,108 affected,7 public-SDK and9 native delivery/reason cases. Control377 freshly repeats34+7 and the twelve finance tests, plus an independent original-case-deadline/unresolved-completion discriminator. These overlapping scopes are not additive semantic samples or a whole-baseline rerun. Reused author qualification covers nine finite entry scenarios including malformed responses, size overflow, unknown metering and ignored abort. All live usefulness/result cells remain NOT_RUN pending independent acceptance and assigned execution.
 
 ### 10.6 A live smoke validates visibility, not pricing marketing 🛰️
 
@@ -991,6 +1003,8 @@ A live smoke is a small authorized experiment: one direct request and one bounde
 Profile usefulness remains a D1 section 20 study using frozen prompt/context/model/policy revisions, real near-misses, and a separate holdout. Do not call a scripted finding “model accuracy.” Do not optimize the prompt against every holdout example and retain the old holdout label.
 
 P-10 can pass the mechanical installed path while a live route remains blocked. The final decision then describes an internal or observation-only scope rather than claiming a validated automatic engineering reviewer. Mandatory release claims cannot be waived by labeling their unexecuted tests optional.
+
+The376 typed installed witness uses one actual extracted68-payload tar and existing pinned public1.1.0 peers outside the source package, through ordinary EngineSession/ModelService/public classifier dispatch. It checks SDK/wire identities, record-only/no effects and retirement. It is **not** fresh dependency resolution, the dependency-acquiring `test:package` wrapper, real Jev inference, complete P-10 or whole-K09 acceptance. Control377 compares every tar payload byte-for-byte with the frozen entry engine without reinstalling it. Exact artifact and entry identities are in the linked K09 increment; there is no claimed implemented `test:live` command.
 
 ### 15.6 Final artifacts and rerun rule 🔖
 

@@ -592,6 +592,8 @@ Input accounting includes evaluator instructions, selected source material, task
 
 The manifest distinguishes its named estimator from provider-reported request usage. An adapter that sees the SDK-level request but not exact transport bytes records `boundary: sdk-input`. It may still receive exact provider token usage at settlement, but must not call its earlier byte measurement a wire measurement.
 
+For typed classification, the prepared complete `{state,questions}` has nonzero SDK-input bytes/digest and an explicit approximate `ceil(bytes/4)` estimate (`utf8-bytes-div-4@engine-1`). Its manifest identifies actual included instructions, ordered admitted text/JSON items and the question resource; the unsent generative result schema is not marked included. This copied/frozen representation is measured before admission. System One's bool→noul conversion and added native framing are separate SDK-specific wire facts, not hidden-provider-token visibility.
+
 Caching does not remove the cached material from the logical input. A cache hit can change billing categories while the manifest continues to identify all input resources supplied logically to that request.
 
 ### 8.5 Additional reviewer reads extend evidence, not authority 🔍
@@ -709,7 +711,9 @@ Unsupported effect classification is `unknown`. The logger must not use an uncer
 | `retryVisibility` | `attempt-level`, `dispatch-group-only`, or `unknown`. |
 | `priceBasisRef` | Rate basis captured before dispatch, or null. |
 | `reservationRef` | Functional budget admission record, or null when no monetary reservation is possible. |
-| `requestTimeoutMs` / `maxOutputTokens` | Actual admitted limits, not global configured defaults copied blindly. |
+| `requestTimeoutMs` / `maxOutputTokens` | Actual admitted timeout and generative output limit. Classifier output metadata0 means not applicable, not a server-enforced zero-generation ceiling. |
+| `operationKind` / `classifierQuestionCount` / `outputTokenLimitApplicable` | Closed optional metadata distinguishing operation and question batch from generative output capacity. |
+| `inputManifestRef` / `inputSerializedDigest` | Closed optional owned prepared-input identity/digest where supplied; no content body. |
 | `reasoningSetting` | Supported route setting actually applied, or null. |
 | `accountingOwner` | `engine`; external executor operations are not represented as owned dispatches. |
 
@@ -723,6 +727,8 @@ The engine records first-observed-output latency and overall duration where it c
 
 Cancellation has two meanings: the engine can revoke result authority immediately, while remote execution may still continue. A late response can reconcile usage without making the old finding actionable.
 
+The typed adapter passes the actual signal, `timeoutMs` and `maxRetries: 0`, with no unsupported `maxTokens`, and bounds its response stream to1MiB while preserving the public SDK serializer/parser. Usage received before answer rejection remains owned. Local timeout/revocation does not erase a late receipt or establish remote cancellation.
+
 ### 10.3 Clean-session lifecycle is observable without a second transcript 🧾
 
 A reviewer-start record identifies the explicit model profile, resource isolation, available tool references, input manifest, and limits. Every observable reviewer model call gets an owned attempt record, and investigative tool attempts use section 9.
@@ -733,7 +739,7 @@ The SDK supports explicit independent session/resources, and the OMP donor demon
 
 ### 10.4 Maintenance and repair requests are not free hidden work 💸
 
-C1's built-in Pi reviewer disables automatic compaction and SDK retries by default. A configured format repair is an additional request within the same limits. If a contributed evaluator enables maintenance, reranking, model-assisted summarization, or another owned call, it must report it through the same model service and attempt ledger.
+C1's built-in Pi reviewer disables automatic compaction and SDK retries by default. A supported configured format repair is an additional request within the same limits. Typed classifiers reject repair1; chat's optional repair is not general repair of every parseable C1-invalid object. If a contributed evaluator enables maintenance, reranking, model-assisted summarization, or another owned call, it must report it through the same model service and attempt ledger.
 
 When a host or provider performs unobservable retries, the engine records a dispatch group with partial attempt visibility. It must not synthesize HTTP attempts from elapsed time or claim complete accounting from the number of assistant messages alone. The OMP usage ledger explicitly distinguishes agent turns from HTTP retries; this limitation is useful, but its particular accumulation format is not adopted as O1's ledger.[^omp-usage]
 
@@ -754,6 +760,8 @@ A successful schema validation records `operational`, `conclusion`, `coverage`, 
 The projection excludes explanation, correction prose, limitations text, free-form scope descriptions, and arbitrary extension values. Those fields are functional model/result content. Source-sensitive information is not safe simply because the evaluator wrote it in its own words.
 
 Scores retain `kind`, `value`, `minimum`, `maximum`, criterion ID, calibration reference, and an interpretation-resource reference. The numeric fields are validated, while the free-form interpretation text is represented by a resource reference. A self-reported confidence value is not relabeled calibrated probability.
+
+`core.invalid-evaluation-result` remains the stable outer failure. Safe supplemental categories are `core.assessment.{parse,non-object,structure,consistency,reference,criterion,score,typed-answer,transport,cancelled,extension}`. Descriptor-safe shared validation classifies bounded consistency failures before the unchanged full shared schema; direct and reviewer submissions use the same outer validator. The reviewer's local FAILED envelope retains the category through existing reason codes. Unknown references/keys, arbitrary extensions, model/source prose and exception bodies are not diagnostic payloads. Completed/undetermined is a legitimate limitation; a local FAILED envelope is not model abstention.
 
 ### 11.2 Policy decisions explain both intervention and restraint 🚦
 
@@ -865,6 +873,8 @@ A context provider's token estimator supports input budgeting. It does not obser
 
 The request-level estimate is based on the assembled representation. Provider-reported usage, when available, remains a separate value. A request that has no provider usage is not silently replaced by the file-token estimate in a column labeled actual.
 
+One classifier call owns its question batch once; `classifierQuestionCount` is not a multiplier for aggregate token usage or cost. The SDK may pad absent/invalid usage counts with0 and calculate catalog cost: these remain SDK-normalized observations, not native counters, proven zero debit or invoice settlement. A profile explicitly set to `price: unknown` remains unknown even when SDK catalog placeholders are zero. Typed probabilities and separate native confidence likewise retain their distinct uncalibrated meanings.
+
 A deterministic check has no model attempt. Its runtime cost can be described as local processing, but token fields are not a fabricated all-zero provider receipt.
 
 ### 12.5 Cost calculation and immutable rate context 🧾
@@ -880,6 +890,8 @@ Provider-reported amounts and engine-calculated estimates may both be retained a
 An absent tariff is unknown. An SDK-provided zero can mean missing price metadata. A calculated zero is valid only when the applicable basis establishes zero charges for all relevant categories; it is not inferred from a missing usage object.
 
 A partial amount is a **known subtotal**, not an exact total. The UI always states how many attempts or charge components remain unresolved. Currency totals are grouped. A USD cap cannot be honestly enforced against an unrelated-currency amount without an explicitly approved conversion basis; C1 does not define automatic FX conversion.
+
+A native response `usage.cost_rub`, when actually observed by an external campaign owner, is a separate native-reported RUB observation. It replaces that draw's booked estimate rather than adding to it; it is not an O1 calculated USD amount, automatic FX or invoice proof. Missing metering after physically completed response EOF differs from unresolved transport/custody: an explicitly authorized campaign estimate may remain booked in the former; the latter closes new admission and retains exposure. Neither local drainage nor absent metering proves remote cancellation or free service.
 
 The session can expose known USD subtotal and a separate unknown/unmatched-currency count. A monetary limit with unknown cost follows C1's `runtime.unknownCost`, not a hidden conversion or zero assumption.
 

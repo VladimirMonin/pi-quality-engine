@@ -877,7 +877,7 @@ A source revision may be a content fingerprint, immutable document revision, or 
 
 | Component | Options | Material supplied |
 |---|---|---|
-| `core.task` | `includeAmendments: true` | Current authorized task and bounded material amendments, as task material. |
+| `core.task` | No options (`{}`) | Task material established through the ordinary authorized primary boundary. No `includeAmendments` option is implemented; supply applicable authorized amendments explicitly. |
 | `core.history` | `limit: 12`, `includeToolBodies: false`, `maxBodyBytes: 16384` | Recent primary activity; optional bounded bodies require disclosure permission. |
 | `core.files` | Required `sourceIds` array | Configured original documents or evidence files. |
 | `core.changes` | `paths: ["**"]`, `includeUntracked: true`, `maxFiles: 32`, `maxBytes: 65536` | Bounded episode-relative change evidence with attribution limits. |
@@ -983,6 +983,8 @@ The kernel instructions establish the reviewer role, evidence labels, result sch
 | `builtin:progress-v1.md` | Bounded assessment of productive activity, repetition, and unfinished authorized work. |
 | `builtin:progress-v1.questions.json` | Typed progress questions for the direct classifier. |
 | `builtin:engineering-v1.md` | Independent review against task and original project documentation. |
+| `builtin:quality-decision-v1.md` | Typed quality triage instructions, distinct from progress assessment. |
+| `builtin:quality-decision-v1.questions.json` | One four-choice quality question for `core.quality-decision`. |
 | `builtin:evaluation-v1.schema.json` | Canonical result structure in section 11. |
 
 These resource IDs are requirements for the package being implemented, not files claimed to be present in any donor. A shipping implementation includes them and records their content fingerprints. User files can replace them without modifying the engine.
@@ -1040,7 +1042,11 @@ A bounded progress question set can use categories rather than one unexplained �
 }
 ```
 
-The false answer to `unfinished` is not proof of completion. Similarly, a classifier selecting `repeating` can create a suspicion or bounded template note, but cannot invent a file/line citation it never produced. Complex or consequential findings can be escalated to an independent Pi evaluator.
+The bool answer is a probability of **true**, not a boolean decision. A low probability for `unfinished` is not proof of completion. Similarly, a classifier selecting `repeating` can create a suspicion or bounded template note, but cannot invent a file/line citation it never produced. Complex or consequential findings can be escalated to an independent Pi evaluator.
+
+The implemented typed path prepares an owned, copied and frozen `{state,questions}` before managed admission. `classifier-state-v1` contains the selected instruction bodies and ordered admitted text/JSON items, literal IDs, roles, required/content facts, source/revision/selection/change provenance, coverage and criteria. Instructions reside explicitly in state; there is no classifier `systemPrompt` field. Actual image input rejects rather than becoming an unseen filename. The generative canonical `resultSchema` is not sent as classifier output instructions or reported as included.
+
+Complete serialized UTF-8 bytes and digest cover state **and** questions, including descriptions and alternatives. `ceil(bytes/4)`, method `utf8-bytes-div-4@engine-1`, is approximate input budgeting, not billable tokenization. Preparation has an internal262144-byte ceiling in addition to the selected context limits; final native wire framing is a separate boundary. Runtime binds the selected mapping/profile/resource revisions to this prepared input, so post-admission caller mutation cannot enlarge it.
 
 ### 10.5 Model and prompt changes invalidate calibration assumptions 🎚️
 
@@ -1179,7 +1185,9 @@ Unknown core fields, unsupported enum values, non-finite scores, out-of-range va
 
 `resultSchema` can refine the canonical shape but cannot remove its required operational/coverage distinctions. A specialist evaluator may return namespaced additional data in `extensions`, with each key declared by its `resultExtensions` schema; the core does not treat it as action instructions.
 
-A format failure is `core.invalid-evaluation-result`. An explicitly configured repair attempt may ask the same approved model to return valid structure once; it is a new billed attempt, has a deadline, and cannot add evidence or silently change routes. The built-in default is **no repair retry**; invalid output is visible rather than endlessly repaired.
+A format failure retains `core.invalid-evaluation-result`, with bounded static rejection categories described in O1 §11.1. Declared `resultExtensions` schemas are copied/compiled at registration; settlement validates, copies and freezes their values. At most eight namespaces and16384 retained extension bytes are admitted. Unknown/invalid/accessor or subsequently mutated declarations cannot widen admission. Functional extension content is not ordinary diagnostic content.
+
+The built-in default is **no repair retry**. Classifier evaluators reject `repairAttempts: 1` explicitly. Chat's optional single repair covers non-object/parse failure, **not every parseable C1-invalid object**; it is a new billed attempt under the same route, evidence and deadline. This option is not a general repair guarantee.
 
 ### 11.3 Model-access service and attempt receipts 💰
 
@@ -1238,13 +1246,18 @@ Where the SDK internally retries without exposing individual attempts, `attemptI
 | Evaluator | Options and defaults | Output behavior |
 |---|---|---|
 | `core.repeated-tools` | `window: 12`, `minimumRepeats: 3` | Deterministic detection of equivalent primary calls, conditioned on intervening relevant changes/results. No model profile. |
-| `core.classifier` | `maxOutputTokens: 1024`, `mapping: progress-v1`, `repairAttempts: 0` | Normalizes configured typed decisions to a scoped result. Mapping must be registered and revisioned. |
+| `core.classifier` | Omitted/default or explicit `mapping: progress-v1`, `repairAttempts: 0`; legacy numeric `maxOutputTokens` remains parseable but inapplicable | Fixed compatible progress interpretation; no generic mapping registry. |
+| `core.quality-decision` | Fixed `mapping: quality-decision-v1`, `repairAttempts: 0` | Separate one-question, one-criterion bounded quality triage. |
 | `core.chat` | `maxOutputTokens: 4096`, `repairAttempts: 0` | One structured generative evaluation through the approved model route. |
 | `core.pi-session` | Section 12 options | Fresh tool-assisted review with owned accounting and explicit resources. |
 
-`mapping: progress-v1` has a deliberately small interpretation: `progressing` or `waiting` produces no supported finding; `unclear` produces an undetermined/partial assessment; `repeating` produces a suspected `efficiency.progress` concern linked to the recent activity evidence. The `unfinished` decision is retained as a typed task-completeness signal, not treated as permission to wake or as proof of completion. Provider probabilities, when present, become explicitly labeled scores. The mapping does not fabricate line-level evidence or a numerical confidence value.
+`progress-v1` accepts the compatible four-choice `progress` question, optionally accompanied by the configured bool `unfinished`; progress-only remains valid and retains `not-asked` metadata. `progressing` or `waiting` produces no supported finding within the actual coverage; `unclear` is undetermined; `repeating` is only a suspected concern supported by actual admitted recent activity. Unrelated source text is not fabricated repetition evidence.
 
-A custom question set requires an explicit compatible mapping or a contributed evaluator. Arbitrary labels are not guessed into engineering severity by the core.
+Question/answer admission rejects empty/missing answers, wrong types, unknown choices/keys and malformed distributions. Choice probabilities cover exactly the configured alternatives, are finite in[0,1], and sum to one within1e-6. Native confidence is retained separately as a finite **uncalibrated** number, not forced equal to the selected probability. Bool retains probability-of-true. `core.progress-v1` extension data preserves revisioned choice/distribution/nativeConfidence and unfinished probability/not-asked; labeled probability scores use the check-owned criterion with `calibrationRef: null`. No WorkInterpretation, completion or continuation authority is fabricated. Generic score normalization validates the expected-index range, but neither fixed progress nor quality mapping accepts score questions.
+
+`core.quality-decision` requires one compatible `quality` choice question and one explicitly configured criterion. `concern` produces one suspected/concern whole-packet hypothesis; `not-established` is a scoped negative only with sufficient coverage; `conflict` is conflicting-requirements; `insufficient` is completed/undetermined with a limitation. Fixed explanations and bounded known scope references are labeled adapter-supplied scope, not classifier rationale or line-level proof. `proposedCorrection` is null and `affectedItems` empty. Overlarge scope refuses instead of selecting an arbitrary subset. Its declared `core.quality-decision-v1` extension retains the typed observation.
+
+Unsupported mappings/question sets fail explicitly. A different question interpretation uses a contributed evaluator, not label guessing or a generic expression language.
 
 The deterministic repeated-tool check must use actual outcomes and intervening evidence. It must not flag every repeated test or every repeated read. Its initial scope can be deliberately narrow; unsupported tool kinds produce no claim rather than speculative equivalence.
 
@@ -1336,7 +1349,7 @@ The prompt must not order the expert to justify an already decided accusation. A
 | `requestTimeoutMs` | `30000` | Per dispatched request; reviewer options can require a different user-approved profile. |
 | `maxAttempts` | `1` | Request-level attempts, including retries; SDK hidden retries must not be doubled. |
 | `retryDelayMs` | `1000` | Delay for explicit retryable failures when attempts > 1. |
-| `maxOutputTokens` | `4096` | Route ceiling; evaluator can request less. |
+| `maxOutputTokens` | `4096` | Generative-route ceiling; evaluator can request less. Legacy configuration remains valid for classifiers but supplies no classifier output cap. |
 | `price` | `host-catalog` | `host-catalog`, `unknown`, or the explicit price object below. |
 | `requiredInputs` | `[text]` | Must be supported by the actual route. |
 
@@ -1358,7 +1371,9 @@ Preflight resolves the configured route, authentication availability, supported 
 
 `core.classifier` requires typed-decision support. `core.chat` requires structured response handling or a bounded explicit schema-validation path. `core.pi-session` requires the normal session/tool contract. These are not interchangeable merely because the same vendor offers all three kinds of models.
 
-The direct classifier adapter delegates to the actual Pi classifier API; it does not require pi-jev or TypeSafe-specific extension state.[^pi-models]
+The direct classifier adapter delegates to the actual Pi classifier API; it does not require pi-jev or TypeSafe-specific extension state.[^pi-models] A classifier requires a positive finite actual `contextWindow`; its complete prepared input must fit. Operational output allowance/reservation and `maxOutputTokens` metadata are0 (not applicable), **not server-enforced zero generation**. The SDK receives state/questions, signal, `timeoutMs` and `maxRetries: 0`, not fictitious `maxTokens`. The adapter bounds the response stream to1MiB without replacing the public serializer/parser. Chat's real output cap/reasoning path remains separate.
+
+One classify invocation counts once for its question batch. Retained question count does not multiply aggregate usage into fabricated per-question invoices.
 
 ### 13.4 Accounting and request limits across clean reviewers 🧮
 
@@ -1960,6 +1975,29 @@ observability:
 The architecture and project-rule source paths must exist in the target project. A project without `docs/architecture.md` should select its actual documentation, not create a duplicate solely to satisfy this example. No numerical threshold from the example is asserted to be calibrated for these models.
 
 The final implementation context explicitly covers `src/**` and `tests/**`; it does not claim whole-repository coverage outside those paths. A project with application code elsewhere changes the scope accordingly. A missing required source or a changes cap causes an incomplete check instead of an unqualified pass.
+
+#### Separate typed quality example — implemented candidate, not live qualification
+
+The shipped [quality-decision configuration](../examples/quality-decision/config.json),
+[public registration](../examples/quality-decision/register.mjs) and
+[usage/caveats](../examples/quality-decision/README.md) provide the separate
+observe/`core.record-only` path: `core.quality-decision`, one `quality` question,
+criterion `task.instructions`, explicitly selected quality resources and
+`price: unknown` with `runtime.unknownCost: allow-with-token-limits`.
+The original target task must also enter the ordinary authorized primary boundary;
+a selected task file alone does not create that authority.
+
+The example registers `polza` / `typesafe/jev`, type `classifier`, API
+`typesafe-system-one`, text input, declared context64000 and
+`https://api.polza.ai/api/v1/` through an explicitly isolated public `ModelRuntime`.
+Its selected credential is a separate in-memory argument, never a literal,
+environment-discovery instruction or ambient-primary inheritance. Registering a
+provider replaces that provider's model list: do not apply this illustrative
+registration to the operator's working Pi. Required SDK catalog price zeros are
+unavailable-price placeholders, not free service or native USD charges. Public Pi
+peers remain unbundled (tested local SDK1.1.0, distinct from orchestration CLI1.3.0).
+Actual remote availability, native pricing and semantic usefulness require the
+separate [K09 typed increment](08-development-checkpoints-and-release-checklists.md#k09-typed-assessor-376).
 
 ### 18.3 Trusted project specialization without increasing authority 📂
 

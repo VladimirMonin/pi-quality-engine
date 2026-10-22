@@ -46,15 +46,23 @@ judgment and exact committed/EOL/63-payload qualification](08-development-checkp
 The scope is Windows/NTFS, SDK1.1.0 and actual public packaged recombination,
 including separately owned reviewer work. Role labels do not certify a fleet;
 controlled protocols do not prove live usefulness or all remaining S4 obligations.
-The next boundary is [K09 — engineering judgment and profile promotion](08-development-checkpoints-and-release-checklists.md#k09):
-freeze synthetic cases/resources, held-out separation and numerical thresholds
-before evaluating a profile. The separate approved native pilot still requires a
-qualified whole billable-input ceiling; K08 acceptance does not authorize its execution.
-This documentation update dispatches nobody. Current role defaults are in
+[K09 remains open](08-development-checkpoints-and-release-checklists.md#k09).
+The accepted367/369 completed text-schema packet is negative data, canonical0/3,
+not model/profile promotion. The [usable typed-assessor375–377 increment](08-development-checkpoints-and-release-checklists.md#k09-typed-assessor-376)
+is implemented/offline qualified and independently controlled, with coherent
+canonical docs; SAME Astra acceptance and actual Jev inference remain pending.
+Exact source/artifact/entry identities, fresh versus reused controls and finite
+staged authority are recorded there. No live usefulness, held-out promotion,
+feedback/D-39, whole-K09 acceptance or v0.7.0 follows.
+
+The direct375 USD3/RUB100 cumulative grant is separate from the old consumed
+approval; its next initial002/003/001 batch still needs genuine new candidate-bound
+Astra approval and assigned credential custody. This control dispatches nobody.
+The separate earlier USD1 billable-input pilot remains blocked, not pooled.
+Polza/Jev is offline-qualified only; OpenRouter/Jev and local d3-mini remain
+separate unverified routes. No push/publication, working-Pi installation or
+spending reset follows. Current role defaults are in
 [WORKFLOW](../Инструкции/WORKFLOW.orchestration.instructions.md).
-Polza/Jev, OpenRouter/Jev and local d3-mini Q8 remain individually UNVERIFIED;
-remaining finite allowance is UNKNOWN. No push/publication or spending renewal
-follows from this local tag.
 
 <a id="first-reading"></a>
 
