@@ -374,6 +374,7 @@ export class ComponentRegistry {
   readonly #components = new Map<string, RegisteredComponent>();
   readonly #byDefinition = new WeakMap<PackageDefinition, RegistrationRecord>();
   readonly #validators = new Map<string, Validator>();
+  readonly #resultValidators = new Map<string, ReadonlyMap<string, Validator>>();
   #registrationCounter = 0;
   #retired = false;
 
@@ -391,6 +392,19 @@ export class ComponentRegistry {
 
   get retired(): boolean {
     return this.#retired;
+  }
+
+  /** Compile declarations once at registration; result data cannot widen them. */
+  admitResultExtensions(componentId: string, input: unknown): Result<JsonObject> {
+    const copied = copyJsonData(input, 16_384);
+    if (!copied.ok || typeof copied.value !== "object" || copied.value === null || Array.isArray(copied.value) || Object.keys(copied.value).length > 8) return { ok: false, error: { code: "core.invalid-result-extension", retryable: false } };
+    const validators = this.#resultValidators.get(componentId);
+    for (const [key, value] of Object.entries(copied.value)) {
+      if (validators?.get(key)?.(value) !== true) return { ok: false, error: { code: "core.invalid-result-extension", retryable: false } };
+    }
+    const freeze = (value: Json): void => { if (typeof value === "object" && value !== null) { for (const child of Object.values(value)) freeze(child); Object.freeze(value); } };
+    freeze(copied.value);
+    return { ok: true, value: copied.value };
   }
 
   register(definition: PackageDefinition): Result<PackageRegistration> {
@@ -416,6 +430,7 @@ export class ComponentRegistry {
     if (!Array.isArray(componentsInput)) {
       return { ok: false, error: { code: "core.invalid-package", retryable: false, field: "components" } };
     }
+    const extensionValidators = new Map<string, ReadonlyMap<string, Validator>>();
     const componentIds: string[] = [];
     const declaredCodes = new Set<string>();
     const prepared: Array<{ id: string; component: ResolvedComponent; declaredCodes: Set<string> }> = [];
@@ -464,6 +479,18 @@ export class ComponentRegistry {
       const compiled = compileOptionsSchema(copiedOptions.value);
       if (!compiled.ok) {
         return { ok: false, error: { code: compiled.error.code, retryable: false, details: { componentId: id } } };
+      }
+      if (shape.kind === "evaluator") {
+        const descriptor = Object.getOwnPropertyDescriptor(component, "resultExtensions");
+        const copied = descriptor === undefined ? { ok: true as const, value: {} } : ("value" in descriptor ? copyJsonData(descriptor.value) : { ok: false as const });
+        if (!copied.ok || typeof copied.value !== "object" || copied.value === null || Array.isArray(copied.value) || Object.keys(copied.value).length > 8) return { ok: false, error: { code: "core.invalid-component", field: "resultExtensions", retryable: false } };
+        const validators = new Map<string, Validator>();
+        for (const [name, schema] of Object.entries(copied.value)) {
+          const compiledExtension = compileOptionsSchema(schema);
+          if (name.length > 128 || !/^[a-z][a-z0-9.-]*\.[a-z][a-z0-9.-]*$/u.test(name) || !compiledExtension.ok) return { ok: false, error: { code: "core.invalid-component", field: "resultExtensions", retryable: false } };
+          validators.set(name, compiledExtension.value);
+        }
+        extensionValidators.set(id, validators);
       }
       const componentCodes = new Set<string>();
       const codes = readDataProperty(meta, "diagnosticCodes");
@@ -514,6 +541,7 @@ export class ComponentRegistry {
       });
       const compiled = compileOptionsSchema((entry.component.definition as { optionsSchema?: unknown }).optionsSchema);
       if (compiled.ok) this.#validators.set(entry.id, compiled.value);
+      if (extensionValidators.has(entry.id)) this.#resultValidators.set(entry.id, extensionValidators.get(entry.id) as ReadonlyMap<string, Validator>);
     }
     this.#emit(record, "registered", 0, null);
     void this.#prepare(record);
@@ -778,6 +806,7 @@ export class ComponentRegistry {
     for (const id of record.componentIds) {
       this.#components.delete(id);
       this.#validators.delete(id);
+      this.#resultValidators.delete(id);
     }
     this.#emit(record, "disposed", 0, null);
   }

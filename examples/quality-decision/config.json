@@ -1,0 +1,52 @@
+{
+  "schemaVersion": 1,
+  "enabled": true,
+  "mode": "observe",
+  "runtime": {
+    "unknownCost": "allow-with-token-limits",
+    "maxRequestsPerSession": 3,
+    "maxOwnedTokensPerSession": 40000
+  },
+  "sources": {
+    "task": { "uris": ["inputs/task.md"], "role": "evidence", "required": true },
+    "requirements": { "uris": ["inputs/requirements.md"], "role": "requirement", "required": true },
+    "implementation": { "uris": ["inputs/implementation.txt"], "role": "evidence", "required": true },
+    "observations": { "uris": ["inputs/observations.json"], "role": "evidence", "required": true },
+    "subject-hypothesis": { "uris": ["inputs/subject-output.txt"], "role": "reference", "required": true },
+    "native-window": { "uris": ["inputs/native-window.json"], "role": "evidence", "required": true }
+  },
+  "modelProfiles": {
+    "quality-typed": {
+      "provider": "polza", "model": "typesafe/jev", "reasoning": "off",
+      "requestTimeoutMs": 30000, "maxAttempts": 1, "retryDelayMs": 0,
+      "maxOutputTokens": 1024, "requiredInputs": ["text"], "price": "unknown"
+    }
+  },
+  "permissions": { "modelProfiles": ["quality-typed"] },
+  "prompts": {
+    "quality": {
+      "use": "core.prompt-files",
+      "options": { "instructions": ["builtin:quality-decision-v1.md"], "questions": "builtin:quality-decision-v1.questions.json" }
+    }
+  },
+  "contexts": {
+    "quality": {
+      "providers": [
+        { "id": "task", "use": "core.task" },
+        { "id": "selected", "use": "core.files", "options": { "sourceIds": ["task", "requirements", "implementation", "observations", "subject-hypothesis", "native-window"] } }
+      ],
+      "maxBytes": 32768, "maxEstimatedTokens": 8192, "reserveOutputTokens": 0,
+      "requiredCoverage": "complete", "overflow": "error"
+    }
+  },
+  "evaluators": { "quality": { "use": "core.quality-decision", "modelProfile": "quality-typed", "options": { "mapping": "quality-decision-v1", "repairAttempts": 0 } } },
+  "policies": { "record": { "use": "core.record-only" } },
+  "checks": {
+    "quality": {
+      "triggers": [{ "id": "ready", "use": "core.before-completion" }],
+      "context": "quality", "prompt": "quality", "evaluator": "quality", "policy": "record",
+      "criteria": ["task.instructions"], "cooldownMs": 0, "maxRunsPerEpisode": 3,
+      "workStates": ["work-expected", "completion-candidate"]
+    }
+  }
+}

@@ -37,6 +37,7 @@ const specs = [
   { mode: 'denied-resource', caseId: 'case-002', title: 'prompt acquisition refuses an out-of-root grader resource without reading it' },
   { mode: 'reviewer', caseId: 'case-002', title: 'separate clean reviewer delivers a genuine read and submits its issued reference' },
   { mode: 'reviewer-denied', caseId: 'case-002', title: 'clean reviewer private-oracle attempt is denied and ends the owned review' },
+  { mode: 'reviewer-wrong-ref', caseId: 'case-002', title: 'real reviewer and direct boundary share the same body-free reference rejection category' },
   { mode: 'cutoff', caseId: 'case-027', title: 'accepted selector rejects post-assessment synthetic events before materialization' },
 ];
 
@@ -181,7 +182,7 @@ async function child(options) {
       assert.ok(refs.requirement || partial); if (!partial) assert.ok(refs.implementation || refs.acquired);
       // Only the explicit negative control supplies a deliberately unissued ref.
       //Positive delivery is always judged against the real supplied stimulus.
-      const result = canonical(c.criterion, partial ? 'partial' : 'complete', refs, options.mode === 'wrong-ref');
+      const result = canonical(c.criterion, partial ? 'partial' : 'complete', refs, options.mode === 'wrong-ref' || options.mode === 'reviewer-wrong-ref');
       report.scriptedSubmission = result;
       return review ? sse(MODEL, { id: 'submit-probe', name: 'submit_result', args: result }, true) : sse(MODEL, result);
     };
@@ -231,13 +232,14 @@ async function child(options) {
       assert.ok(report.delivery.engineering.sdk && report.delivery.engineering.provider, 'complete engineering instruction resource, not only its heading');
       assert.ok(report.delivery.schema.sdk && report.delivery.schema.provider, 'actual complete selected schema resource, not a route-specific heading');
       assert.equal(report.canonical.length, 1);
-      if (options.mode === 'wrong-ref') { assert.equal(report.canonical[0].fields.data.validationState, 'invalid'); assert.notEqual(report.canonical[0].fields.data.operational, 'completed'); }
-      else if (options.mode === 'reviewer-denied') { assert.equal(report.canonical[0].fields.data.validationState, 'valid'); assert.notEqual(report.canonical[0].fields.data.operational, 'completed'); }
+      if (options.mode === 'wrong-ref') { assert.equal(report.canonical[0].fields.data.validationState, 'invalid'); assert.notEqual(report.canonical[0].fields.data.operational, 'completed'); assert.ok(report.canonical[0].fields.reasonCodes.includes('core.assessment.reference')); assert.ok(!journalText.includes('unissued-reference')); }
+      else if (options.mode === 'reviewer-denied' || options.mode === 'reviewer-wrong-ref') { assert.equal(report.canonical[0].fields.data.validationState, 'valid'); assert.notEqual(report.canonical[0].fields.data.operational, 'completed'); }
       else { assert.equal(report.canonical[0].fields.data.validationState, 'valid'); assert.equal(report.canonical[0].fields.data.operational, 'completed'); assert.equal(report.canonical[0].fields.data.coverage, partial ? 'partial' : 'complete'); }
       if (partial) { assert.ok(!firstWire.includes(FUTURE)); assert.ok(report.manifestParts.some(row => row.fields.data.items.some(item => item.selection.kind === 'sections'))); assert.ok(report.manifests.some(row => row.fields.data.coverage === 'partial')); }
       if (review) {
         assert.ok(report.toolEvents.some(row => row.fields.data.code === 'core.reviewer-tool-acquired')); assert.ok(report.lastIssuedRefs.acquired);
         if (options.mode === 'reviewer-denied') assert.ok(report.toolEvents.some(row => row.fields.data.code === 'core.reviewer-tool-denied'));
+        else if (options.mode === 'reviewer-wrong-ref') { assert.ok(report.canonical[0].fields.reasonCodes.includes('core.assessment.reference')); assert.ok(!journalText.includes('unissued-reference')); }
         else assert.ok(report.canonical[0].fields.data.findings[0].evidenceRefs.includes(report.lastIssuedRefs.acquired));
       }
     }

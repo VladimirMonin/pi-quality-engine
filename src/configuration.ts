@@ -160,14 +160,15 @@ const PRIORITIES = new Set(["low", "normal", "high"]);
 const BUILTIN_PROMPT_RESOURCES = new Set([
   "builtin:repetition-v1.md", "builtin:progress-v1.md", "builtin:progress-v1.questions.json",
   "builtin:engineering-v1.md", "builtin:evaluation-v1.schema.json", "builtin:feedback-v1.md",
+  "builtin:quality-decision-v1.md", "builtin:quality-decision-v1.questions.json",
 ]);
 const BUILTIN_CONTEXT_PROVIDERS = new Set(["core.task", "core.history", "core.waits", "core.files", "core.changes"]);
 const BUILTIN_TRIGGERS = new Set([
   "core.every-tools", "core.periodic", "core.inactivity", "core.no-progress",
   "core.wait-deadline", "core.evidence-change", "core.before-completion",
 ]);
-const BUILTIN_EVALUATORS = new Set(["core.repeated-tools", "core.chat", "core.classifier"]);
-const MODEL_BACKED_EVALUATORS = new Set(["core.chat", "core.classifier", "core.pi-session"]);
+const BUILTIN_EVALUATORS = new Set(["core.repeated-tools", "core.chat", "core.classifier", "core.quality-decision"]);
+const MODEL_BACKED_EVALUATORS = new Set(["core.chat", "core.classifier", "core.quality-decision", "core.pi-session"]);
 const BUILTIN_POLICIES = new Set(["core.record-only"]);
 
 const CONFIG_ID_PATTERN = /^[a-z][a-z0-9-]{0,63}$/;
@@ -840,10 +841,14 @@ function validateEvaluatorProfile(id: string, input: unknown): Result<EvaluatorP
   }
   const options = input["options"] ?? {};
   if (!isPlainObject(options)) return reject("config.invalid-value", `${field}.options`);
-  if (use.value === "core.chat" || use.value === "core.classifier") {
+  if (use.value === "core.chat" || use.value === "core.classifier" || use.value === "core.quality-decision") {
+    const typed = use.value !== "core.chat";
     for (const key of Object.keys(options)) {
-      if (key !== "maxOutputTokens" && key !== "repairAttempts") return reject("config.unknown-key", `${field}.options`);
+      if (key !== "maxOutputTokens" && key !== "repairAttempts" && !(typed && key === "mapping")) return reject("config.unknown-key", `${field}.options`);
+      if (use.value === "core.quality-decision" && key === "maxOutputTokens") return reject("config.unknown-key", `${field}.options`);
     }
+    if (typed && options["mapping"] !== undefined && options["mapping"] !== (use.value === "core.quality-decision" ? "quality-decision-v1" : "progress-v1")) return reject("config.invalid-value", `${field}.options.mapping`);
+    if (typed && options["repairAttempts"] !== undefined && options["repairAttempts"] !== 0) return reject("config.invalid-value", `${field}.options.repairAttempts`);
     const maxOutputTokens = options["maxOutputTokens"];
     if (maxOutputTokens !== undefined
       && (typeof maxOutputTokens !== "number" || !Number.isInteger(maxOutputTokens) || maxOutputTokens <= 0 || maxOutputTokens > 65_536)) {

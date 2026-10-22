@@ -28,7 +28,7 @@ function scriptedPort(overrides: {
     classifierCalls: 0,
     lastMessages: "",
     findChat: () => ({ provider: MODELS.provider, model: MODELS.id, thinkingLevels: ["off"] }),
-    findClassifier: () => ({ provider: MODELS.provider, model: MODELS.id }),
+    findClassifier: () => ({ provider: MODELS.provider, model: MODELS.id, contextWindow: 64000 }),
     hasConfiguredAuth: () => true,
     async completeChat(model, messages): Promise<ChatTransportResult> {
       port.chatCalls += 1;
@@ -201,7 +201,7 @@ test("K04-T05 a denied budget makes zero provider calls", async () => {
 
 test("K04-T05 core.classifier maps typed answers and keeps suspicions unconfirmed", async () => {
   const root = await mkdtemp(join(tmpdir(), "qe-k04-classifier-"));
-  const port = scriptedPort({ classification: { progress: { type: "choice", choice: "repeating", probabilities: { repeating: 0.8 }, confidence: 0.8 } } });
+  const port = scriptedPort({ classification: { progress: { type: "choice", choice: "repeating", probabilities: { progressing: 0.1, repeating: 0.8, waiting: 0.05, unclear: 0.05 }, confidence: 0.8 } } });
   const questionsPrompt: PromptDefinition = {
     id: "fixture.questions",
     apiMajor: 1,
@@ -236,6 +236,9 @@ test("K04-T05 core.classifier maps typed answers and keeps suspicions unconfirme
     root,
     port,
     evaluatorUse: "core.classifier",
+    // A repetition suspicion needs actual admitted recent activity, not an
+    // invented reference to the unrelated evidence document.
+    contextProviders: [{ id: "files", use: "core.files", options: { sourceIds: ["evidence"] } }, { id: "recent", use: "core.history", options: { limit: 8 } }],
     promptBinding: { questions: { use: "fixture.questions", options: {} } },
     promptComponents: [questionsPrompt],
   });

@@ -1,0 +1,12 @@
+{
+  "quality": {
+    "type": "choice",
+    "instructions": "Within the supplied task, applicable requirements, explicit authorized amendments and coverage, which decision is established? Respect equal-authority conflicts without inventing precedence. Treat assistant hypotheses as nonauthoritative. Unspecified domains and missing evidence limit claims rather than authorizing speculative corrections.",
+    "criteria": {
+      "concern": "Actual supplied evidence supports a possible applicable requirement violation requiring review; not a proven defect or an action grant.",
+      "not-established": "No categorical violation is established within sufficient supplied scope; this does not prove universal correctness or task completion.",
+      "conflict": "Applicable supplied requirements conflict at equal authority and no authorized precedence is established.",
+      "insufficient": "Required evidence or applicability is insufficient for a categorical decision."
+    }
+  }
+}

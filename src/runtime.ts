@@ -38,7 +38,7 @@ import { GitEpisodeEvidence } from "./git-evidence.js";
 import { ModelService, renderChatInput, renderClassifierState, finalizeRenderedInput } from "./models.js";
 import type { ModelRegistryPort, ModelUsageSummary } from "./models.js";
 import { CANONICAL_RESULT_SCHEMA, createPromptFilesProvider } from "./builtins/prompts.js";
-import { chatEvaluator, classifierEvaluator, piSessionEvaluator, repeatedToolsEvaluator } from "./builtins/evaluators.js";
+import { chatEvaluator, classifierEvaluator, qualityDecisionEvaluator, piSessionEvaluator, repeatedToolsEvaluator } from "./builtins/evaluators.js";
 import { engineeringPolicy, recordOnlyPolicy } from "./builtins/policies.js";
 import { feedbackAction, requestCheckAction } from "./builtins/actions.js";
 import {
@@ -648,8 +648,10 @@ interface SettledAssessment {
   validationState: "valid" | "invalid";
   terminalReason: string;
   findingCount: number;
+  reasonCodes?: readonly string[];
 }
 
+const ASSESSMENT_REASONS = new Set(["core.assessment.parse", "core.assessment.non-object", "core.assessment.structure", "core.assessment.consistency", "core.assessment.reference", "core.assessment.criterion", "core.assessment.score", "core.assessment.typed-answer", "core.assessment.transport", "core.assessment.cancelled", "core.assessment.extension"]);
 const COVERAGE_STRENGTH: Record<"complete" | "partial" | "insufficient", number> = {
   complete: 2,
   partial: 1,
@@ -1361,6 +1363,7 @@ export class EngineSession {
         repeatedToolsEvaluator,
         chatEvaluator,
         classifierEvaluator,
+        qualityDecisionEvaluator,
         piSessionEvaluator,
         recordOnlyPolicy,
         engineeringPolicy,
@@ -1371,6 +1374,8 @@ export class EngineSession {
         "builtin:repetition-v1.md": { uri: "builtin:repetition-v1.md" },
         "builtin:progress-v1.md": { uri: "builtin:progress-v1.md" },
         "builtin:progress-v1.questions.json": { uri: "builtin:progress-v1.questions.json" },
+        "builtin:quality-decision-v1.md": { uri: "builtin:quality-decision-v1.md" },
+        "builtin:quality-decision-v1.questions.json": { uri: "builtin:quality-decision-v1.questions.json" },
         "builtin:engineering-v1.md": { uri: "builtin:engineering-v1.md" },
         "builtin:evaluation-v1.schema.json": { uri: "builtin:evaluation-v1.schema.json" },
         "builtin:feedback-v1.md": { uri: "builtin:feedback-v1.md" },
@@ -2803,7 +2808,7 @@ export class EngineSession {
     this.#emit({
       event: "quality.assessment.result",
       level: settled.result.operational === "failed" ? "warn" : "info",
-      reasonCodes: settled.validationState === "invalid" ? ["core.invalid-result"] : [],
+      reasonCodes: [...(settled.validationState === "invalid" ? ["core.invalid-result"] : []), ...(settled.reasonCodes ?? [])],
       data: this.#projectAssessment(run, settled) as unknown as JsonObject,
       correlation: { runId: run.runId },
     });
@@ -3612,13 +3617,25 @@ export class EngineSession {
   }
 
   #validateAssessment(raw: unknown, run: ActiveRun, assembled: AssembledContext): SettledAssessment {
-    const invalid = (code: string): SettledAssessment => ({
+    const invalid = (code: string, reason = "core.assessment.structure"): SettledAssessment => ({
       result: invalidAssessmentResult(code),
       validationState: "invalid",
       terminalReason: code,
       findingCount: 0,
+      reasonCodes: [reason],
     });
-    if (!isPlainRecord(raw) || !CANONICAL_RESULT_VALIDATOR.ok || !CANONICAL_RESULT_VALIDATOR.value(raw)) {
+    if (!isPlainRecord(raw)) return invalid("core.invalid-evaluation-result", typeof raw === "string" ? "core.assessment.parse" : "core.assessment.non-object");
+    // Classify only the canonical consistency relations, descriptor-safely;
+    // the shared structural schema remains the complete validation authority.
+    const earlyOperational = readData(raw, "operational"), earlyConclusion = readData(raw, "conclusion"), earlyFindings = readData(raw, "findings");
+    if ((typeof earlyOperational === "string" && ["failed", "cancelled", "unavailable"].includes(earlyOperational) && earlyConclusion !== "undetermined") || (Array.isArray(earlyFindings) && ((earlyConclusion === "findings" && earlyFindings.length === 0) || (earlyConclusion === "no-supported-finding" && earlyFindings.length > 0)))) return invalid("core.invalid-evaluation-result", "core.assessment.consistency");
+    const earlyScores = readArray(raw, "scores", 32);
+    if (earlyScores !== null) for (const score of earlyScores) {
+      if (!isPlainRecord(score)) continue;
+      const value = readData(score, "value"), min = readData(score, "minimum"), max = readData(score, "maximum");
+      if (typeof value === "number" && typeof min === "number" && typeof max === "number" && (!Number.isFinite(value) || !Number.isFinite(min) || !Number.isFinite(max) || value < min || value > max)) return invalid("core.invalid-evaluation-result", "core.assessment.score");
+    }
+    if (!CANONICAL_RESULT_VALIDATOR.ok || !CANONICAL_RESULT_VALIDATOR.value(raw)) {
       return invalid("core.invalid-evaluation-result");
     }
     const operational = readData(raw, "operational");
@@ -3655,7 +3672,7 @@ export class EngineSession {
       if (!isPlainRecord(findingInput)) return invalid("core.invalid-evaluation-result");
       const criterion = readData(findingInput, "criterion");
       if (typeof criterion !== "string" || !run.criterionIds.includes(criterion)) {
-        return invalid("core.invalid-evaluation-result");
+        return invalid("core.invalid-evaluation-result", "core.assessment.criterion");
       }
       const status = readData(findingInput, "status");
       if (status !== "suspected" && status !== "supported") return invalid("core.invalid-evaluation-result");
@@ -3675,7 +3692,7 @@ export class EngineSession {
           if (typeof ref !== "string" || !BOUNDED_ID_PATTERN.test(ref)) return invalid("core.invalid-evaluation-result");
           // References must resolve to actual context items, evidence dependencies, or
           // material this run actually acquired during the review.
-          if (!knownReferences.has(ref) && !(key !== "requirementRefs" && knownAcquisitionPaths.has(ref))) return invalid("core.invalid-evaluation-result");
+          if (!knownReferences.has(ref) && !(key !== "requirementRefs" && knownAcquisitionPaths.has(ref))) return invalid("core.invalid-evaluation-result", "core.assessment.reference");
           refs[key].push(ref);
         }
       }
@@ -3729,7 +3746,7 @@ export class EngineSession {
       const criterion = readData(scoreInput, "criterion");
       // A score must resolve to a criterion recognized for this check.
       if (typeof criterion !== "string" || !run.criterionIds.includes(criterion)) {
-        return invalid("core.invalid-evaluation-result");
+        return invalid("core.invalid-evaluation-result", "core.assessment.criterion");
       }
       const interpretationField = readField(scoreInput, "interpretation");
       if (interpretationField.kind !== "data" || typeof interpretationField.value !== "string") {
@@ -3780,6 +3797,15 @@ export class EngineSession {
         check: check as AssessmentResult["dependencies"][number]["check"],
       });
     }
+    const extensionsInput = readData(raw, "extensions");
+    let extensions: JsonObject | undefined;
+    if (extensionsInput !== undefined) {
+      const check = this.#configuration.value.checks[run.checkId];
+      const owner = check === undefined ? undefined : this.#configuration.value.evaluators[check.evaluator]?.use;
+      const admitted = this.#registry.admitResultExtensions(owner ?? "", extensionsInput);
+      if (!admitted.ok) return invalid("core.invalid-evaluation-result", "core.assessment.extension");
+      extensions = admitted.value;
+    }
     const usageInput = readArray(raw, "usageAttemptIds", 16);
     if (usageInput === null) return invalid("core.invalid-evaluation-result");
     const usageAttemptIds: string[] = [];
@@ -3814,7 +3840,13 @@ export class EngineSession {
         additionalEvidence,
         dependencies,
         usageAttemptIds,
+        ...(extensions === undefined ? {} : { extensions }),
       },
+      reasonCodes: (() => {
+        const error = readData(raw, "error"), details = isPlainRecord(error) ? readData(error, "details") : null;
+        const reason = isPlainRecord(details) ? readData(details, "reasonCode") : null;
+        return typeof reason === "string" && ASSESSMENT_REASONS.has(reason) ? [reason] : [];
+      })(),
       validationState: "valid",
       terminalReason: "evaluated",
       findingCount: findings.length,
@@ -4369,7 +4401,7 @@ export class EngineSession {
         const settled = this.#validateAssessment(payload, run, assembled);
         return settled.validationState === "valid"
           ? { valid: true, reason: "core.review-result-valid" }
-          : { valid: false, reason: settled.terminalReason };
+          : { valid: false, reason: settled.reasonCodes?.[0] ?? settled.terminalReason };
       },
     }, host);
     if (!outcome.ok) return outcome;
@@ -4403,9 +4435,12 @@ export class EngineSession {
         if (service === null) {
           return { ok: false, error: { code: "core.capability-unavailable", retryable: false } };
         }
-        const rendered = input.kind === "chat"
-          ? renderChatInput(input.context, input.assessment)
-          : { messages: [], estimatedInputTokens: 0, inputManifestRef: "", inputSerializedDigest: "", finalInputBytes: 0, finalInputDigest: "", manifestBase: {} };
+        const binding = check === undefined ? undefined : this.#configuration.value.evaluators[check.evaluator];
+        const typed = input.kind === "classifier" ? renderClassifierState(input.context, input.assessment, { profileId: input.profileId, configurationRevision: this.#configuration.revision, evaluator: binding?.use ?? "unavailable", mappingRevision: binding?.use === "core.quality-decision" ? "quality-decision-v1" : "progress-v1" }) : null;
+        if (typed !== null && !typed.ok) return typed;
+        const rendered = typed?.ok === true ? typed.value : renderChatInput(input.context, input.assessment);
+        const plan = check === undefined ? undefined : this.#configuration.value.contexts[check.context];
+        if (input.kind === "classifier" && (plan === undefined || rendered.finalInputBytes > Math.min(plan.maxBytes, this.#configuration.value.runtime.maxEvidenceBytes) || rendered.estimatedInputTokens > plan.maxEstimatedTokens)) return { ok: false, error: { code: "core.model-input-overflow", retryable: false } };
         // Only a locally dispatched attempt of THIS run is a repair predecessor;
         // a restored origin row sharing a reused short run id is history.
         const priorAttempts = service.attempts.filter(candidate => candidate.restored !== true && candidate.runId === run.runId).length;
@@ -4427,16 +4462,23 @@ Your previous response was not valid structured output. Return only valid JSON m
         const estimatedInputTokens = rendered.estimatedInputTokens;
         const attemptsBefore = service.attempts.length;
         const startedMono = this.#clock.nowMonoMs();
-        const questions = input.assessment.questions;
+        // Pin metadata before the awaited intent, like the owned typed body.
+        const pinItem = (item: ContextItem): ContextItem => {
+          const pinned = { ...item, provenance: { ...item.provenance } };
+          const asset = itemAssetOf(item);
+          if (asset !== undefined) Object.defineProperty(pinned, ITEM_ASSET, { value: asset });
+          return pinned;
+        };
+        const submittedInstructions = input.assessment.instructions.map(pinItem);
+        const submittedContext = input.context.items.map(pinItem);
+        const submittedProvenance = [...((input.assessment as unknown as { [PROVENANCE_ASSETS]?: ItemAssetEntry[] })[PROVENANCE_ASSETS] ?? [])];
         const result = await service.dispatch({
           runId: run.runId,
           profileId: input.profileId,
           kind: input.kind,
           purpose: priorAttempts === 0 ? "direct" : "repair",
           ...(input.kind === "chat" ? { messages: rendered.messages } : {}),
-          ...(input.kind === "classifier" && questions !== null
-            ? { classifierState: renderClassifierState(input.context), classifierQuestions: questions as unknown as Record<string, unknown> }
-            : {}),
+          ...(typed?.ok === true ? { preparedClassifier: typed.value } : {}),
           maxOutputTokens: input.maxOutputTokens,
           estimatedInputTokens,
           profileRevision: this.#configuration.revision,
@@ -4470,17 +4512,20 @@ Your previous response was not valid structured output. Return only valid JSON m
                 reservationRef: `attempt:${attempt.attemptId}`,
                 requestTimeoutMs: attempt.requestTimeoutMs,
                 maxOutputTokens: attempt.effectiveMaxOutputTokens,
+                operationKind: attempt.kind,
+                classifierQuestionCount: attempt.questionCount ?? null,
+                outputTokenLimitApplicable: attempt.kind === "chat",
                 reasoningSetting: attempt.reasoningSetting,
                 accountingOwner: "engine",
               },
               correlation: { runId: run.runId },
             });
             const manifestId = `sdk-input-${attempt.attemptId}`;
-            const instructionItems = input.assessment.instructions;
-            const contextItems = input.context.items;
+            const instructionItems = submittedInstructions;
+            const contextItems = submittedContext;
             const requiredContext = contextItems.filter(item => item.required).length;
             const optionalContext = contextItems.length - requiredContext;
-            const provenanceAssets = (input.assessment as unknown as { [PROVENANCE_ASSETS]?: ItemAssetEntry[] })[PROVENANCE_ASSETS] ?? [];
+            const provenanceAssets = submittedProvenance;
             // The measured request describes the items actually submitted: an
             // evaluator may reorder or subselect admitted objects, and each
             // descriptor follows its own object, not the original asset order.
@@ -4489,7 +4534,7 @@ Your previous response was not valid structured output. Return only valid JSON m
               const asset = itemAssetOf(item);
               if (asset !== undefined) submittedAssets.push(asset);
             }
-            submittedAssets.push(...provenanceAssets);
+            submittedAssets.push(...provenanceAssets.filter(asset => input.kind !== "classifier" || asset.kind !== "result-schema"));
             const descriptors = new Map<string, RunResourceDescriptorData>();
             const addDescriptor = (entry: { resourceId: string; kind: string; revisionRef: string; sourceId: string | null; bytes: number | null; visibility: string }): void => {
               const key = `${entry.resourceId}\u0000${entry.revisionRef}`;

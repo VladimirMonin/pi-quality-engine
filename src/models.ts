@@ -12,8 +12,14 @@ import type {
   ModelProfileDefinition,
   ModelResponse,
   Result,
+  AssessmentResources,
+  ContextSnapshot,
+  DecisionQuestion,
+  Json,
+  JsonObject,
 } from "./contracts.js";
 import type { FinancialAggregate, FinancialSnapshot } from "./checkpoint.js";
+import { copyJsonData } from "./registry.js";
 
 export interface ModelAttemptUsage {
   revision: number;
@@ -78,6 +84,8 @@ export interface ModelAttemptRecord {
   priceBasisRef: string | null;
   requestTimeoutMs: number;
   effectiveMaxOutputTokens: number;
+  /** Number of configured questions in one observed classify invocation. */
+  questionCount?: number;
   reasoningSetting: string | null;
   /** Observed response byte size; null until settle. */
   responseBytes: number | null;
@@ -152,6 +160,7 @@ export interface ModelDispatchInput {
   messages?: readonly { role: string; content: string }[];
   classifierState?: Record<string, unknown>;
   classifierQuestions?: Record<string, unknown>;
+  preparedClassifier?: PreparedClassifierInput;
   maxOutputTokens: number;
   estimatedInputTokens: number;
   signal: AbortSignal;
@@ -634,18 +643,29 @@ export class ModelService {
     const preflight = this.preflight(input.profileId, input.kind);
     if (!preflight.ok) return preflight;
     const { profile, model } = preflight.value;
-    const maxOutputTokens = Math.min(input.maxOutputTokens, profile.maxOutputTokens);
-    const estimated = Math.max(0, input.estimatedInputTokens) + maxOutputTokens;
+    const typed = input.kind === "classifier"
+      ? (input.preparedClassifier === undefined ? prepareClassifierContext(input.classifierState ?? {}, input.classifierQuestions ?? {}) : { ok: true as const, value: input.preparedClassifier })
+      : null;
+    if (typed !== null && !typed.ok) return typed;
+    const prepared = typed?.ok === true ? typed.value : null;
+    const inputTokens = prepared?.estimatedInputTokens ?? input.estimatedInputTokens;
+    // Classification has no generative output allowance in the pinned SDK.
+    // Legacy configuration remains parseable, but it is inapplicable here.
+    const maxOutputTokens = input.kind === "classifier" ? 0 : Math.min(input.maxOutputTokens, profile.maxOutputTokens);
+    const estimated = Math.max(0, inputTokens) + maxOutputTokens;
     // Actual route capacity is checked before dispatch: serialized input plus
     // the output allowance must fit the real context window, and the output
     // allowance must fit the model's own output ceiling.
     const contextWindow = model["contextWindow"];
+    if (input.kind === "classifier" && !(typeof contextWindow === "number" && Number.isFinite(contextWindow) && contextWindow > 0)) {
+      return { ok: false, error: { code: "core.model-context-capacity-unavailable", retryable: false } };
+    }
     if (typeof contextWindow === "number" && Number.isFinite(contextWindow) && contextWindow > 0
-      && Math.max(0, input.estimatedInputTokens) + maxOutputTokens > contextWindow) {
+      && Math.max(0, inputTokens) + maxOutputTokens > contextWindow) {
       return { ok: false, error: { code: "core.model-context-overflow", retryable: false } };
     }
     const modelMaxTokens = model["maxTokens"];
-    if (typeof modelMaxTokens === "number" && Number.isFinite(modelMaxTokens) && maxOutputTokens > modelMaxTokens) {
+    if (input.kind === "chat" && typeof modelMaxTokens === "number" && Number.isFinite(modelMaxTokens) && maxOutputTokens > modelMaxTokens) {
       return { ok: false, error: { code: "core.model-output-ceiling", retryable: false } };
     }
     if (this.#dispatchedCount >= this.#budget.maxRequestsPerSession) {
@@ -657,7 +677,7 @@ export class ModelService {
     if (this.#reservedTokens + estimated > this.#budget.maxOwnedTokensPerSession) {
       return { ok: false, error: { code: "core.budget-tokens-exceeded", retryable: false } };
     }
-    const estimatedCost = estimateRequestCost(profile, model, input.estimatedInputTokens, maxOutputTokens);
+    const estimatedCost = estimateRequestCost(profile, model, inputTokens, maxOutputTokens);
     if (this.#budget.maxOwnedCost !== null) {
       const cap = this.#budget.maxOwnedCost;
       if (estimatedCost !== null && estimatedCost.currency === cap.currency) {
@@ -704,8 +724,8 @@ export class ModelService {
       visibility: "attempt-level",
       stopReason: null,
       errorCode: null,
-      inputManifestRef: input.inputManifestRef ?? null,
-      inputSerializedDigest: input.inputSerializedDigest ?? null,
+      inputManifestRef: prepared?.inputManifestRef ?? input.inputManifestRef ?? null,
+      inputSerializedDigest: prepared?.inputSerializedDigest ?? input.inputSerializedDigest ?? null,
       profileRevision: input.profileRevision ?? null,
       requestedRoute: { provider: profile.provider, model: profile.model },
       actualRoute: {
@@ -718,7 +738,8 @@ export class ModelService {
       priceBasisRef: typeof profile.price === "object" ? `${profile.price.currency}@${profile.price.revision}` : null,
       requestTimeoutMs: profile.requestTimeoutMs,
       effectiveMaxOutputTokens: maxOutputTokens,
-      reasoningSetting: profile.reasoning === "off" ? null : profile.reasoning,
+      ...(prepared === null ? {} : { questionCount: Object.keys(prepared.sdkContext.questions).length }),
+      reasoningSetting: input.kind === "classifier" || profile.reasoning === "off" ? null : profile.reasoning,
       responseBytes: null,
       capturedPrice: profile.price,
       createdAt: this.#now(),
@@ -852,18 +873,20 @@ export class ModelService {
             profile,
           });
         }
-        const transport = await this.#registry.classify(model, input.classifierState ?? {}, input.classifierQuestions ?? {}, {
-          maxOutputTokens,
+        if (prepared === null) throw new Error("classifier-input-unavailable");
+        const transport = await this.#registry.classify(model, prepared.sdkContext.state, prepared.sdkContext.questions, {
           requestTimeoutMs: profile.requestTimeoutMs,
+          maxRetries: 0,
         }, input.signal);
+        const answers = admitClassifierAnswers(ownData(transport, "answers"), prepared.sdkContext.questions);
         return this.#settle(attempt, "settled", {
-          output: JSON.stringify(transport.answers),
+          output: answers.ok ? JSON.stringify(answers.value) : "null",
           model: transport.model,
           usage: transport.usage,
           stopReason: transport.stopReason,
-          errorCode: transport.errorMessage ?? null,
+          errorCode: transport.errorMessage === null ? (answers.ok ? null : "core.classifier-answer-invalid") : (input.signal.aborted || transport.stopReason === "aborted" ? "core.model-request-cancelled" : "core.classifier-transport-failed"),
           profile,
-          classifierAnswers: transport.answers,
+          ...(answers.ok ? { classifierAnswers: answers.value } : {}),
         });
       })();
       // A late transport result still reconciles the same owned attempt.
@@ -1682,6 +1705,7 @@ export function renderChatInput(
 ): RenderedModelInput {
   const instructionText = assessment.instructions.map(instruction => textOf(instruction)).join("\n\n");
   const sections = context.items.map(item => `## ${item.role} ${item.id}\n${textOf(item)}`);
+  sections.unshift(`## literal issued reference inventory\n${context.items.map(item => `- ${item.role}: ${item.id}`).join("\n")}\nCopy complete IDs literally; suffixes, filenames and shortened aliases are not issued IDs.`);
   // The complete configured resource package is serialized into the same
   // representation that is measured and dispatched: instructions, labeled
   // context, typed questions, result schema and check-owned criteria.
@@ -1750,11 +1774,94 @@ export function finalizeRenderedInput(rendered: RenderedModelInput): void {
   }), "utf8").digest("hex").slice(0, 16)}`;
 }
 
-export function renderClassifierState(context: { items: readonly { id: string; role: string }[]; coverage: { state: string } }): Record<string, unknown> {
-  return {
-    coverage: context.coverage.state,
-    itemCount: context.items.length,
-    evidenceIds: context.items.filter(item => item.role === "evidence").map(item => item.id).slice(0, 16),
-    requiredPresent: context.items.some(item => item.role === "requirement"),
+const CLASSIFIER_INPUT_MAX_BYTES = 262_144;
+const recordOf = (value: unknown): value is JsonObject => typeof value === "object" && value !== null && !Array.isArray(value);
+const ownData = (value: unknown, key: string): unknown => typeof value === "object" && value !== null ? Object.getOwnPropertyDescriptor(value, key)?.value : undefined;
+function freezeJson<T>(value: T): T {
+  if (typeof value === "object" && value !== null) { for (const child of Object.values(value)) freezeJson(child); Object.freeze(value); }
+  return value;
+}
+
+/** Bounded descriptor-only question admission, shared by preparation and mapping. */
+export function admitClassifierQuestions(raw: unknown): Result<Record<string, DecisionQuestion>> {
+  const copied = copyJsonData(raw);
+  const bad = (): Result<never> => ({ ok: false, error: { code: "core.classifier-questions-invalid", retryable: false } });
+  if (!copied.ok || !recordOf(copied.value)) return bad();
+  const entries = Object.entries(copied.value);
+  if (entries.length === 0 || entries.length > 16) return bad();
+  for (const [id, q] of entries) {
+    if (!/^[A-Za-z0-9][A-Za-z0-9._:-]{0,95}$/u.test(id) || !recordOf(q) || Object.keys(q).some(k => !["type", "instructions", "criteria"].includes(k)) || typeof q["instructions"] !== "string") return bad();
+    const criteria = q["criteria"];
+    if (q["type"] === "score") {
+      if (!Array.isArray(criteria) || criteria.length < 2 || criteria.length > 32 || criteria.some(x => typeof x !== "string")) return bad();
+    } else {
+      if ((q["type"] !== "choice" && q["type"] !== "bool") || !recordOf(criteria)) return bad();
+      const keys = Object.keys(criteria);
+      if (keys.length < 2 || keys.length > 16 || Object.values(criteria).some(x => typeof x !== "string")) return bad();
+      if (q["type"] === "bool" && (keys.length !== 2 || !keys.includes("true") || !keys.includes("false"))) return bad();
+    }
+  }
+  return { ok: true, value: copied.value as unknown as Record<string, DecisionQuestion> };
+}
+
+/** No guessing, normalization or accessor execution on provider answers. */
+export function admitClassifierAnswers(raw: unknown, questions: Record<string, DecisionQuestion>): Result<JsonObject> {
+  const copied = copyJsonData(raw);
+  const bad = (): Result<never> => ({ ok: false, error: { code: "core.classifier-answer-invalid", retryable: false } });
+  if (!copied.ok || !recordOf(copied.value)) return bad();
+  const answers = copied.value, ids = Object.keys(questions);
+  if (Object.keys(answers).length !== ids.length || Object.keys(answers).some(k => !ids.includes(k))) return bad();
+  const probability = (n: unknown): n is number => typeof n === "number" && Number.isFinite(n) && n >= 0 && n <= 1;
+  for (const id of ids) {
+    const question = questions[id], answer = answers[id];
+    if (question === undefined || !recordOf(answer) || answer["type"] !== question.type) return bad();
+    if (question.type === "bool") {
+      if (!probability(answer["probability"]) || Object.keys(answer).some(k => !["type", "probability"].includes(k))) return bad();
+    } else {
+      if (typeof answer["confidence"] !== "number" || !Number.isFinite(answer["confidence"])) return bad();
+      if (question.type === "score") {
+        const score = answer["score"];
+        if (typeof score !== "number" || !Number.isFinite(score) || score < 0 || score > question.criteria.length - 1 || Object.keys(answer).some(k => !["type", "score", "confidence"].includes(k))) return bad();
+      } else {
+        const keys = Object.keys(question.criteria), probabilities = answer["probabilities"];
+        if (typeof answer["choice"] !== "string" || !keys.includes(answer["choice"]) || !recordOf(probabilities) || Object.keys(probabilities).length !== keys.length || Object.keys(probabilities).some(k => !keys.includes(k)) || Object.values(probabilities).some(n => !probability(n)) || Object.keys(answer).some(k => !["type", "choice", "probabilities", "confidence"].includes(k))) return bad();
+        if (Math.abs(Object.values(probabilities).reduce<number>((sum, n) => sum + (n as number), 0) - 1) > 1e-6) return bad();
+      }
+    }
+  }
+  return { ok: true, value: answers };
+}
+
+export interface PreparedClassifierInput extends RenderedModelInput {
+  sdkContext: { state: JsonObject; questions: Record<string, DecisionQuestion> };
+}
+function prepareClassifierContext(state: unknown, questions: unknown, binding: Record<string, unknown> = {}): Result<PreparedClassifierInput> {
+  const admitted = admitClassifierQuestions(questions);
+  if (!admitted.ok) return admitted;
+  const copied = copyJsonData({ state, questions: admitted.value }, CLASSIFIER_INPUT_MAX_BYTES);
+  if (!copied.ok || !recordOf(copied.value) || !recordOf(copied.value["state"])) return { ok: false, error: { code: "core.classifier-input-invalid", retryable: false } };
+  const sdkContext = freezeJson(copied.value) as unknown as PreparedClassifierInput["sdkContext"];
+  const serialized = JSON.stringify(sdkContext), bytes = Buffer.byteLength(serialized, "utf8");
+  if (bytes > CLASSIFIER_INPUT_MAX_BYTES) return { ok: false, error: { code: "core.model-input-overflow", retryable: false } };
+  const digest = createHash("sha256").update(serialized, "utf8").digest("hex");
+  const manifestBase = { ...binding, representation: "classifier-sdk-context-v1", estimator: "utf8-bytes-div-4@engine-1", questionCount: Object.keys(admitted.value).length };
+  return { ok: true, value: Object.freeze({ sdkContext, messages: [], estimatedInputTokens: Math.ceil(bytes / 4), finalInputBytes: bytes, finalInputDigest: digest, inputSerializedDigest: digest, inputManifestRef: `input-${createHash("sha256").update(JSON.stringify({ ...manifestBase, bytes, digest })).digest("hex").slice(0, 16)}`, manifestBase }) };
+}
+
+/** Prepare admitted text/JSON only. Instructions are state, never an absent SDK system prompt. */
+export function renderClassifierState(context: ContextSnapshot, assessment: AssessmentResources, binding: Record<string, unknown> = {}): Result<PreparedClassifierInput> {
+  const projectItems = (items: unknown): unknown => {
+    if (!Array.isArray(items) || items.length > 256) return undefined;
+    return Array.from({ length: items.length }, (_, index) => {
+      const item = ownData(items, String(index)), provenance = ownData(item, "provenance");
+      return { id: ownData(item, "id"), role: ownData(item, "role"), required: ownData(item, "required"), content: ownData(item, "content"), provenance: { sourceId: ownData(provenance, "sourceId"), revision: ownData(provenance, "revision"), selection: ownData(provenance, "selection"), changedDuringRead: ownData(provenance, "changedDuringRead") } };
+    });
   };
+  const state = { revision: "classifier-state-v1", resourceRevision: ownData(assessment, "resourceRevision"), instructions: projectItems(ownData(assessment, "instructions")), items: projectItems(ownData(context, "items")), coverage: ownData(context, "coverage"), criteria: ownData(assessment, "criteria") };
+  const prepared = prepareClassifierContext(state, ownData(assessment, "questions"), { ...binding, resourceRevision: state.resourceRevision });
+  if (!prepared.ok) return prepared;
+  for (const item of [...(prepared.value.sdkContext.state["instructions"] as Json[]), ...(prepared.value.sdkContext.state["items"] as Json[])]) {
+    if (!recordOf(item) || !Array.isArray(item["content"]) || item["content"].some(block => !recordOf(block) || (block["type"] !== "text" && block["type"] !== "json"))) return { ok: false, error: { code: "core.classifier-input-unsupported", retryable: false } };
+  }
+  return prepared;
 }

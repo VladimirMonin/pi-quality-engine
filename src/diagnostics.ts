@@ -60,7 +60,7 @@ export interface DiagnosticAppendInput {
 // Closed payload schemas
 // ---------------------------------------------------------------------------
 
-type ValueSpec =
+type ValueSpec = (
   | { t: "string" }
   | { t: "integer" }
   | { t: "number" }
@@ -82,7 +82,7 @@ type ValueSpec =
   | { t: "nullableBoolean" }
   | { t: "assessmentFindings" }
   | { t: "assessmentScores" }
-  | { t: "countMap" };
+  | { t: "countMap" }) & { optional?: true };
 
 type EventSchema = Record<string, ValueSpec>;
 
@@ -232,6 +232,9 @@ const EVENT_SCHEMAS: Record<DiagnosticEventName, EventSchema> = {
     priceBasisRef: { t: "nullableString" }, reservationRef: { t: "nullableString" },
     requestTimeoutMs: { t: "integer" }, maxOutputTokens: { t: "integer" },
     reasoningSetting: { t: "nullableString" }, accountingOwner: { t: "string" },
+    operationKind: { t: "string", optional: true }, classifierQuestionCount: { t: "nullableInteger", optional: true },
+    outputTokenLimitApplicable: { t: "boolean", optional: true },
+    inputManifestRef: { t: "nullableString", optional: true }, inputSerializedDigest: { t: "nullableString", optional: true },
   },
   "quality.model.settled": {
     attemptId: { t: "string" }, attemptRevision: { t: "integer" }, outcome: { t: "string" },
@@ -576,6 +579,7 @@ export function closeDiagnosticPayload(
   const omittedFields: string[] = [];
   for (const [field, spec] of Object.entries(schema)) {
     const value = data[field];
+    if (value === undefined && spec.optional === true) continue;
     if (value === undefined) return { ok: false, missingField: field };
     const result = closeScalar(spec, value);
     if (!result.ok) return { ok: false, missingField: field };

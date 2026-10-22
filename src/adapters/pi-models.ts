@@ -58,6 +58,28 @@ function boundedSdkSampling(model: Record<string, unknown>, options: Record<stri
   };
 }
 
+// Bound native response bytes without interpreting or rewriting provider JSON.
+// Serializer, bool/noul conversion, retries and answer parsing stay in the SDK.
+const classifierFetch: typeof fetch = async (input, init) => {
+  const response = await globalThis.fetch(input, init);
+  if (response.body === null) return response;
+  const reader = response.body.getReader();
+  let bytes = 0;
+  const body = new ReadableStream<Uint8Array>({
+    async pull(controller) {
+      try {
+        const next = await reader.read();
+        if (next.done) { controller.close(); return; }
+        bytes += next.value.byteLength;
+        if (bytes > 1_048_576) { void reader.cancel().catch(() => undefined); controller.error(new Error("classifier-response-limit")); return; }
+        controller.enqueue(next.value);
+      } catch { controller.error(new Error("classifier-response-read-failed")); }
+    },
+    cancel() { return reader.cancel(); },
+  });
+  return new Response(body, { status: response.status, statusText: response.statusText, headers: response.headers });
+};
+
 export function piModelRegistryPort(registry: ModelRegistry): ModelRegistryPort {
   return {
     findChat(provider, model) {
@@ -104,11 +126,11 @@ export function piModelRegistryPort(registry: ModelRegistry): ModelRegistryPort 
       const bounded = boundedSdkSampling(model, asRecord(options) ?? {});
       return registry.streamSimple(bounded.model as never, context as never, bounded.options as never);
     },
-    async classify(model, state, questions, options, _signal): Promise<ClassifierTransportResult> {
+    async classify(model, state, questions, options, signal): Promise<ClassifierTransportResult> {
       const result = await registry.classify(
         model as never,
         { state: state as never, questions: questions as never },
-        { maxTokens: options["maxOutputTokens"] } as never,
+        { signal, timeoutMs: options["requestTimeoutMs"], maxRetries: 0, fetch: classifierFetch } as never,
       );
       const record = asRecord(result);
       return {
@@ -120,7 +142,7 @@ export function piModelRegistryPort(registry: ModelRegistry): ModelRegistryPort 
         },
         usage: asRecord(record?.["usage"]),
         stopReason: typeof record?.["stopReason"] === "string" ? record["stopReason"] : null,
-        errorMessage: typeof record?.["errorMessage"] === "string" ? record["errorMessage"] : null,
+        errorMessage: record?.["stopReason"] === "aborted" ? "core.model-request-cancelled" : record?.["stopReason"] === "error" ? "core.classifier-transport-failed" : null,
       };
     },
   };
