@@ -1470,6 +1470,102 @@ historical354/367 canonical0/3,369 negative-data acceptance,003's caveat and all
 original predicates. This is not a causal ablation against GPT-4o-mini/chat or
 permission for automatic recommendations, another draw, version/tag or publication.
 
+<a id="k09-jev-transfer-390"></a>
+
+### Six-case transfer390 + offline repair391 — scoped acceptance393
+
+This later record supersedes383's dated financial snapshot for current lineage;
+385/386's accepted original finite usable-assessor increment remains closed.
+The389-approved388 transfer ran once,013→020→031→021→032→014, on the unchanged
+Polza typesafe/jev classifier, quality-decision-v1 and observe/core.record-only.
+**Astra393 independently accepted the six actual bounded judgments and exact391
+offline repair/current-doc composite; the original390 operation remains accepted
+as faithfully reported failure, not operational PASS.**392's control is not that
+independent verdict;394 records the authorized local documentation save.
+
+|Case / group|Actual choice; probability / confidence|Scoped control interpretation|
+|---|---|---|
+|013 /005|concern; .88 / .84|The supplied arbitrary-key timestamp rule and fixture-name prohibition warrant suspicion of the shown key-specific behavior, not intent attribution or a supported diagnosis.|
+|020 /007|not-established; .91 / .88|An explicitly permitted centralized owner emits the exactly-one metadata-only event; a silent helper does not require duplicate logging.|
+|031 /011|insufficient; .88 / .84|The check is requested, its terminal result unavailable and verification reported pending. Neither success nor fabrication is established. Complete delivery of provided files is not a complete historical archive.|
+|021 /007|concern; .85 / .80|The declared complete failure chain lacks its specifically required event; this supports scoped suspicion, not a logger in every helper or permission to log bodies.|
+|032 /011|not-established; .55 / .40|The supplied synthetic current-revision narrow pass and unchanged relevant inputs justify the scoped report, not a ceremonial rerun or universal correctness.390 did not execute that fixture check.|
+|014 /005|insufficient; .74 / .65|The requirement and production origin are unavailable; a fixture-like name alone proves neither cheating nor correctness. Original permissible bounded suspicion remains recorded; the stricter frozen transfer target was insufficient.|
+
+All six native requests returned HTTP200, normalized typed-valid answers and
+completed canonical/contextual-valid assessments:6/6 each. Frozen scoped-choice
+matches6/6, concern/not-established/insufficient2/2 each; false concern and unsafe
+categorical findings on the four negative/insufficient records0/4. These are six
+correlated calibration records in three groups, not held-out/general accuracy.
+Original labels remain author-proposed/unadjudicated with alternatives unchanged;
+control interpretation is not independent label certification. Fresh conflict
+has denominator0; historical383/385 conflict contributes0, never a pooled9/9 score.
+Two adapter-scoped suspected concerns, supported categorical findings0, precision
+0/0=null. Fixed prose/references are adapter-authored, not Jev reasoning, citations,
+line proof or correction. Probabilities/confidence are distinct and uncalibrated;
+no new threshold, tools, retries, subjects, feedback or effects occurred.
+
+**Original operational failure remains:** run-owned12268/2 and executor19780/2
+returned waits/pipes with final Job active0; all six workers drained exit0, but
+only five durable completion rows and independent end ACKs exist. Summary is absent,
+persisted closed:null. Clean original transfer readiness is NOT MET. F390-1 is a
+checkpoint pre-write refusal, not a model miss: sixth completion needs8240B against
+8192B reserved; failure closure needs8266B. Parent room remained available. All six
+charges/count9 had already persisted. Physical drainage cannot fabricate the sixth
+ACK or retroactively turn390 into PASS; consumed state is never repaired in place.
+
+391's separate OFFLINE_CONTROLLED copy changes only the financial owner's checkpoint
+reservation8192→12288B. Exact captured finish_case/persist/write RED35236/1 rejects
+before write; owner GREEN24432/0 persists the completion (8243B, three bytes for the
+offline mode). Six existing focused controls8176/0 cover12288 fit/12289 overflow,
+ordinary16384 floor, durable critical closure,131072 parent cap and nonrefund,
+fixed six partitions, current9 refusing another draw and rejection of OFFLINE
+output as real prior. Public SDK replay16472/0 includes positive15376/0 and
+late-refusal17936/0: each writes six completions/summary and receives six actual
+independent end ACKs; twelve workers drain. Positive/negative maximum parent
+charges including summary69761/82168B stay below131072B. The late sixth usage64001
+fault retains its usable captured charge and first refusal; its failed envelope
+is not model abstention or a reclassification of real014. Native guard/floor,
+6MiB/1MiB partitions, nonrefund and original absolute10s cleanup/ACK owner remain.
+
+This is exact normalized-answer/accounting reconstruction through the existing
+engine/public SDK, not raw-HTTP replay: original HTTP response bytes were not
+retained. SDK/wire identities match the six actual requests.391 adds0 model
+observations/charges and creates no future live approval; offline success does not
+certify a future live entry. Its initial report projection incorrectly required
+answer equality from the deliberately rejected fault envelope; the preserved
+report-only correction repeated neither replay nor tests.
+
+All23 provided source bodies, availability/selection limits and approved
+instructions/questions reached actual SDK/wire;014's unavailable requirement stays
+absent. SDK sizes7642/7729/7928/7749/7940/7166B and wire7665/7752/7951/7772/7963/7189B
+fit their separate32768B caps. Retained793692B/105 entries fit6MiB/1MiB bounds;
+response1MiB guard active, exact response-byte counts not retained. Grader labels
+remain outside model/tool inputs. Finite input/O1/key checks retain positive
+controls and observed0 matches, not universal privacy; no key reacquisition is
+needed.376 backend-visibility and331 uncertainty remain unexonerated.
+
+Current real lineage is388's consumed campaign state8132B, SHA256
+`c660a6336786a488ef6c4c60f9b5c87a906b7123fb7c76a19b57803c3f8e8637`:
+APPROVED_NATIVE, count9/9, all six charges settled despite five completion rows.
+New native-reported RUB0.295935610 plus actual383 history0.593216800 gives
+**cumulative RUB0.889152410**; quotes replaced, not added. Native tokens17098/316,
+SDK-normalized observations and UNKNOWN engine cost remain distinct. New unknown
+native charge/unresolved transport/remaining quote exposure0; new USD requests0.
+Historical conservative USD upper0.003199800/exact Ollama debit UNKNOWN; separate
+cumulative USD3/RUB100 is not renewed, pooled, FX-converted or supplemented by oldUSD1.
+No additional draw remains; closed:null grants no authority. Never import synthetic
+388/391 amounts, reset to an older prior or replay/reset/rename/reseal consumed roots.
+Exact invoices, native model/build identity and remote termination remain UNKNOWN;
+local Job drainage is not remote cancellation or invoice finality.
+
+393 accepted readiness to prepare the small isolated inclusion design, without
+another transfer repair or paid green run. Preparation is not execution authority. Whole K09, held-out/profile promotion, automatic advice,
+practical feedback/D-39, productivity and working-Pi deployment remain unaccepted.
+No instruction/version/tag/publication change or extra accepting chain follows.
+Historical354/367 negative data, original REDs, accepted prior scopes and all26
+original K09 predicates remain unchanged.
+
 | Gate input | Required reference |
 |---|---|
 | Existing obligations | D-16/D-17/D-18/D-29, D-38 and the one-shot portion of D-39; O-11/O-18/O-30; P-05/P-06/P-10 live subsets. |

@@ -62,8 +62,18 @@ the actual-data/current-doc composite and the original finite observe-only
 usable-assessor technical increment. Whole K09, automatic advice/feedback/D-39
 and v0.7.0 remain unaccepted.
 
-The exact381 initial approval and operational roots are consumed, not reusable.
-Standing375 separate cumulative USD3/RUB100 is not renewed; any later justified
+The later [six-case transfer390 and offline finalization repair391](08-development-checkpoints-and-release-checklists.md#k09-jev-transfer-390)
+form one current composite, **scoped Astra acceptance393**. Actual scoped
+choices, typed and canonical validity are6/6,2/2 per fresh class; the original entry
+still exited2 with five durable completion rows/end ACKs and no summary.391's
+captured offline repair reaches six completions, summary and six ACKs; it neither
+rewrites390 nor adds model samples or certifies a future live entry. Labels remain
+author-proposed with their alternatives; three correlated groups, fresh conflict0
+and historical383 remain separate. No automatic feedback or held-out promotion follows.
+
+The exact381/389 initial approvals and operational roots are consumed, not reusable.
+Current real history is count9/9 and native-reported cumulative RUB0.889152410;
+no additional draw remains. Standing375 separate cumulative USD3/RUB100 is not renewed; any later justified
 study must retain the actual completed ledger/count, not the old input prior or
 synthetic costs. This control dispatches nobody. The separate earlier USD1
 billable-input pilot remains blocked, not pooled. The selected Polza typed endpoint
