@@ -1239,7 +1239,7 @@ experiment, version/tag/push/publication or instruction change follows **from th
 
 <a id="k09-typed-assessor-376"></a>
 
-### Usable typed-assessor increment375–377 — control-ready, independent acceptance pending
+### Usable typed-assessor increment375–377 — historical control-ready snapshot
 
 The direct375 order separately authorizes the connected typed repair/profile,
 necessary docs/local saves and bounded real trials through analysis. It is not a
@@ -1331,6 +1331,62 @@ remain unchanged/open. Desired concern/not-established/conflict is development
 triage, not promotion. No v0.7.0, push/publication, working-Pi deployment or automatic
 feedback follows this control. Necessary instruction synchronization belongs to
 separate authorized maintenance **after actual acceptance**.
+
+<a id="k09-typed-save-382"></a>
+
+### Scoped typed acceptance378/381 and local save382 — live results still NOT_RUN
+
+The preceding375–377 states are historical to that packet.378 independently
+accepted the exact offline product/profile/public-SDK/extracted-tar mechanics and
+six-document delta, while rejecting only the external finite entry for378-F1.
+381 independently accepted the corrected379 entry and closed that finding for
+its new tuple. Available usable native liability is persisted before refusal;
+unknown/close retain original closure through subsequent worker/cleanup RPCs.
+Missing/unusable charge remains UNKNOWN with its estimate held. Original financial
+REDs remain failures, not retroactively passing observations or actual charges.
+
+382 saved the accepted product22 paths in
+`58823a111f35626991185e49958ca9222b992006` (parent
+`f5c007f7215cb8463d12fd74d2f763cb5adc6d5a`) and the accepted six documents in
+`863fbaaffa013bb79abaf7b600f4c58b71404831` (parent58823a1).
+All28 accepted raw/default-filter/index/commit bodies agree; no conversion was
+needed on those paths. Later instruction/status maintenance is a distinct commit,
+not part of the frozen acceptance inputs. Package version remains0.6.0; no new tag,
+checkpoint promotion, remote push or publication follows.
+
+Actual indexed-source qualification used the existing pinned dependencies in a
+fresh isolated representation: full source build, selected compiled34 typed cases,
+7 public-SDK cases and1 ordinary packed/extracted typed scenario, all passed.
+Native waits/pipes/Jobs drained; no skips or dependency acquisition. Other unchanged
+accepted evidence was reused, not rerun as another acceptance or full baseline.
+This is not the dependency-installing `test:package` wrapper or live judgment.
+
+The newly qualified68-payload tar is239938B, SHA256
+`4e3fc747376619485d0d979832c561daee4ac0343e3cb774457177346014d174`.
+All50 compiled emissions match the accepted tar;67 payloads are byte-identical.
+Only the inherited independent-extension example changes376 CRLF line endings to
+LF in the indexed representation; normalized content agrees. Its working file was
+not edited/staged. The earlier239995B tar312506… and frozen entry engine remain
+immutable; the later pack does not retroactively replace their evidence.
+
+The exact approved initial entry remains tuple
+`12d8df07155947246b8fcbbe6f7eb4d6ac9ef6b8bc07ac7f1eff6a771fd17b22`,
+pre-run31655B SHA256
+`d4ea0e1e864eefeded1bcbdbaa3540bd0e02a0a2a8764775a02e90363e623e42`.
+Genuine381 approval4211B SHA256
+`c5242176c9b9ba26b3067cc6c07d8f59cd119e9d2b331b144f53a3bac5ea77eb`
+remains unchanged. Saving does not authorize substitution of the later pack or
+new request/model bytes into that approval. The actual126-binding operational
+set and two six-field approval predicates are checked separately from historical
+HEAD/index/document descriptors, without invoking an entry point or reading keys.
+
+A separately assigned protected-key operator receives that existing operation and
+substantive analysis under standing375 limits, not a new consent or commit-only
+acceptance chain. No live availability, typed/canonical/contextual/semantic success,
+actual effect or billing was observed382. Historical354/367 canonical0/3,369
+negative-data scope,003 amendment/domain caveat, all26 original K09 predicates,
+independent labels/split/holdout, K01–K08/0.6.0 and advice/feedback/D-39 remain.
+No automatic recommendation authority or whole-K09 acceptance is implied.
 
 | Gate input | Required reference |
 |---|---|

@@ -60,6 +60,15 @@ bytes and inner native exit/pipe receipts; registration alone is not contributio
 behavior. Static public-file prompt deployment does not qualify protected
 package-directory reads, and role labels do not certify cross-process discovery.
 
+For typed-assessor representation changes, use the existing compiled
+`test/k09-typed-assessor.test.ts` family with its baseline helper, then select
+`test/k09-typed-native.test.mjs` and `test/k09-typed-installed.test.mjs` as applicable.
+The latter packs/extracts and links existing public peers; it is not dependency
+installation or live Jev usefulness. Compare actual payloads, complete SDK-input
+measurement and native receipts, not package versions. Reuse unchanged accepted
+behavior. Frozen finance tests can write inheritance reports: never rerun them in
+place; any necessary new discriminator needs fresh owned output and custody.
+
 Ordinary tests run offline without billable credentials. Never silently replay a
 stored answer on a failed live route. Paid experiments require explicit approval,
 exact route, inputs, request/spend/time limits and actual termination conditions.

@@ -61,6 +61,12 @@ billing is excluded from owned totals. Accounting and Stop live independently of
 Preserve usage/price provenance, replacement revisions, reservations, currency and
 late authoritative charges. Source bytes, selected input, actual SDK message/options,
 engine framing and hidden provider wire remain distinct evidence domains.
+Typed result extensions are bounded functional data, not ordinary O1 payloads.
+Use fixed rejection categories without raw unknown keys/references or exceptions;
+a runtime FAILED envelope is not model abstention. SDK-normalized padded counters
+and catalog zeros are not native usage or zero debit. Reported and estimated cost
+observations replace rather than add for the same liability; preserve unknowns.
+See [O1 typed request metadata and provenance](../docs/03-observability-and-data-policy.md#section-10).
 
 Persistent storage must establish a permitted root and writer ownership before first
 write. Tests use fresh disposable state, never operator journals/configuration. Read

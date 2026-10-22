@@ -25,10 +25,17 @@ Roles are boundaries, not mandatory classes or folders. Create only exercised mo
   reviewer host. `src/builtins/pi-reviewer.ts` owns the bounded reviewer execution
   contract, tool/result authority and once-owned lifecycle; the ordinary
   `core.pi-session` evaluator uses the run-bound review service in `src/runtime.ts`.
-  Carry the exact admitted turn's output cap and selected profile reasoning through
-  the composition root/public SDK boundary; never fall back to ambient primary/SDK
-  defaults. Supported OpenAI-compatible sampling is bounded on request-local copies,
-  preserving smaller limits and the unchanged model catalog.
+  For chat/reviewer turns, carry the exact admitted output cap and selected profile
+  reasoning through the composition root/public SDK boundary; never fall back to
+  ambient primary/SDK defaults. Supported OpenAI-compatible sampling is bounded on
+  request-local copies, preserving smaller limits and the unchanged model catalog.
+  Typed classification instead prepares and freezes complete state/questions,
+  including selected instructions and admitted text/JSON, before measurement and
+  managed admission. Dispatch that same representation. Require actual input
+  capacity; classifier output allowance0 means not applicable, not a server cap.
+  Keep fixed progress and quality interpretations separate; declared extensions
+  retain typed observations, never invented rationale or continuation authority.
+  See [C1 typed resources and results](../docs/02-component-contracts-and-configuration.md#section-10).
   `src/feedback.ts` owns bounded issue/effect state, receipt reconciliation and
   note rendering; `src/builtins/actions.ts` uses the ordinary admitted action path.
   `src/adapters/pi-feedback.ts` is the narrow current-generation Pi boundary courier,

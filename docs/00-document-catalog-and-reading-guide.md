@@ -49,15 +49,16 @@ controlled protocols do not prove live usefulness or all remaining S4 obligation
 [K09 remains open](08-development-checkpoints-and-release-checklists.md#k09).
 The accepted367/369 completed text-schema packet is negative data, canonical0/3,
 not model/profile promotion. The [usable typed-assessor375–377 increment](08-development-checkpoints-and-release-checklists.md#k09-typed-assessor-376)
-is implemented/offline qualified and independently controlled, with coherent
-canonical docs; SAME Astra acceptance and actual Jev inference remain pending.
-Exact source/artifact/entry identities, fresh versus reused controls and finite
-staged authority are recorded there. No live usefulness, held-out promotion,
-feedback/D-39, whole-K09 acceptance or v0.7.0 follows.
+has scoped independent offline product/profile and canonical-doc acceptance378.
+The corrected finite entry was separately accepted381; the accepted logical delta
+and its actual index/build/extracted-package representation were locally saved382.
+The linked record distinguishes the original accepted tar from the later qualified
+pack and records the immutable initial entry/approval. Actual Jev inference,
+held-out promotion, feedback/D-39, whole K09 and v0.7.0 remain unaccepted.
 
 The direct375 USD3/RUB100 cumulative grant is separate from the old consumed
-approval; its next initial002/003/001 batch still needs genuine new candidate-bound
-Astra approval and assigned credential custody. This control dispatches nobody.
+approval. A separately assigned protected-key operator may execute the exact381
+initial002/003/001 operation after final save readback; this save dispatches nobody.
 The separate earlier USD1 billable-input pilot remains blocked, not pooled.
 Polza/Jev is offline-qualified only; OpenRouter/Jev and local d3-mini remain
 separate unverified routes. No push/publication, working-Pi installation or
